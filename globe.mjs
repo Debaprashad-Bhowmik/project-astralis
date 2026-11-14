@@ -46,7 +46,7 @@ precision highp float;
 uniform sampler2D lunarMap;
 uniform sampler2D polarRelief;
 uniform sampler2D missionHeat;
-uniform vec2 heatGrid;
+uniform float northLatitude, heatHeight, powerMax;
 uniform float polarExtent;
 uniform float reliefMix;
 uniform vec2 viewport;
@@ -73,7 +73,7 @@ vec3 coverageColor(vec3 normal) {
     float distanceAu = length(toSun) / ${(astronomicalUnit / radius).toFixed(8)};
     float incidence = sunlight ? dot(normal, normalize(toSun)) : 0.0;
     float power = ${referencePanelPower.toFixed(2)} * incidence / (distanceAu * distanceAu);
-    float scaled = 2.0 * clamp(power / ${solarPowerScaleMax.toFixed(1)}, 0.0, 1.0);
+    float scaled = powerMax > 0.0 ? 2.0 * clamp(power / powerMax, 0.0, 1.0) : 0.0;
     if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
     return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
   }
@@ -105,14 +105,14 @@ void main() {
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
   if (layer == ${coverageLayers.mission}) {
-    if (latitude <= heatGrid.x) {
-      float fraction = (heatGrid.x - latitude) / (heatGrid.x + pi * .5);
-      float heatLat = (fraction * (heatGrid.y - 1.0) + .5) / heatGrid.y;
+    if (latitude <= northLatitude) {
+      float fraction = (northLatitude - latitude) / (northLatitude + pi * .5);
+      float heatLat = (fraction * (heatHeight - 1.0) + .5) / heatHeight;
       vec4 heat = texture2D(missionHeat, vec2(uv.x, heatLat));
       // Interpolate toward the terrain across the edge of a colored cell.
       surface = surface * (1.0 - heat.a) + heat.rgb * (.81 + reflectance.r * .25);
     }
-  } else if (layer > 0) {
+  } else if (layer > 0 && latitude <= northLatitude) {
     float shade = .56 + reflectance.r * (255.0 / 360.0);
     surface = coverageColor(normal) * shade;
   }
@@ -155,7 +155,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.enableVertexAttribArray(point)
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
-    'sun', 'earth', 'layer', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'heatGrid', 'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
+    'sun', 'earth', 'layer', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
+    'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -188,7 +189,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let featureHits = []
   let overlayFrame
   let heatImage
-  let heatNorthLatitude = 90
+  let northLatitude = 90
+  let powerMax = solarPowerScaleMax
   let appliedScores
   let scoresDirty = false
   let overlayLayer = 'off'
@@ -259,7 +261,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       const left = width / 2 + size * x
       const top = height / 2 - size * y
       const marker = markers.get(site.id)
-      marker.hidden = (overlayLayer === 'mission' && site.lat > heatNorthLatitude) || depth <= 0 || left < 10 || left > width - 10 || top < 10 || top > height - 10
+      marker.hidden = site.lat > northLatitude || depth <= 0 || left < 10 || left > width - 10 || top < 10 || top > height - 10
       marker.style.setProperty('--x', left + 'px')
       marker.style.setProperty('--y', top + 'px')
       marker.classList.toggle('selected', selected === site.id)
@@ -283,6 +285,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     ctx.textBaseline = 'middle'
     const occupied = []
     function label(item, chosen) {
+      if (item.lat > northLatitude) return
       const [x, y, depth] = projectSite(item, orientation)
       if (depth < .12) return
       const left = width / 2 + size * x
@@ -380,11 +383,15 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     zoom: changeZoom,
     center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
-    setCoverage(frame, layer = 'off') {
-      if (overlayFrame === frame && overlayLayer === layer) return
+    setCoverage(frame, layer = 'off', nextNorth = 90, nextPowerMax = solarPowerScaleMax) {
+      if (overlayFrame === frame && overlayLayer === layer && northLatitude === nextNorth && powerMax === nextPowerMax) return
       overlayFrame = frame
       overlayLayer = layer
+      northLatitude = nextNorth
+      powerMax = nextPowerMax
       gl.uniform1i(uniforms.layer, frame ? coverageLayers[layer] : 0)
+      gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
+      gl.uniform1f(uniforms.powerMax, powerMax)
       if (frame) {
         const [sun, earth] = frame
         gl.uniform3fv(uniforms.sun, sun.map(value => value / radius))
@@ -393,8 +400,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       }
       draw()
     },
-    setMissionHeat(image, northLatitude) {
-      if (overlayLayer === 'mission' && heatImage === image) return
+    setMissionHeat(image, nextNorth) {
+      if (overlayLayer === 'mission' && heatImage === image && northLatitude === nextNorth) return
       if (heatImage !== image) {
         gl.activeTexture(gl.TEXTURE2)
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
@@ -403,8 +410,9 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
         gl.activeTexture(gl.TEXTURE0)
         heatImage = image
       }
-      heatNorthLatitude = northLatitude
-      gl.uniform2f(uniforms.heatGrid, northLatitude * rad, image.height)
+      northLatitude = nextNorth
+      gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
+      gl.uniform1f(uniforms.heatHeight, image.height)
       overlayLayer = 'mission'
       gl.uniform1i(uniforms.layer, coverageLayers.mission)
       draw()

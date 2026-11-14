@@ -4,7 +4,7 @@ import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } fro
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
-import { createCoverageMap, solarPowerColor, solarPowerPalette, solarPowerScaleMax, subPoint } from './coverage-map.mjs'
+import { createCoverageMap, solarPowerColor, solarPowerPalette, solarPowerScaleMax, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionOverlapGrid, missionQuarters, overlapRgb, southPoleOverlapGrid, windowHours } from './mission-heat.mjs'
 
 const get = id => document.getElementById(id)
@@ -152,10 +152,13 @@ let surfaceRequest = 0
 let drawCoverage
 let coverageFrame
 let coverageEpoch
+let powerFrame
+let regionalPowerMax
 let missionFrames
 let siteEvaluations
 let activeRankedRow
 let southOnly = false
+const inMapRegion = site => !southOnly || site.lat <= artemisSouthLatitude
 const heatMaps = new Map()
 let heatDisplay
 let heatReference
@@ -460,7 +463,7 @@ function selectSite(id, focus, center = false) {
   showResult()
   if (center) {
     if (globe && !get('show-globe').disabled && get('coverage-view').hidden) useMap('globe')
-    globe?.center(active.site)
+    if (inMapRegion(active.site)) globe?.center(active.site)
   }
   if (focus) [...get('rank-list').querySelectorAll('button')].find(button => button.getAttribute('aria-pressed') === 'true')?.focus()
 }
@@ -489,6 +492,7 @@ function showMap() {
     const button = element('button', 'pin' + (isActive ? ' selected' : '') +
       (!site.kind.includes('Historic') ? ' feature secondary' : '') + (x > .68 ? ' flip' : ''))
     button.type = 'button'
+    button.hidden = !inMapRegion(site)
     button.style.setProperty('--x', (x * 100) + '%')
     button.style.setProperty('--y', (y * 100) + '%')
     button.setAttribute('aria-label', siteName(site) + ', ' + coordinate(site.lat, 'N', 'S') + ' ' + coordinate(site.lon, 'E', 'W'))
@@ -509,11 +513,8 @@ function useMap(view) {
   }
   get('site-map-legend').hidden = view === 'coverage'
   get('coverage-toolbar').hidden = view === 'polar'
-  const layer = get('coverage-layer')
-  layer.options[0].disabled = view === 'coverage'
-  if (view === 'coverage' && layer.value === 'off') layer.value = 'all'
   if (view === 'globe') {
-    if (southOnly && layer.value === 'mission') globe?.southPole()
+    if (southOnly) globe?.southPole()
     else globe?.draw()
   }
   showCoverageLegend()
@@ -521,7 +522,7 @@ function useMap(view) {
 }
 
 function evaluateMapPoint({ lat, lon }) {
-  if (southOnly && get('coverage-layer').value === 'mission' && lat > artemisSouthLatitude) return
+  if (!inMapRegion({ lat })) return
   get('latitude').value = lat.toFixed(5)
   get('longitude').value = lon.toFixed(5)
   void addCoordinate()
@@ -531,14 +532,14 @@ function showCoverage() {
   const flat = !get('coverage-view').hidden
   const onGlobe = !get('globe-view').hidden
   const mode = get('coverage-layer').value
-  const visible = Boolean(active) && (flat || (onGlobe && mode !== 'off'))
+  const visible = Boolean(active) && (flat || onGlobe) && mode !== 'off'
   const mission = visible && mode === 'mission'
   const power = visible && mode === 'power'
+  const northLatitude = southOnly ? artemisSouthLatitude : 90
   const heat = heatMaps.get(southOnly)
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
   get('mission-heat-models').hidden = !mission
-  get('mission-heat-south').hidden = !mission
   get('coverage-details').hidden = !visible || mission
   get('power-details').hidden = !power
   for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = power
@@ -548,8 +549,13 @@ function showCoverage() {
   if ((!mission || !heat?.grid) && (!power || flat)) globe?.setSiteScores()
   if (!visible) {
     if (onGlobe) {
-      globe?.setCoverage(null)
-      get('globe-canvas').setAttribute('aria-describedby', 'globe-pole-note')
+      globe?.setCoverage(null, 'off', northLatitude)
+      get('globe-canvas').setAttribute('aria-describedby', 'map-scope globe-pole-note')
+    } else if (flat && active) {
+      drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
+      drawCoverage(null, active.site, 'off', { northLatitude })
+      get('coverage-canvas').setAttribute('aria-label', `${southOnly ? 'South Pole' : 'Whole-Moon'} terrain map`)
+      get('coverage-canvas').setAttribute('aria-describedby', 'map-scope')
     }
     return
   }
@@ -562,19 +568,41 @@ function showCoverage() {
     coverageEpoch = epoch
     coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
   }
+  let powerScores
+  let powerMax = solarPowerScaleMax
+  if (power && (!flat || southOnly)) {
+    const frameIndex = Math.round(elapsed * 4)
+    powerScores = ranked.filter(({ site }) => inMapRegion(site)).map(({ site, timeline }) => {
+      const sample = timeline?.[frameIndex] ?? siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
+      return { site, sample, watts: siteSolarPower(sample) }
+    })
+    if (southOnly) {
+      if (powerFrame !== coverageFrame) {
+        regionalPowerMax = southPolePowerMax(...coverageFrame, artemisSouthLatitude)
+        powerFrame = coverageFrame
+      }
+      powerMax = Math.max(regionalPowerMax, ...powerScores.map(score => score.watts))
+    }
+  }
+  if (power) {
+    const gradient = get('power-gradient')
+    gradient.classList.toggle('no-power', powerMax === 0)
+    get('power-scale-mid').textContent = powerMax > 0 ? formatPower(powerMax / 2) : ''
+    get('power-scale-max').textContent = powerMax > 0 ? formatPower(powerMax) : ''
+    const scaleNote = get('power-scale-note')
+    scaleNote.hidden = !southOnly
+    scaleNote.textContent = powerMax > 0 ? 'Color scale follows the South Pole maximum at the selected time.' : 'Zero modeled solar power in the South Pole region at this time.'
+  }
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
-    drawCoverage(coverageFrame, active.site, mode)
+    drawCoverage(coverageFrame, active.site, mode, { northLatitude, powerMax })
   } else {
-    globe?.setCoverage(coverageFrame, mode)
-    if (power) {
-      const frameIndex = Math.round(elapsed * 4)
-      const scores = new Map(ranked.map(({ site, timeline }) => {
-        const siteSample = timeline?.[frameIndex] ?? siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
-        const watts = siteSolarPower(siteSample)
+    globe?.setCoverage(coverageFrame, mode, northLatitude, powerMax)
+    if (powerScores) {
+      const scores = new Map(powerScores.map(({ site, sample, watts }) => {
         const number = formatPower(watts)
-        return [site.id, { number, label: `Sun ${signedDegrees(siteSample.sunEl)} · ${number} estimated electrical output`,
-          color: `rgb(${solarPowerColor(watts).join(',')})`, nearZero: watts === 0 }]
+        return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)} · ${number} estimated electrical output`,
+          color: `rgb(${solarPowerColor(watts, powerMax).join(',')})`, nearZero: watts === 0 }]
       }))
       globe?.setSiteScores(scores)
     }
@@ -588,19 +616,20 @@ function showCoverage() {
   slider.value = String(elapsed)
   slider.setAttribute('aria-valuetext', time)
   const sample = active.timeline[Math.round(elapsed * 4)]
+  const siteOutside = `${siteName(active.site)} is outside the South Pole region. Choose a site between 84°S and 90°S.`
   const sun = sample.eclipse ? 'Total solar eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
   if (power) {
-    get('power-output').textContent = `${siteName(active.site)} · ${formatPower(siteSolarPower(sample))}`
-    get('power-site-angle').textContent = `Sun elevation ${signedDegrees(sample.sunEl)} · ${sun} · ${terrainLabel(active.site, settings.horizon)}`
+    get('power-output').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${formatPower(siteSolarPower(sample))}` : siteOutside
+    get('power-site-angle').textContent = inMapRegion(active.site) ? `Sun elevation ${signedDegrees(sample.sunEl)} · ${sun} · ${terrainLabel(active.site, settings.horizon)}` : ''
   } else {
     const earth = sample.earthEl > sample.earthHorizon ? 'Earth in view' : 'Earth blocked by skyline'
-    get('coverage-summary').textContent = `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}`
+    get('coverage-summary').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}` : siteOutside
   }
   const sunOverhead = `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`
   const overhead = power ? sunOverhead : `${sunOverhead} · Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`
   get('coverage-overhead').textContent = overhead
-  const description = power ? 'power-notes power-output power-site-angle' : 'coverage-notes coverage-summary'
-  get('coverage-canvas').setAttribute('aria-label', `Whole-Moon ${power ? 'solar power' : 'visibility'} map. ${overhead}.`)
+  const description = power ? 'map-scope power-notes power-scale-note power-output power-site-angle' : 'map-scope coverage-notes coverage-summary'
+  get('coverage-canvas').setAttribute('aria-label', `${southOnly ? 'South Pole' : 'Whole-Moon'} ${power ? 'solar power' : 'visibility'} map. ${overhead}.`)
   get('coverage-canvas').setAttribute('aria-describedby', description)
   if (!flat) get('globe-canvas').setAttribute('aria-describedby', `globe-pole-note ${description} coverage-overhead`)
 }
@@ -656,7 +685,7 @@ function showMissionHeat(flat) {
   const heat = heatMaps.get(southOnly) ?? requestHeatMap(southOnly)
   if (!heat.grid) {
     results.hidden = true
-    if (!flat) globe?.setCoverage(null)
+    if (!flat) globe?.setCoverage(null, 'off', southOnly ? artemisSouthLatitude : 90)
     const message = heat.failed ? 'The overlap heat map could not be calculated. Change the mission window to try again.' :
       `Calculating ${southOnly ? 'South Pole' : 'whole-Moon'} overlap…`
     if (status.textContent !== message) status.textContent = message
@@ -704,7 +733,7 @@ function showMissionHeat(flat) {
   const { colors } = layer
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
-    drawCoverage(null, active.site, 'mission', colors, heatGrid.northLatitude)
+    drawCoverage(null, active.site, 'mission', { heatRaster: colors, northLatitude: heatGrid.northLatitude })
     get('coverage-canvas').setAttribute('aria-label', `${southOnly ? 'South Pole' : 'Whole-Moon'} overlap heat map${period ? ` for quarter ${period}` : ' for the entire mission'}`)
     get('coverage-canvas').setAttribute('aria-describedby', description)
   } else {
@@ -783,9 +812,7 @@ function showCoverageLegend() {
   get('coverage-legend').replaceChildren(...entries.map(([color, name]) => element('li', `coverage-${color}`, name)))
 }
 
-get('power-gradient').style.background = `linear-gradient(90deg, ${solarPowerPalette.map(color => `rgb(${color.join(',')})`).join(', ')})`
-get('power-scale-mid').textContent = formatPower(solarPowerScaleMax / 2)
-get('power-scale-max').textContent = formatPower(solarPowerScaleMax)
+get('power-gradient').style.setProperty('--power-ramp', `linear-gradient(90deg, ${solarPowerPalette.map(color => `rgb(${color.join(',')})`).join(', ')})`)
 
 function installGlobe() {
   const canvas = get('globe-canvas')
@@ -809,7 +836,7 @@ function installGlobe() {
     'globe-south': () => globe.rotate(-12, 0),
     'globe-zoom-in': () => globe.zoom(1.25),
     'globe-zoom-out': () => globe.zoom(.8),
-    'globe-focus': () => active && globe.center(active.site),
+    'globe-focus': () => active && (inMapRegion(active.site) ? globe.center(active.site) : globe.southPole()),
     'globe-reset': () => globe.reset(),
     'globe-far': () => globe.center({ lat: 0, lon: 180 }),
     'globe-pole': () => globe.southPole(),
@@ -830,7 +857,7 @@ function chooseFeature(feature) {
   get('feature-source').href = `https://planetarynames.wr.usgs.gov/Feature/${feature.id}`
   get('feature-detail').hidden = false
   get('feature-evaluate').hidden = false
-  if (globe && !get('show-globe').disabled) {
+  if (globe && !get('show-globe').disabled && inMapRegion(feature)) {
     useMap('globe')
     globe.center(feature)
   }
@@ -1356,7 +1383,7 @@ async function addCoordinate(event, feature = null) {
     selected = site.id
     inspectedSite = true
     recalculate(true)
-    globe?.center(site)
+    if (inMapRegion(site)) globe?.center(site)
     get('coordinate-status').textContent = site.name + ' added to the ranking and comparison.'
   } catch (reason) {
     if (request === pendingCoordinate) {
@@ -1658,6 +1685,8 @@ get('mission-heat-period').addEventListener('change', showCoverage)
 get('mission-heat-south').addEventListener('click', event => {
   southOnly = !southOnly
   event.currentTarget.setAttribute('aria-pressed', String(southOnly))
+  get('map-scope').hidden = !southOnly
+  if (active) showMap()
   if (southOnly && !get('globe-view').hidden) globe?.southPole()
   showCoverage()
 })

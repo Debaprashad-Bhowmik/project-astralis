@@ -4,12 +4,12 @@ const radians = Math.PI / 180
 const wrapLongitude = lon => ((lon + 180) % 360 + 360) % 360 - 180
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value))
 
-export function coverageProject({ lat, lon }) {
-  return { x: (wrapLongitude(lon) + 180) / 360, y: (90 - lat) / 180 }
+export function coverageProject({ lat, lon }, northLatitude = 90) {
+  return { x: (wrapLongitude(lon) + 180) / 360, y: (northLatitude - lat) / (northLatitude + 90) }
 }
 
-export function coverageUnproject(x, y) {
-  return { lat: 90 - clamp(y, 0, 1) * 180, lon: wrapLongitude(clamp(x, 0, 1) * 360 - 180) }
+export function coverageUnproject(x, y, northLatitude = 90) {
+  return { lat: northLatitude - clamp(y, 0, 1) * (northLatitude + 90), lon: wrapLongitude(clamp(x, 0, 1) * 360 - 180) }
 }
 
 export function subPoint([x, y, z]) {
@@ -20,8 +20,8 @@ export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4, missi
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
 export const solarPowerScaleMax = 300
 export const solarPowerPalette = [[48, 51, 65], [225, 139, 61], [255, 243, 159]]
-export function solarPowerColor(watts) {
-  const scaled = clamp(watts / solarPowerScaleMax, 0, 1) * 2
+export function solarPowerColor(watts, maxPower = solarPowerScaleMax) {
+  const scaled = maxPower > 0 ? clamp(watts / maxPower, 0, 1) * 2 : 0
   const segment = scaled < 1 ? 0 : 1
   const low = solarPowerPalette[segment]
   const high = solarPowerPalette[segment + 1]
@@ -56,6 +56,26 @@ export function createSolarPowerModel(sun, earth) {
   }
 }
 
+export function southPolePowerMax(sun, earth, northLatitude) {
+  const model = createSolarPowerModel(sun, earth)
+  const { lat, lon } = subPoint(sun)
+  const polarPower = (latitude, longitude) => {
+    const phi = latitude * radians
+    const lambda = longitude * radians
+    return model(Math.cos(phi) * Math.cos(lambda), Math.cos(phi) * Math.sin(lambda), Math.sin(phi))
+  }
+  // The closest point to the subsolar latitude maximizes power on an uneclipsed cap.
+  let max = polarPower(Math.min(lat, northLatitude), lon)
+  if (!totalityPossible(sun, earth)) return max
+  // During a possible eclipse, the peak can shift away from the subsolar meridian.
+  for (let latitude = northLatitude; latitude >= -90; latitude -= .25) {
+    for (let longitude = lon; longitude < lon + 360; longitude += 2) {
+      max = Math.max(max, polarPower(latitude, longitude))
+    }
+  }
+  return max
+}
+
 const inks = ['#777986', '#ffc975', '#acc4ff', '#83dccb']
 const rasterWidth = 480
 const rasterHeight = 240
@@ -68,29 +88,43 @@ export function createCoverageMap(canvas, onPoint) {
   const rasterCtx = raster.getContext('2d', { willReadFrequently: true })
   const pixels = rasterCtx.createImageData(rasterWidth, rasterHeight)
   let basemap
+  let basemapDirty = true
   let frame
   let site
   let mode = 'all'
   let heatRaster
   let northLatitude = 90
+  let powerMax = solarPowerScaleMax
   let dirty = true
-  const north = Array.from({ length: rasterHeight }, (_, row) => (90 - (row + .5) * 180 / rasterHeight) * radians)
+  let cosLat, sinLat
   const east = Array.from({ length: rasterWidth }, (_, col) => ((col + .5) * 360 / rasterWidth - 180) * radians)
-  const cosLat = north.map(Math.cos)
-  const sinLat = north.map(Math.sin)
   const cosLon = east.map(Math.cos)
   const sinLon = east.map(Math.sin)
 
   const texture = new Image()
   texture.addEventListener('load', () => {
-    rasterCtx.drawImage(texture, 0, 0, rasterWidth, rasterHeight)
-    basemap = rasterCtx.getImageData(0, 0, rasterWidth, rasterHeight).data
+    basemapDirty = true
     dirty = true
     draw()
   })
   texture.src = new URL('./assets/moon-color.jpg', import.meta.url).href
 
+  function drawTerrain(context, width, height) {
+    const northY = (90 - northLatitude) / 180 * texture.height
+    context.drawImage(texture, 0, northY, texture.width, texture.height - northY, 0, 0, width, height)
+  }
+
   function tint() {
+    if (basemapDirty) {
+      const latitudes = Array.from({ length: rasterHeight }, (_, row) => (northLatitude - (row + .5) * (northLatitude + 90) / rasterHeight) * radians)
+      cosLat = latitudes.map(Math.cos)
+      sinLat = latitudes.map(Math.sin)
+      if (texture.naturalWidth) {
+        drawTerrain(rasterCtx, rasterWidth, rasterHeight)
+        basemap = rasterCtx.getImageData(0, 0, rasterWidth, rasterHeight).data
+      }
+      basemapDirty = false
+    }
     const power = mode === 'power'
     const model = power ? createSolarPowerModel(...frame) : createCoverageModel(...frame)
     const layer = { all: 3, sun: 1, earth: 2, both: 3 }[mode]
@@ -100,7 +134,7 @@ export function createCoverageMap(canvas, onPoint) {
         const offset = 4 * (row * rasterWidth + col)
         const shade = basemap ? .56 + basemap[offset] / 360 : .83
         if (power) {
-          const scaled = clamp(point / solarPowerScaleMax, 0, 1) * 2
+          const scaled = powerMax > 0 ? clamp(point / powerMax, 0, 1) * 2 : 0
           const segment = scaled < 1 ? 0 : 1
           const low = solarPowerPalette[segment]
           const high = solarPowerPalette[segment + 1]
@@ -120,8 +154,8 @@ export function createCoverageMap(canvas, onPoint) {
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
-    if (!width || !height || (!frame && !heatRaster)) return
-    if (!heatRaster && dirty) tint()
+    if (!width || !height || !site || (!frame && !heatRaster && mode !== 'off')) return
+    if (!heatRaster && mode !== 'off' && dirty) tint()
     const pixel = Math.min(2, devicePixelRatio || 1)
     const pw = Math.round(width * pixel)
     const ph = Math.round(height * pixel)
@@ -130,15 +164,14 @@ export function createCoverageMap(canvas, onPoint) {
       canvas.height = ph
     }
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
-    if (heatRaster) {
+    if (heatRaster || mode === 'off') {
       ctx.fillStyle = '#111116'
       ctx.fillRect(0, 0, width, height)
-      if (basemap) {
-        const northY = (90 - northLatitude) / 180 * texture.height
-        ctx.drawImage(texture, 0, northY, texture.width, texture.height - northY, 0, 0, width, height)
+      if (texture.naturalWidth) drawTerrain(ctx, width, height)
+      if (heatRaster) {
+        const rowHeight = height / (heatRaster.height - 1)
+        ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
       }
-      const rowHeight = height / (heatRaster.height - 1)
-      ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
     } else ctx.drawImage(raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
@@ -154,9 +187,10 @@ export function createCoverageMap(canvas, onPoint) {
     ctx.stroke()
     const labels = []
     function mark(point, label, ink, shape, offset = -13) {
-      const position = coverageProject(point)
+      if (point.lat > northLatitude) return
+      const position = coverageProject(point, northLatitude)
       const x = clamp(position.x * width, 6, width - 6)
-      const y = clamp((northLatitude - point.lat) / (northLatitude + 90) * height, 6, height - 6)
+      const y = clamp(position.y * height, 6, height - 6)
       ctx.beginPath()
       if (shape === 'site') {
         ctx.moveTo(x, y - 6)
@@ -189,8 +223,8 @@ export function createCoverageMap(canvas, onPoint) {
       ctx.fillStyle = ink
       ctx.fillText(label, left, top)
     }
-    if (site.lat <= northLatitude) mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
-    if (!heatRaster) {
+    mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
+    if (frame && !heatRaster) {
       mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
       if (mode !== 'power') mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
     }
@@ -198,20 +232,20 @@ export function createCoverageMap(canvas, onPoint) {
 
   new ResizeObserver(draw).observe(canvas)
   canvas.addEventListener('click', event => {
-    if (!frame && !heatRaster) return
+    if (!site || (!frame && !heatRaster && mode !== 'off')) return
     const rect = canvas.getBoundingClientRect()
-    const northY = (90 - northLatitude) / 180
-    const y = (event.clientY - rect.top) / rect.height
-    onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, northY + y * (1 - northY)))
+    onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height, northLatitude))
   })
 
-  return (nextFrame, nextSite, nextMode, nextHeatRaster, nextNorthLatitude = 90) => {
-    if (frame !== nextFrame || mode !== nextMode) dirty = true
+  return (nextFrame, nextSite, nextMode, { heatRaster: nextHeatRaster, northLatitude: nextNorthLatitude = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) => {
+    if (northLatitude !== nextNorthLatitude) basemapDirty = true
+    if (frame !== nextFrame || mode !== nextMode || basemapDirty || powerMax !== nextPowerMax) dirty = true
     frame = nextFrame
     site = nextSite
     mode = nextMode
     heatRaster = nextHeatRaster
     northLatitude = nextNorthLatitude
+    powerMax = nextPowerMax
     draw()
   }
 }

@@ -7,7 +7,7 @@ import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, system
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
-import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
+import { coverageProject, coverageUnproject, createCoverageModel, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
 import { createSolarPowerModel } from './coverage-map.mjs'
 import { skyPathSegments } from './sky-view.mjs'
@@ -247,6 +247,22 @@ test('global map coordinates round-trip and wrap the longitude seam', () => {
   assert.ok(Math.abs(result.lat - site.lat) < 1e-9 && Math.abs(result.lon - site.lon) < 1e-9)
   assert.deepEqual(coverageProject({ lat: 90, lon: 180 }), { x: 0, y: 0 })
   assert.equal(coverageUnproject(1, .5).lon, -180)
+})
+
+test('polar map coordinates span only the selected latitude band', () => {
+  assert.deepEqual(coverageProject({ lat: -87, lon: 0 }, -84), { x: .5, y: .5 })
+  assert.deepEqual(coverageUnproject(.5, .25, -84), { lat: -85.5, lon: 0 })
+  assert.deepEqual(coverageUnproject(1, 1, -84), { lat: -90, lon: -180 })
+})
+
+test('the regional power peak uses the strongest illumination in the polar cap', () => {
+  const sun = [149_597_870_700, 0, 0]
+  const earth = [0, 384_400_000, 0]
+  const latitude = artemisSouthLatitude * Math.PI / 180
+  const expected = createSolarPowerModel(sun, earth)(Math.cos(latitude), 0, Math.sin(latitude))
+  assert.ok(Math.abs(southPolePowerMax(sun, earth, artemisSouthLatitude) - expected) < 1e-9)
+  assert.equal(southPolePowerMax([0, 0, sun[0]], earth, artemisSouthLatitude), 0)
+  assert.ok(southPolePowerMax(sun, [384_400_000, 0, 0], artemisSouthLatitude) < expected)
 })
 
 test('first-person terrain curves below the eye, and a camera centered on a body projects it to the center', () => {

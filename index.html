@@ -202,6 +202,10 @@
             <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
           </details>
           <p class="error" id="globe-error" hidden></p>
+          <div class="map-scope">
+            <button type="button" class="subtle" id="mission-heat-south" aria-pressed="false">South Pole only</button>
+            <span class="muted" id="map-scope" hidden>84°S to 90°S</span>
+          </div>
           <div class="coverage-toolbar" id="coverage-toolbar">
             <label for="coverage-layer">Surface layer
               <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option><option value="power">Power output (Solar Elevation Angle)</option></optgroup></select>
@@ -209,7 +213,6 @@
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
             </label>
-            <button type="button" class="subtle" id="mission-heat-south" aria-pressed="false" hidden>South Pole only</button>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
           <p class="muted" id="mission-heat-models" hidden></p>
@@ -278,6 +281,7 @@
                 <div id="power-gradient" aria-hidden="true"></div>
                 <span>0 W/m²</span><span id="power-scale-mid"></span><span id="power-scale-max"></span>
               </div>
+              <p class="muted" id="power-scale-note" hidden></p>
               <p class="power-site"><strong id="power-output"></strong><span id="power-site-angle"></span></p>
               <p class="muted" id="power-notes">Estimated electrical output for a flat panel at 20% efficiency. Map colors use a smooth lunar horizon. Sites use the chosen horizon model. Total eclipses give zero output.</p>
             </div>
