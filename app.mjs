@@ -805,6 +805,8 @@ function updateSurface(sample) {
   surfaceView?.update(sample, showPaths ? localSky.surfacePaths : null)
   const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
   get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)}`
+  const condition = sample.eclipse ? 'Total eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun above the selected skyline' : 'Sun below the selected skyline'
+  get('surface-light').textContent = `${condition} · Sun elevation ${signedDegrees(sample.sunEl)}`
 }
 
 async function showSurface() {
@@ -812,7 +814,7 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Arcs trace the selected mission window. Terrain shading is illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Shadows follow the selected time. Fine ground grain and shadow detail are approximate.' +
     (settings.horizon === 'terrain' ? '' : ' Marker visibility uses your 0° reference setting.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
@@ -843,7 +845,7 @@ async function showSurface() {
     get('surface-scene').hidden = false
     get('surface-status').textContent = ''
     const current = active.timeline[Math.round(elapsed * 4)]
-    surfaceView.setTerrain(mesh, current.sunAz)
+    surfaceView.setTerrain(mesh, site, current.sunAz)
     updateSurface(current)
   } catch (reason) {
     if (request !== surfaceRequest) return
@@ -1068,6 +1070,7 @@ async function startSpace() {
     const samples = readSpaceSamples(await response.arrayBuffer(), catalog.startMs, catalog.endMs)
     const controls = {
       earthView: get('space-earth-view'), sunView: get('space-sun-view'), scale: get('space-scale'),
+      yearPath: get('space-year-path'), moonPath: get('space-moon-path'), links: get('space-links'), yearLabel: get('space-year-label'),
       left: get('space-left'), right: get('space-right'), up: get('space-up'), down: get('space-down'), reset: get('space-reset'),
     }
     updateSpace = createSpaceView(get('space-canvas'), samples, controls)

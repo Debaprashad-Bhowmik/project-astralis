@@ -8,7 +8,9 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **[Explore three guided examples](https://debaprashad-bhowmik.github.io/project-astralis/#explore).** Compare a three-day landing delay, near-side and far-side Earth visibility, or the solar power implications of a low Sun. Each example uses the mission planner’s data and can open as an editable comparison.
 
-**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** See the Sun and Earth against the selected site's terrain horizon, or switch to the first-person 3D surface view for sky arcs, apparent disk sizes, and controls that point the camera toward an off-screen body. The timeline updates the view and the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
+**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Scrub the timeline to see the modeled NASA LOLA terrain light up or fall into shadow as the Sun moves. The surface uses NASA LROC reflectance with illustrative fine grain. The timeline also updates the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
+
+**[Open the 3D orbit view](https://debaprashad-bhowmik.github.io/project-astralis/#space).** Switch between Earth-centered and Sun-centered views. Toggle the Moon’s orbit, the annual Sun or Earth path, and the dashed body links independently.
 
 The **One lunar day** operating window plays 29.5 Earth days from landing. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list. The map, orbit scene, and surface views share the same mission clock.
 

@@ -6,13 +6,23 @@ import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
-import { surfaceCamera, surfaceTarget, terrainVertices } from './surface-view.mjs'
+import { surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('shadow projection places a sunward ridge in front of the ground behind it', () => {
+  const light = solarShadowFrame(90, 5)
+  const project = point => [light.right, light.up, light.depth].map(axis => axis.reduce((sum, value, i) => sum + value * point[i], 0))
+  const ground = project([0, 0, 0])
+  const ridge = project([1000, 1000 * Math.tan(5 * Math.PI / 180), 0])
+  assert.ok(Math.abs(ridge[0] - ground[0]) < 1e-9)
+  assert.ok(Math.abs(ridge[1] - ground[1]) < 1e-9)
+  assert.ok(ridge[2] < ground[2])
 })
 
 test('surface disks use the local angular radius and identify an off-screen Sun to the left', () => {

@@ -62,25 +62,24 @@ export function createSpaceView(canvas, samples, controls) {
   let drag
   let scene = 'earth'
   let heading
-  let pathKey
-  let path = []
+  const paths = new Map()
 
-  function trail(index, aroundSun) {
+  function trail(index, kind) {
     const last = samples.length / stride - 1
-    const period = aroundSun ? 8760 : 672
-    const increment = aroundSun ? 48 : 6
-    const start = clamp(Math.floor(index / 24) * 24 - period / 2, 0, last - period)
-    const key = scene + start
-    if (pathKey !== key) {
-      pathKey = key
-      const column = aroundSun ? 3 : 0
-      const factor = aroundSun ? -1 / 149597871 : 1 / earthMoonScale
-      path = Array.from({ length: Math.floor(period / increment) + 1 }, (_, i) => {
-        const offset = (start + i * increment) * stride + column
-        return scale(Array.from(samples.subarray(offset, offset + 3)), factor)
-      })
-    }
-    return path
+    const lunar = kind === 'moon'
+    const period = Math.min(last, lunar ? 656 : 8766)
+    const segments = Math.max(1, Math.ceil(period / (lunar ? 4 : 36)))
+    const start = clamp(Math.floor(index / 24) * 24 - Math.floor(period / 2), 0, last - period)
+    const cached = paths.get(kind)
+    if (cached?.start === start) return cached.points
+    const points = Array.from({ length: segments + 1 }, (_, i) => {
+      const offset = (start + Math.round(i * period / segments)) * stride + (lunar ? 0 : 3)
+      const vector = Array.from(samples.subarray(offset, offset + 3))
+      if (lunar) return scale(vector, 1 / earthMoonScale)
+      return kind === 'earth' ? scale(vector, -1 / 149597871) : scale(unit(vector), sunDrawingDistance)
+    })
+    paths.set(kind, { start, points })
+    return points
   }
 
   function drawPhase(x, y, radius, light, color, dpi) {
@@ -143,9 +142,15 @@ export function createSpaceView(canvas, samples, controls) {
     const earth = project(earthPosition)
     const moon = project(moonPosition)
     const sun = project(sunPosition)
-    line(trail(index, aroundSun).map(project), '#60788d')
-    line([earth, sun], '#80643e', [4, 5])
-    line([earth, moon], '#758bb4', [3, 4])
+    if (controls.yearPath.checked) line(trail(index, aroundSun ? 'earth' : 'sun').map(project), aroundSun ? '#718bc2' : '#8e7248')
+    if (controls.moonPath.checked) {
+      const moonTrail = trail(index, 'moon')
+      line(moonTrail.map(point => project(point.map((value, i) => earthPosition[i] + (aroundSun ? .25 : 1) * value))), '#8d8a9e')
+    }
+    if (controls.links.checked) {
+      line([earth, sun], '#80643e', [4, 5])
+      line([earth, moon], '#758bb4', [3, 4])
+    }
 
     const moonRadius = aroundSun ? 8 : clamp(size * .19, 10, 19)
     const objects = [
@@ -220,14 +225,16 @@ export function createSpaceView(canvas, samples, controls) {
   controls.up.addEventListener('click', () => turn(0, .18))
   controls.down.addEventListener('click', () => turn(0, -.18))
   controls.reset.addEventListener('click', () => { yaw = 0; pitch = defaultPitch; draw() })
+  for (const control of [controls.yearPath, controls.moonPath, controls.links]) control.addEventListener('change', draw)
   for (const button of [controls.earthView, controls.sunView]) {
     button.addEventListener('click', () => {
       scene = button.value
       controls.earthView.setAttribute('aria-pressed', String(scene === 'earth'))
       controls.sunView.setAttribute('aria-pressed', String(scene === 'sun'))
+      controls.yearLabel.textContent = scene === 'earth' ? 'Sun’s annual path' : 'Earth’s orbit'
       controls.scale.textContent = scene === 'earth'
-        ? 'The solid arc shows the Moon’s path around Earth. Sizes and the Sun’s distance are schematic.'
-        : 'The solid arc shows Earth’s path around the Sun. The bodies and the Earth–Moon separation are enlarged.'
+        ? 'The Sun follows its apparent annual path as seen from Earth. Sizes and the Sun’s distance are schematic.'
+        : 'Earth’s path around the Sun is shown from the Sun. Body sizes and the Earth–Moon separation are enlarged.'
       draw()
     })
   }

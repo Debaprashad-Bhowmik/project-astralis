@@ -124,7 +124,12 @@
             <div class="space-grid">
               <div>
                 <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
-                <p id="space-scale" class="muted">The solid arc shows the Moon’s path around Earth. Sizes and the Sun’s distance are schematic.</p>
+                <p id="space-scale" class="muted">The Sun follows its apparent annual path as seen from Earth. Sizes and the Sun’s distance are schematic.</p>
+                <div class="orbit-layers" role="group" aria-label="Orbit diagram layers">
+                  <label><input type="checkbox" id="space-year-path" checked> <span id="space-year-label">Sun’s annual path</span></label>
+                  <label><input type="checkbox" id="space-moon-path" checked> Moon’s orbit</label>
+                  <label><input type="checkbox" id="space-links" checked> Body links</label>
+                </div>
                 <div class="globe-controls" aria-label="Rotate the view">
                   <button type="button" class="subtle" id="space-left" aria-label="Rotate view left" disabled>←</button>
                   <button type="button" class="subtle" id="space-right" aria-label="Rotate view right" disabled>→</button>
@@ -325,7 +330,7 @@
               <button type="button" class="subtle" id="surface-retry" hidden>Reload terrain</button>
               <div id="surface-scene" hidden>
                 <div class="surface-stage">
-                  <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption sky-sun-position sky-earth-position"></canvas>
+                  <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
                   <span id="surface-heading" aria-label="Camera bearing"></span>
                   <div class="surface-guides" aria-label="Off-screen objects">
@@ -346,6 +351,8 @@
                 </div>
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>
+                <p class="muted" id="surface-light"></p>
+                <p class="muted surface-credit"><a href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
                 <p class="muted surface-credit"><a href="https://eol.jsc.nasa.gov/Collections/EarthFromSpace/images.pl?photo=AS17-148-22727">Earth photo · NASA / Apollo 17</a> <span>· fixed archival image</span></p>
               </div>
             </div>
