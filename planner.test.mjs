@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate } from './planner.mjs'
 import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
+import { pointOnGlobe } from './globe.mjs'
+import { horizonProfile, nearestTiles } from './terrain.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -85,4 +87,34 @@ test('bundled 3D positions cover the mission date range and move over time', () 
   assert.ok(Math.hypot(...later.sun.map((value, i) => value - first.sun[i])) > 500000)
   assert.ok(systemAt(samples, (endMs - startMs) / (spaceStep * 1000)).rotation.every(Number.isFinite))
   assert.throws(() => readSpaceSamples(buffer.slice(0, -4), startMs, endMs), /incomplete/)
+})
+
+test('click coordinates round-trip across the globe and reject empty space', () => {
+  for (const target of [{ lat: -88, lon: -157 }, { lat: 16, lon: -179 }, { lat: 29, lon: 130 }]) {
+    const view = globeOrientation(target.lat - 2, target.lon - 4)
+    const [x, y] = projectSite(target, view)
+    const point = pointOnGlobe(x, y, view)
+    assert.ok(Math.abs(point.lat - target.lat) < 1e-9 && Math.abs(point.lon - target.lon) < 1e-9)
+  }
+  assert.equal(pointOnGlobe(1, 1, globeOrientation(0, 0)), null)
+})
+
+test('terrain horizon accounts for curvature at both poles and wraps tile coverage at the seam', () => {
+  for (const lat of [-90, 0, 90]) {
+    const profile = horizonProfile(lat, 180, () => 0, 1900).horizon
+    assert.equal(profile.length, 720)
+    assert.ok(profile.every(angle => angle < 0 && angle > -.2))
+  }
+  const tiles = nearestTiles(0, 179.9)
+  assert.ok(tiles.some(([x]) => x === 0) && tiles.some(([x]) => x === 11))
+  assert.equal(nearestTiles(90, 0).length, 12)
+})
+
+test('gazetteer includes unique valid features from both hemispheres', () => {
+  const features = JSON.parse(readFileSync(new URL('./data/gazetteer.json', import.meta.url)))
+  assert.ok(features.length >= 9000)
+  assert.equal(new Set(features.map(feature => feature.id)).size, features.length)
+  assert.ok(features.every(feature => Math.abs(feature.lat) <= 90 && Math.abs(feature.lon) <= 180))
+  assert.equal(features.find(feature => feature.name === 'Tycho').kind, 'Crater')
+  assert.ok(Math.abs(features.find(feature => feature.name === 'Von Kármán').lon) > 90)
 })

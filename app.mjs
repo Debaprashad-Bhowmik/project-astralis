@@ -1,6 +1,7 @@
 import { binaryFrames, evaluate, frameAt, radius, rank } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
+import { terrainAt } from './terrain.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -14,8 +15,14 @@ const presets = { sun: [100, 0, 0], earth: [0, 100, 0], overlap: [0, 0, 100], ba
 const weightInputs = inputs('sun-weight', 'earth-weight', 'overlap-weight')
 const metricNames = { sun: 'Sunlight', earth: 'Earth in view', overlap: 'Both together' }
 const siteName = site => site.id === 'athena' ? 'Mons Mouton' : site.id === 'odysseus' ? 'Malapert A' : site.id === 'mouton' ? 'Mons Mouton Plateau' : site.name
-const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.kind
+const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.location || site.kind
 const coordinate = (value, plus, minus) => Math.abs(value).toFixed(2) + '°' + (value < 0 ? minus : plus)
+const terrainLabel = (site, model) => model === 'terrain' ? site.terrain : '0° reference plane'
+const siteCoordinates = site => coordinate(site.lat, 'N', 'S') + ', ' + coordinate(site.lon, 'E', 'W')
+const searchText = value => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const siteSource = site => ({ nssdc: 'https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html',
+  'nasa-surface': 'https://ntrs.nasa.gov/citations/20250002845' }[site.source] ??
+  (/^\d+$/.test(site.source) ? `https://planetarynames.wr.usgs.gov/Feature/${site.source}` : null))
 const element = (tag, className, value) => {
   const node = document.createElement(tag)
   if (className) node.className = className
@@ -25,8 +32,9 @@ const element = (tag, className, value) => {
 
 let catalog
 let ephemeris
-let custom
-let horizonBeforeCustom
+const customSites = []
+let pendingCoordinate = 0
+let customCount = 0
 let ranked = []
 let active
 let selected
@@ -37,6 +45,10 @@ let comparisonEdited = false
 let globe
 let updateSpace
 let inspectedSite = false
+let features = []
+let labelsBySize = []
+let namedFeature
+let fetchingFeatures = false
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -68,20 +80,22 @@ function framesFor(start, duration) {
   return Array.from({ length: duration * 4 + 1 }, (_, index) => frameAt(ephemeris, first + index))
 }
 
-function recalculate() {
+function recalculate(reuseSettings = false) {
   if (!catalog) return
   stop()
-  let nextSettings
-  try { nextSettings = currentSettings() } catch (reason) {
-    error('input-error', reason.message + ' Showing the last valid result.')
-    return
+  if (!reuseSettings) {
+    let nextSettings
+    try { nextSettings = currentSettings() } catch (reason) {
+      error('input-error', reason.message + ' Showing the last valid result.')
+      return
+    }
+    if (nextSettings.start !== settings?.start) elapsed = 0
+    settings = nextSettings
+    error('input-error')
   }
-  if (nextSettings.start !== settings?.start) elapsed = 0
-  settings = nextSettings
-  error('input-error')
   const { start, duration, weights, limits, horizon } = settings
   const frames = framesFor(start, duration)
-  const sites = custom ? [...catalog.catalog, custom] : catalog.catalog
+  const sites = [...catalog.catalog, ...customSites]
   ranked = rank(sites.map(site => evaluate(site, frames, duration, horizon === 'terrain')), weights, limits, duration)
   if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
@@ -170,25 +184,9 @@ function showResult() {
     body = resultNarrative(best, alternative) + ' Compare the windows and longest gaps before choosing.'
   }
   get('answer-title').textContent = title
-  get('answer-body').textContent = body + ' ' + (settings.horizon === 'terrain' ? 'Using the local terrain horizon.' : 'Using the 0° reference plane.')
+  get('answer-body').textContent = body + ' ' + (settings.horizon === 'terrain' ? 'Using LOLA terrain horizons.' : 'Using the 0° reference plane.')
   get('rank-summary').textContent = best.place === null ? 'Showing closest matches first.' : 'Ranked for your mission priorities.'
-  get('site-count').textContent = ranked.length + ' sites'
-  get('rank-note').textContent = 'Select a site to see the local horizon, next transition, and longest gaps.'
-  get('rank-list').replaceChildren(...ranked.map(row => {
-    const item = element('li')
-    const button = element('button', 'rank-row' + (row.unmet.length ? ' unmet' : ''))
-    button.type = 'button'
-    button.setAttribute('aria-pressed', String(row.site.id === selected))
-    button.setAttribute('aria-label', siteName(row.site) + ', ' + (row.place ? 'rank ' + row.place : 'misses ' + row.unmet.join(', ')) +
-      ', sunlight ' + formatHours(row.metrics.sun) + ', Earth in view ' + formatHours(row.metrics.earth) + ', both ' + formatHours(row.metrics.overlap))
-    const name = element('span', 'site-name')
-    name.append(element('span', 'place', row.place ?? '–'), element('span', '', siteName(row.site)))
-    button.append(name, ...['sun', 'earth', 'overlap'].map(key => element('span', 'value', formatHours(row.metrics[key]))))
-    if (row.unmet.length) button.title = 'Misses: ' + row.unmet.join(', ')
-    button.addEventListener('click', () => selectSite(row.site.id, true))
-    item.append(button)
-    return item
-  }))
+  showRanking()
   get('answer-tracks').replaceChildren(...[best, alternative].filter(Boolean).map(row => {
     const card = element('article', 'answer-site')
     const label = element('div', 'site-label')
@@ -202,14 +200,52 @@ function showResult() {
   showTime()
 }
 
-function selectSite(id, focus) {
+function showRanking() {
+  const query = searchText(get('site-search').value.trim())
+  const group = get('site-group').value
+  const matches = ranked.filter(({ site }) => {
+    const text = searchText([siteName(site), site.name, site.kind, site.location].join(' '))
+    const type = site.kind.includes('Historic') ? 'historic' : site.kind.includes('CLPS') ? 'clps' : site.kind === 'Custom coordinates' ? 'custom' : 'study'
+    return (group === 'all' || group === type) && text.includes(query)
+  })
+  get('site-count').textContent = matches.length === ranked.length ? ranked.length + ' sites' : `${matches.length} of ${ranked.length}`
+  get('rank-empty').hidden = !!matches.length
+  get('rank-list').replaceChildren(...matches.map(row => {
+    const item = element('li')
+    const button = element('button', 'rank-row' + (row.unmet.length ? ' unmet' : ''))
+    button.type = 'button'
+    button.setAttribute('aria-pressed', String(row.site.id === selected))
+    button.setAttribute('aria-label', siteName(row.site) + ', ' + (row.place ? 'rank ' + row.place : 'misses ' + row.unmet.join(', ')) +
+      ', sunlight ' + formatHours(row.metrics.sun) + ', Earth in view ' + formatHours(row.metrics.earth) + ', both ' + formatHours(row.metrics.overlap))
+    const name = element('span', 'site-name')
+    name.append(element('span', 'place', row.place ?? '–'), element('span', '', siteName(row.site)))
+    button.append(name, ...['sun', 'earth', 'overlap'].map(key => element('span', 'value', formatHours(row.metrics[key]))))
+    if (row.unmet.length) button.title = 'Misses: ' + row.unmet.join(', ')
+    button.addEventListener('click', () => selectSite(row.site.id, true, true))
+    item.append(button)
+    return item
+  }))
+}
+
+function selectSite(id, focus, center = false) {
   selected = id
   inspectedSite = true
   showResult()
+  if (center) {
+    if (globe && !get('show-globe').disabled) useMap('globe')
+    globe?.center(active.site)
+  }
   if (focus) [...get('rank-list').querySelectorAll('button')].find(button => button.getAttribute('aria-pressed') === 'true')?.focus()
 }
 
 function showMap() {
+  const { site } = active
+  get('map-site-name').textContent = siteName(site)
+  get('map-site-detail').textContent = [siteCoordinates(site), site.kind, terrainLabel(site, settings.horizon)].join(' · ')
+  const source = siteSource(site)
+  get('map-site-source').hidden = !source
+  if (source) get('map-site-source').href = source
+  get('remove-custom').hidden = site.kind !== 'Custom coordinates'
   const pins = get('pins')
   pins.replaceChildren()
   globe?.setSites(ranked.map(({ site }) => ({ ...site, displayName: siteName(site) })), selected)
@@ -253,7 +289,15 @@ function installGlobe() {
     useMap('polar')
     error('globe-error', message)
   }
-  try { globe = createGlobe(canvas, get('globe-markers'), id => selectSite(id, false)) }
+  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), id => selectSite(id, false), point => {
+    get('latitude').value = point.lat.toFixed(5)
+    get('longitude').value = point.lon.toFixed(5)
+    void addCoordinate()
+  }, feature => {
+    chooseFeature(feature)
+    get('feature-search').value = feature.name
+    showFeatureMatches()
+  }) }
   catch (reason) { fallback(reason.message); return }
   canvas.addEventListener('textureerror', () => fallback('The 3D texture could not load. The polar map is available.'))
   canvas.addEventListener('webglcontextlost', () => fallback('3D rendering became unavailable. The polar map is available.'))
@@ -266,8 +310,73 @@ function installGlobe() {
     'globe-zoom-out': () => globe.zoom(.8),
     'globe-focus': () => active && globe.center(active.site),
     'globe-reset': () => globe.reset(),
+    'globe-far': () => globe.center({ lat: 0, lon: 180 }),
+    'globe-pole': () => globe.center({ lat: -90, lon: 16 }),
   }
   for (const [id, handler] of Object.entries(controls)) get(id).addEventListener('click', handler)
+}
+
+function updateFeatureLayer() {
+  const show = get('named-features').open && get('feature-layer').checked
+  globe?.showFeatures(show ? labelsBySize : [], show ? namedFeature : null)
+}
+
+function chooseFeature(feature) {
+  namedFeature = feature
+  get('feature-name').textContent = feature.name
+  get('feature-location').textContent = `${siteCoordinates(feature)} · ${feature.kind}` +
+    (feature.diameter ? ` · ${feature.diameter} km across` : '')
+  get('feature-source').href = `https://planetarynames.wr.usgs.gov/Feature/${feature.id}`
+  get('feature-detail').hidden = false
+  get('feature-evaluate').hidden = false
+  if (globe && !get('show-globe').disabled) {
+    useMap('globe')
+    globe.center(feature)
+  }
+  updateFeatureLayer()
+}
+
+function showFeatureMatches() {
+  const query = searchText(get('feature-search').value.trim())
+  const matches = query ? features.filter(item => item.searchName.includes(query)) : []
+  matches.sort((a, b) => Number(b.searchName === query) - Number(a.searchName === query) ||
+    Number(b.searchName.startsWith(query)) - Number(a.searchName.startsWith(query)))
+  get('feature-status').textContent = query ? `${matches.length.toLocaleString()} matches` +
+    (matches.length > 30 ? ' · Showing the first 30' : '') : `${features.length.toLocaleString()} IAU-approved feature names`
+  get('feature-results').replaceChildren(...matches.slice(0, 30).map(feature => {
+    const row = element('li')
+    const button = element('button', 'subtle')
+    button.type = 'button'
+    button.setAttribute('aria-current', String(feature.id === namedFeature?.id))
+    button.append(element('span', '', feature.name), element('span', 'muted', feature.kind))
+    button.addEventListener('click', () => {
+      chooseFeature(feature)
+      for (const match of get('feature-results').querySelectorAll('button')) match.setAttribute('aria-current', String(match === button))
+    })
+    row.append(button)
+    return row
+  }))
+}
+
+async function loadFeatures() {
+  if (features.length || fetchingFeatures) return
+  fetchingFeatures = true
+  get('feature-status').textContent = 'Loading named lunar features…'
+  get('feature-retry').hidden = true
+  try {
+    const response = await fetch('./data/gazetteer.json')
+    if (!response.ok) throw new Error('Gazetteer download failed')
+    features = (await response.json()).map(item => ({ ...item, searchName: searchText(item.name) }))
+    labelsBySize = [...features].sort((a, b) => b.diameter - a.diameter)
+    get('feature-search').disabled = false
+    showFeatureMatches()
+    updateFeatureLayer()
+  } catch {
+    get('feature-status').textContent = 'Named lunar features could not load.'
+    get('feature-retry').hidden = false
+  } finally {
+    fetchingFeatures = false
+  }
 }
 
 function drawGrid() {
@@ -364,8 +473,7 @@ function showTime() {
   const { start, duration, horizon } = settings
   const window = active.timeline[Math.round(elapsed * 4)]
   const time = dateLabel(start + elapsed * hour)
-  get('ops-subtitle').textContent = siteName(active.site) + ' · ' + coordinate(active.site.lat, 'N', 'S') + ', ' +
-    coordinate(active.site.lon, 'E', 'W') + ' · ' + (horizon === 'terrain' ? 'LOLA terrain' : '0° reference plane')
+  get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
   get('selected-time').value = time
   get('time-slider').value = String(elapsed)
   get('time-slider').setAttribute('aria-valuetext', time)
@@ -403,7 +511,7 @@ function showTime() {
       if (Math.abs(difference) < .005) return 'at the ' + skyline
       return Math.abs(difference).toFixed(2) + '° ' + (difference > 0 ? 'above' : 'below') + ' the ' + skyline
     }
-    get('space-caption').textContent = horizon === 'terrain' ? 'LOLA terrain horizon' : '0° reference horizon'
+    get('space-caption').textContent = terrainLabel(active.site, horizon)
     get('space-sun').textContent = clearance(window.sunEl - window.sunHorizon) + (window.eclipse ? ' · Total solar eclipse' : '')
     get('space-earth').textContent = clearance(window.earthEl - window.earthHorizon)
     get('space-lunar-km').textContent = lunarKm + ' km'
@@ -453,7 +561,7 @@ function compare() {
     const card = element('article', 'compare-scenario')
     const time = element('time', '', dateLabel(epoch))
     time.dateTime = new Date(epoch).toISOString()
-    card.append(element('h3', '', title), time, element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
+    card.append(element('h3', '', title), time, element('p', 'muted', terrainLabel(row.site, horizon)), element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
       row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
     axis(duration), ...timeline(row, duration), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
       ' · Longest Earth gap ' + formatHours(row.metrics.blackout)))
@@ -481,25 +589,43 @@ function setMissionTime(epoch) {
   recalculate()
 }
 
-function addCoordinate(event) {
-  event.preventDefault()
-  if (!catalog) return
+async function addCoordinate(event, feature = null) {
+  event?.preventDefault()
+  if (!settings) return
   const [latitude, longitude] = inputs('latitude', 'longitude')
-  if (!latitude.validity.valid || !longitude.validity.valid || Number(latitude.value) === -90) {
-    error('coordinate-error', 'Enter a latitude above −90° through −60° and an east longitude between −180° and 360°.')
+  const request = ++pendingCoordinate
+  get('coordinate-status').textContent = ''
+  if (!latitude.validity.valid || !longitude.validity.valid) {
+    error('coordinate-error', 'Enter latitude from −90° to 90° and east longitude from −180° to 360°.')
     return
   }
   error('coordinate-error')
-  if (!custom) horizonBeforeCustom = get('model').value
+  const lat = Number(latitude.value)
   const lon = ((Number(longitude.value) + 180) % 360 + 360) % 360 - 180
-  custom = { id: 'custom', name: 'Custom site', kind: 'Custom coordinates', lat: Number(latitude.value), lon, height: 0 }
-  selected = custom.id
-  inspectedSite = true
-  get('model').value = 'reference'
-  get('model').disabled = true
-  get('remove-custom').hidden = false
-  recalculate()
-  globe?.center(custom)
+  const previous = customSites.find(site => site.lat === lat && Math.abs(site.lon - lon) < 1e-8)
+  if (previous) {
+    selectSite(previous.id, false, true)
+    return
+  }
+  get('coordinate-status').textContent = 'Calculating the terrain horizon…'
+  try {
+    const terrain = await terrainAt(lat, lon)
+    if (request !== pendingCoordinate) return
+    const label = ++customCount
+    const site = { id: `custom-${label}`, name: feature?.name ?? `Custom site ${label}`, kind: 'Custom coordinates', lat, lon,
+      source: feature ? String(feature.id) : null, ...terrain }
+    customSites.push(site)
+    selected = site.id
+    inspectedSite = true
+    recalculate(true)
+    globe?.center(site)
+    get('coordinate-status').textContent = site.name + ' added to the ranking and comparison.'
+  } catch (reason) {
+    if (request === pendingCoordinate) {
+      get('coordinate-status').textContent = ''
+      error('coordinate-error', reason.message)
+    }
+  }
 }
 
 function stop() {
@@ -534,11 +660,11 @@ function play() {
 }
 
 function exportCsv() {
-  const header = 'utc,site_id,latitude_deg,east_longitude_deg,horizon_model,sun_az_deg,sun_elev_deg,sun_horizon_deg,earth_az_deg,earth_elev_deg,earth_horizon_deg,total_solar_eclipse,sun_visible,earth_visible'
+  const header = 'utc,site_id,latitude_deg,east_longitude_deg,horizon_model,sun_az_deg,sun_elev_deg,sun_horizon_deg,earth_az_deg,earth_elev_deg,earth_horizon_deg,total_solar_eclipse,sun_visible,earth_visible,terrain_source'
   const rows = active.timeline.map((entry, index) => [
     new Date(settings.start + index * hour / 4).toISOString(), active.site.id, active.site.lat, active.site.lon, settings.horizon,
     entry.sunAz, entry.sunEl, entry.sunHorizon, entry.earthAz, entry.earthEl, entry.earthHorizon, entry.eclipse,
-    availableAt(active.sun, index / 4, settings.duration), availableAt(active.earth, index / 4, settings.duration),
+    availableAt(active.sun, index / 4, settings.duration), availableAt(active.earth, index / 4, settings.duration), terrainLabel(active.site, settings.horizon),
   ].join(','))
   const url = URL.createObjectURL(new Blob([[header, ...rows].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' }))
   const link = element('a')
@@ -610,13 +736,29 @@ for (const button of get('presets').children) button.addEventListener('click', (
 get('offset').addEventListener('click', () => settings && setMissionTime(settings.start + 3 * day))
 get('coordinates').addEventListener('submit', addCoordinate)
 get('remove-custom').addEventListener('click', () => {
-  if (selected === custom?.id) inspectedSite = false
-  custom = null
-  get('model').disabled = false
-  get('model').value = horizonBeforeCustom
-  get('remove-custom').hidden = true
+  const index = customSites.findIndex(site => site.id === selected)
+  if (index < 0) return
+  customSites.splice(index, 1)
+  inspectedSite = false
+  pendingCoordinate++
+  get('coordinate-status').textContent = ''
   error('coordinate-error')
-  recalculate()
+  recalculate(true)
+})
+get('site-search').addEventListener('input', showRanking)
+get('site-group').addEventListener('change', showRanking)
+get('named-features').addEventListener('toggle', () => {
+  if (get('named-features').open) void loadFeatures()
+  updateFeatureLayer()
+})
+get('feature-retry').addEventListener('click', loadFeatures)
+get('feature-search').addEventListener('input', showFeatureMatches)
+get('feature-layer').addEventListener('change', updateFeatureLayer)
+get('feature-evaluate').addEventListener('click', () => {
+  if (!namedFeature) return
+  get('latitude').value = namedFeature.lat
+  get('longitude').value = namedFeature.lon
+  void addCoordinate(null, namedFeature)
 })
 get('compare-time').addEventListener('change', () => { comparisonEdited = true; compare() })
 for (const select of inputs('compare-a', 'compare-b')) select.addEventListener('change', compare)

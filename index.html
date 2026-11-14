@@ -17,7 +17,7 @@
       <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
       <span>Lunar Site Navigator</span>
     </a>
-    <nav aria-label="App navigation"><a href="#space">3D view</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#space">Orbits</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
 
   <main>
@@ -59,7 +59,7 @@
             <details class="limits">
               <summary>Advanced settings</summary>
               <label>Horizon model
-                <select id="model"><option value="terrain" selected>Local terrain · LOLA</option><option value="reference">0° reference plane</option></select>
+              <select id="model"><option value="terrain" selected>Terrain horizon · LOLA</option><option value="reference">0° reference plane</option></select>
               </label>
               <div class="weight weight-sun"><label for="sun-weight">Sunlight</label><input id="sun-weight" type="range" min="0" max="100" step="5" value="0"><output for="sun-weight"></output></div>
               <div class="weight weight-earth"><label for="earth-weight">Earth view</label><input id="earth-weight" type="range" min="0" max="100" step="5" value="0"><output for="earth-weight"></output></div>
@@ -133,10 +133,26 @@
           <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
             <div class="map-view" aria-label="Map view"><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button></div>
           </div>
+          <details id="named-features" class="named-features">
+            <summary>Explore named lunar features</summary>
+            <div class="feature-tools">
+              <label>Search the lunar gazetteer<input type="search" id="feature-search" placeholder="Try Tycho or Mare Imbrium" disabled></label>
+              <label class="feature-toggle"><input type="checkbox" id="feature-layer" checked> Show labels on the globe</label>
+            </div>
+            <p class="muted" id="feature-status" role="status"></p>
+            <button class="subtle" type="button" id="feature-retry" hidden>Reload feature catalog</button>
+            <ul id="feature-results" aria-label="Matching named features"></ul>
+            <div id="feature-detail" class="map-site" hidden>
+              <h3 id="feature-name"></h3><p id="feature-location" class="muted"></p>
+              <a id="feature-source" class="muted">Gazetteer entry</a>
+            </div>
+            <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
+          </details>
           <p class="error" id="globe-error" hidden></p>
           <div id="globe-view">
             <div id="globe-stage" class="globe-stage">
               <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." role="img"></canvas>
+              <canvas id="globe-features" aria-hidden="true" hidden></canvas>
               <div id="globe-markers"></div>
             </div>
             <div class="globe-controls" aria-label="3D Moon controls">
@@ -147,9 +163,11 @@
               <button type="button" class="subtle" id="globe-zoom-in" aria-label="Zoom in">+</button>
               <button type="button" class="subtle" id="globe-zoom-out" aria-label="Zoom out">−</button>
               <button type="button" class="subtle" id="globe-focus">Center on site</button>
-              <button type="button" class="subtle" id="globe-reset">South pole</button>
+              <button type="button" class="subtle" id="globe-reset">Near side</button>
+              <button type="button" class="subtle" id="globe-far">Far side</button>
+              <button type="button" class="subtle" id="globe-pole">South pole</button>
             </div>
-            <p class="muted globe-help">Drag to rotate. Select a marker to inspect conditions. Display lighting helps show the globe’s shape. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
+            <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
           </div>
           <div id="polar-view" hidden>
           <div class="polar-map" id="polar-map">
@@ -160,18 +178,23 @@
             <div class="map-scale"><i></i>100 km at pole</div>
           </div>
           </div>
-          <div class="map-caption"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point</span></div>
+          <div class="map-caption"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
+          <div class="map-site" aria-live="polite">
+            <h3 id="map-site-name"></h3>
+            <p class="muted" id="map-site-detail"></p>
+            <a id="map-site-source" class="muted" hidden>Coordinate source</a>
+            <button type="button" id="remove-custom" class="subtle" hidden>Remove selected point</button>
+          </div>
+          <p class="muted" id="coordinate-status" role="status"></p>
+          <p class="error" id="coordinate-error" role="alert" hidden></p>
           <details class="custom">
             <summary>Add a coordinate</summary>
             <form id="coordinates" novalidate>
               <div class="limit-grid">
-                <label>Latitude (°)<input id="latitude" type="number" min="-90" max="-60" step="any" placeholder="-85.3" required></label>
+                <label>Latitude (°)<input id="latitude" type="number" min="-90" max="90" step="any" placeholder="-85.3" required></label>
                 <label>East longitude (°)<input id="longitude" type="number" min="-180" max="360" step="any" placeholder="24.5" required></label>
               </div>
-              <p>Custom coordinates use the 0° reference plane. All sites switch to that model for the comparison. Custom points outside the polar map remain visible on the 3D Moon.</p>
-              <p class="error" id="coordinate-error" role="alert" hidden></p>
               <button type="submit" class="subtle">Add &amp; evaluate</button>
-              <button type="button" id="remove-custom" class="subtle" hidden>Remove point</button>
             </form>
           </details>
         </section>
@@ -179,9 +202,13 @@
         <section class="panel ranking" aria-labelledby="rank-heading">
           <div class="panel-heading"><h2 id="rank-heading">Site ranking</h2><span id="site-count" class="tag"></span></div>
           <p id="rank-summary" class="rank-summary" aria-live="polite">Loading lunar data…</p>
+          <div class="site-filters">
+            <label>Find a site<input type="search" id="site-search" placeholder="Try Apollo 11"></label>
+            <label>Site type<select id="site-group"><option value="all">All sites</option><option value="historic">Historic landings</option><option value="clps">CLPS target regions</option><option value="study">Study points</option><option value="custom">My coordinates</option></select></label>
+          </div>
           <div class="rank-legend"><span>Site</span><span>Sunlight</span><span>Earth view</span><span>Both</span></div>
           <ol id="rank-list"></ol>
-          <p id="rank-note" class="muted"></p>
+          <p id="rank-empty" class="muted" hidden>No matching sites. Try another name or site type.</p>
         </section>
       </div>
 
@@ -217,10 +244,10 @@
         <h2 id="methods-heading">Data &amp; methods</h2>
         <div class="method-grid">
           <div><h3>What the ranking means</h3><p>Astralis filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
-          <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive both views. The 3D scene uses hourly geometric positions. Surface operations use 15-minute apparent positions. The terrain model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. Support runs from January 2024 through December 2030.</p></div>
+          <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive both views. The 3D scene uses hourly geometric positions. Surface operations use 15-minute apparent positions. The model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. January 2024 through December 2030 is supported.</p><p>Global LOLA terrain is sampled at 16 pixels per degree, about 1.9 km north to south. Eight default polar sites use the finer 80 and 240 m LOLA grids.</p></div>
           <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
         </div>
-        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">LOLA elevation</a></p>
+        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">Polar LOLA</a><a href="https://svs.gsfc.nasa.gov/4720/#section2">Global LOLA</a><a href="https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html">NASA landing archive</a></p>
       </section>
     </div>
   </main>

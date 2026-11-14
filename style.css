@@ -104,7 +104,20 @@ details p{margin:7px 0}
 .rank-legend,.rank-row{display:grid;grid-template-columns:minmax(83px,1fr) repeat(3,minmax(37px,57px));align-items:center;gap:3px;text-align:right}
 .rank-legend{padding:0 7px 4px;color:var(--muted);font-size:.67rem}
 .rank-legend span:first-child{text-align:left;padding-left:19px}
-#rank-list{padding:0;margin:0;list-style:none}
+#rank-list{padding:0 4px;margin:0 -4px;list-style:none;max-height:365px;overflow:auto;scrollbar-color:#57526d transparent}
+#rank-list button:focus-visible{outline-offset:-2px}
+.site-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.75fr);gap:8px;margin-bottom:13px}
+#rank-empty{margin-block:10px}
+.named-features{padding-block:6px;border-block:1px solid var(--line)}
+.feature-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;margin-top:7px}
+.feature-toggle{display:flex;align-items:center;min-height:35px}
+.feature-toggle input[type=checkbox]{width:1rem;min-height:0;height:1rem;margin:0 4px;accent-color:var(--accent)}
+#feature-results{margin:0 0 6px;padding:0;list-style:none;max-height:214px;overflow:auto}
+#feature-results:empty{display:none}
+#feature-results button{display:flex;justify-content:space-between;gap:10px;text-align:left;width:100%;border:0;border-top:1px solid var(--line);border-radius:0;padding:8px}
+#feature-results button[aria-current=true]{color:var(--accent)}
+#feature-detail{padding-block:4px}
+#feature-evaluate{margin:4px 0}
 #rank-list li+li{border-top:1px solid var(--line)}
 .rank-row{background:transparent;width:100%;min-height:42px;border:1px solid transparent;border-radius:5px;padding:6px 6px;line-height:1.23;font-variant-numeric:tabular-nums;text-align:right}
 .rank-row:hover{background:#182b3d}
@@ -116,7 +129,11 @@ details p{margin:7px 0}
 .rank-row .value:nth-child(3){color:var(--earth)}
 .rank-row .value:nth-child(4){color:var(--both)}
 .rank-row.unmet .place{color:var(--alert)}
-#rank-note{font-size:.74rem;line-height:1.37;margin-top:auto;padding-top:8px}
+.map-site{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3px 12px;padding:8px 0}
+.map-site h3{grid-area:1/1}
+.map-site p{grid-area:2/1}
+.map-site a,.map-site button{grid-area:1/2/3/3;justify-self:end}
+#coordinate-status:empty{display:none}
 .operations-title p,.comparison .panel-heading p{margin-top:4px}
 .ops-grid{display:grid;grid-template-columns:minmax(0,1fr) 216px;gap:15px;margin-top:10px}
 canvas{display:block;width:100%;height:190px}
@@ -169,7 +186,7 @@ canvas{display:block;width:100%;height:190px}
   .topbar{padding-inline:12px;height:52px}
   .brand{gap:7px}
   .brand img{width:99px;height:48px}
-  .brand span,.topbar nav a[href="#compare"]{display:none}
+  .brand span,.topbar nav a[href="#compare"],.topbar nav a[href="#space"]{display:none}
   .topbar nav{gap:12px}
   .hero-inner{padding:27px 13px 30px}
   .hero p{max-width:250px;font-size:.9rem}
@@ -180,6 +197,9 @@ canvas{display:block;width:100%;height:190px}
   .panel{padding:12px}
   .polar-map{min-height:285px}
   .rank-legend,.rank-row{grid-template-columns:1fr repeat(3,minmax(40px,60px))}
+  .map-site{grid-template-columns:1fr}
+  .map-site a,.map-site button{grid-area:auto;justify-self:start;margin-top:3px}
+  .feature-tools{grid-template-columns:minmax(0,1fr);gap:0}
   .snapshot{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:8px}
   .chart-legend{grid-template-columns:1fr 1fr;gap:5px 8px}
   .compare-controls{grid-template-columns:1fr 1fr}
@@ -230,12 +250,13 @@ canvas{display:block;width:100%;height:190px}
 .compare-scenario .answer-axis{margin-left:86px;margin-right:61px}
 .map-view,.globe-controls{display:flex;gap:5px;flex-wrap:wrap}
 .map-view [aria-pressed=true]{color:var(--sun);border-color:var(--sun)}
-.globe-stage{position:relative;height:340px;overflow:hidden;background:#090f18;border:1px solid var(--line);border-radius:6px}
-#globe-canvas,#globe-markers{position:absolute;inset:0;width:100%;height:100%}
+.globe-stage{position:relative;height:clamp(340px,42vw,600px);overflow:hidden;background:#090f18;border:1px solid var(--line);border-radius:6px}
+#globe-canvas,#globe-features,#globe-markers{position:absolute;inset:0;width:100%;height:100%}
 #globe-canvas{touch-action:none;cursor:grab}
 #globe-canvas:active{cursor:grabbing}
-#globe-markers{pointer-events:none}
+#globe-features,#globe-markers{pointer-events:none}
 .globe-pin{pointer-events:auto}
+.globe-pin:hover,.globe-pin:focus-visible{z-index:5}
 .globe-controls{margin-top:7px}
 .globe-help{margin-top:4px;font-size:.76rem}
 @media(max-width:1150px){

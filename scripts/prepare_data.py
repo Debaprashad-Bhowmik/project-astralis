@@ -30,7 +30,42 @@ SITES = [
     ("shoemaker", "Shoemaker", "Crater center", "Named feature center", -88.14, 45.91, "5494"),
     ("shackleton", "Shackleton", "Crater center", "Named feature center", -89.67, 129.78, "5450"),
 ]
+HISTORIC_SITES = [
+    ("Luna 9", "Oceanus Procellarum · reported vicinity", 7.13, -64.37),
+    ("Surveyor 1", "Oceanus Procellarum", -2.4745, -43.3398),
+    ("Luna 13", "Oceanus Procellarum · reported vicinity", 18.87, -62.05),
+    ("Surveyor 3", "Oceanus Procellarum", -3.0162, -23.4180),
+    ("Surveyor 5", "Mare Tranquillitatis", 1.4551, 23.1943),
+    ("Surveyor 6", "Sinus Medii", 0.4742, -1.4275),
+    ("Surveyor 7", "Near Tycho", -40.9812, -11.5127),
+    ("Apollo 11", "Mare Tranquillitatis", 0.67416, 23.47314),
+    ("Apollo 12", "Oceanus Procellarum", -3.0128, -23.4219),
+    ("Luna 16", "Mare Fecunditatis", -0.5137, 56.3638),
+    ("Luna 17", "Mare Imbrium", 38.23764, -35.00163),
+    ("Apollo 14", "Fra Mauro", -3.64589, -17.47194),
+    ("Apollo 15", "Hadley–Apennine", 26.13239, 3.63330),
+    ("Luna 20", "Apollonius highlands", 3.7863, 56.6242),
+    ("Apollo 16", "Descartes Highlands", -8.9734, 15.5011),
+    ("Apollo 17", "Taurus–Littrow", 20.1911, 30.7723),
+    ("Luna 21", "Le Monnier", 25.9994, 30.4076),
+    ("Luna 23", "Mare Crisium", 12.6667, 62.1511),
+    ("Luna 24", "Mare Crisium", 12.7142, 62.2129),
+    ("Chang'e 3", "Mare Imbrium", 44.1214, -19.5117),
+    ("Chang'e 4", "Von Kármán · far side", -45.4561, 177.5885),
+    ("Chang'e 5", "Oceanus Procellarum", 43.0576, -51.9161),
+    ("Chandrayaan-3", "Vikram landing site", -69.3741, 32.32),
+    ("SLIM", "Near Shioli", -13.3160, 25.2510),
+    ("Chang'e 6", "Apollo Basin · far side", -41.6385, -153.9852),
+    ("Blue Ghost 1", "Mare Crisium", 18.562, 61.810),
+]
+TARGETS = [
+    ("reiner-gamma", "Reiner Gamma", "IM-3 science region", "CLPS target region · feature center", 7.39, -58.96, "4987"),
+    ("schrodinger", "Schrödinger Basin", "CP-12 science region", "CLPS target region · feature center", -74.73, 132.93, "5381"),
+    ("gruithuisen", "Mons Gruithuisen Gamma", "Blue Ghost 3 science region", "CLPS target region · feature center", 36.56, -40.72, "3982"),
+]
 HORIZON_RANGE = 350_000
+GLOBAL_STEP = 1900
+TILE_SIZE = 480
 
 
 def projected(phi, longitude):
@@ -55,7 +90,27 @@ class Terrain:
         return np.where(valid & (values != self.nodata), values, np.nan)
 
 
+def global_tiles(source, output):
+    tiles = output / "terrain"
+    tiles.mkdir(exist_ok=True)
+    with Image.open(source / "ldem_16_uint.tif") as image:
+        raw = np.asarray(image)
+    assert raw.shape == (2880, 5760)
+    for row in range(6):
+        for col in range(12):
+            tile = raw[row*TILE_SIZE:(row+1)*TILE_SIZE, col*TILE_SIZE:(col+1)*TILE_SIZE]
+            tile.astype("<u2").tofile(tiles / f"{col}-{row}.bin")
+    return raw
+
+
+def global_height(grid, latitude, longitude):
+    col = np.floor((longitude / np.pi + 1) * grid.shape[1] / 2).astype(int) % grid.shape[1]
+    row = np.clip(np.floor((.5 - latitude / np.pi) * grid.shape[0]).astype(int), 0, grid.shape[0] - 1)
+    return grid[row, col] * .5 - 10_000
+
+
 def compile_sites(source, output):
+    global_grid = global_tiles(source, output)
     wide = Terrain(source / "LDEM_60S_240MPP_ADJ.TIF")
     local = Terrain(source / "LDEM_80S_80MPP_ADJ.TIF")
     for grid in (wide, local):
@@ -83,8 +138,23 @@ def compile_sites(source, output):
         angles = np.rad2deg(np.arctan2(radii * cos_c - (RADIUS + height + 2), radii * sin_c))
         profile = angles.max(axis=1).round(4).tolist()
         sites.append(dict(id=code, name=name, location=location, kind=kind, lat=latitude, lon=longitude,
-                          height=height, horizon=profile, source=provenance))
+                          height=height, horizon=profile, source=provenance, terrain="LOLA 80/240 m"))
         print(name, f"height {height:.1f} m", f"horizon {min(profile):.2f} to {max(profile):.2f} deg")
+
+    historic = [(name.lower().replace("'", "").replace(" ", "-"), name, location, "Historic landing", lat, lon, "nssdc")
+                for name, location, lat, lon in HISTORIC_SITES]
+    central = np.arange(GLOBAL_STEP, HORIZON_RANGE + 1, GLOBAL_STEP) / RADIUS
+    cos_c, sin_c = np.cos(central), np.sin(central)
+    for code, name, location, kind, latitude, longitude, provenance in historic + TARGETS:
+        phi, lon = np.deg2rad([latitude, longitude])
+        dest_lat = np.arcsin(np.sin(phi) * cos_c + np.cos(phi) * sin_c * np.cos(bearing))
+        dest_lon = lon + np.arctan2(np.sin(bearing) * sin_c * np.cos(phi), cos_c - np.sin(phi) * np.sin(dest_lat))
+        heights = global_height(global_grid, dest_lat, dest_lon)
+        height = float(global_height(global_grid, phi, lon))
+        radii = RADIUS + heights
+        angles = np.rad2deg(np.arctan2(radii * cos_c - (RADIUS + height + 2), radii * sin_c))
+        sites.append(dict(id=code, name=name, location=location, kind=kind, lat=latitude, lon=longitude,
+                          height=height, horizon=angles.max(axis=1).round(4).tolist(), source=provenance, terrain="LOLA 16 px/°"))
 
     extent = 315_000
     axis = np.linspace(-extent, extent, 740)
@@ -133,15 +203,19 @@ if __name__ == "__main__":
     parser.add_argument("source", type=Path, help="Directory with NASA kernels and TIFF files")
     parser.add_argument("--output", type=Path, default=Path("data"))
     parser.add_argument("--space-only", action="store_true", help="Update only the Earth-centered overview dataset")
+    parser.add_argument("--sites-only", action="store_true", help="Update site profiles, map, and global elevation tiles")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    for name in KERNELS:
-        spice.furnsh(str(args.source / name))
-    space_count = compile_space_view(args.output)
-    if args.space_only:
-        print("Earth-centered samples:", space_count)
-        raise SystemExit(0)
-    count = compile_ephemeris(args.output)
+    if args.sites_only:
+        count = int((END - START).total_seconds() / STEP) + 1
+    else:
+        for name in KERNELS:
+            spice.furnsh(str(args.source / name))
+        space_count = compile_space_view(args.output)
+        if args.space_only:
+            print("Earth-centered samples:", space_count)
+            raise SystemExit(0)
+        count = compile_ephemeris(args.output)
     sites, extent = compile_sites(args.source, args.output)
     manifest = dict(start=START.isoformat(), end=END.isoformat(), step=STEP, count=count, frame=FRAME,
                     kernels=KERNELS, catalog=sites, mapExtent=extent, terrainDistance=HORIZON_RANGE)
