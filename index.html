@@ -202,14 +202,16 @@
             <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
           </details>
           <p class="error" id="globe-error" hidden></p>
-          <div class="map-scope">
-            <button type="button" class="subtle" id="mission-heat-south" aria-pressed="false">South Pole only</button>
-            <span class="muted" id="map-scope" hidden>84°S to 90°S</span>
-          </div>
+          <label class="map-scope"><input id="mission-heat-south" type="checkbox"> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
           <div class="coverage-toolbar" id="coverage-toolbar">
-            <label for="coverage-layer">Surface layer
-              <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option><option value="power">Power output (Solar Elevation Angle)</option></optgroup></select>
-            </label>
+            <fieldset class="map-filters" id="coverage-filters">
+              <legend>Map layers</legend>
+              <label><input id="layer-overlap" type="checkbox" checked> Mission overlap</label>
+              <label><input id="layer-sun" type="checkbox"> Sunlight now</label>
+              <label><input id="layer-earth" type="checkbox"> Earth in view now</label>
+              <label><input id="layer-both" type="checkbox"> Both in view now</label>
+              <label><input id="layer-power" type="checkbox"> Solar power</label>
+            </fieldset>
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
             </label>
@@ -274,6 +276,7 @@
           </div>
           <div id="coverage-details" hidden>
             <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
+            <p id="coverage-overlay-note" class="muted coverage-overlay-note" hidden>Colored dots show the selected visibility conditions at the current time.</p>
             <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
             <p class="muted" id="coverage-summary"></p>
             <div id="power-details" hidden>
@@ -293,6 +296,12 @@
             <h3 id="map-site-name"></h3>
             <p class="muted" id="map-site-detail"></p>
             <a id="map-site-source" class="muted" hidden>Coordinate source</a>
+            <div class="map-compare-actions">
+              <button type="button" class="subtle" id="pick-compare-a" disabled>Use as Site A</button>
+              <button type="button" class="subtle" id="pick-compare-b" disabled>Use as Site B</button>
+              <a href="#compare-heading">View comparison</a>
+            </div>
+            <p id="map-compare-pair" class="muted" role="status"></p>
             <button type="button" id="remove-custom" class="subtle" hidden>Remove selected point</button>
           </div>
           <p class="muted" id="coordinate-status" role="status"></p>
@@ -459,15 +468,25 @@
       </section>
 
       <section class="panel comparison" id="compare" aria-labelledby="compare-heading">
-        <div class="panel-heading"><div><h2 id="compare-heading" tabindex="-1">Compare scenarios</h2><p class="muted">Change a site, delay the landing, or do both. The operating window and priorities stay the same.</p></div></div>
+        <div class="panel-heading"><div><h2 id="compare-heading" tabindex="-1">Compare landing sites</h2><p class="muted">Choose two sites. Both start at the mission landing time unless you change Site B’s date.</p></div></div>
         <div class="compare-controls">
-          <label>Scenario A <select id="compare-a" aria-label="Scenario A site"></select></label>
-          <label>Scenario B <select id="compare-b" aria-label="Scenario B site"></select></label>
+          <label>Site A <select id="compare-a"></select></label>
+          <label>Site B <select id="compare-b"></select></label>
           <label>Landing time for B (UTC) <input id="compare-time" type="datetime-local" step="60" required></label>
         </div>
         <div class="compare-actions"><button id="same-date" type="button" class="subtle">Use A’s date</button><button id="delay-b" type="button" class="subtle">Delay B by 3 days</button></div>
         <p id="compare-error" class="error" role="alert" hidden></p>
-        <div id="compare-result"></div>
+        <div id="compare-result" hidden>
+          <p id="compare-context" class="compare-context"></p>
+          <div id="compare-live">
+            <label class="compare-scrub" for="compare-scrub">Time since landing <output id="compare-clock" for="compare-scrub"></output></label>
+            <input id="compare-scrub" type="range" min="0" max="24" step=".25" value="0">
+            <div class="compare-grid compare-moons">
+              <article class="compare-scenario" id="compare-view-a"></article>
+              <article class="compare-scenario" id="compare-view-b"></article>
+            </div>
+          </div>
+        </div>
         <details class="windows"><summary>View estimated visibility windows</summary><div id="window-detail"></div></details>
       </section>
 

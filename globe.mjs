@@ -1,5 +1,5 @@
 import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
-import { coverageLayers, coveragePalette, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
+import { coveragePalette, powerContourLevels, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
 import { artemisSouthLatitude } from './mission-heat.mjs'
 export { artemisSouthLatitude } from './mission-heat.mjs'
 
@@ -55,10 +55,11 @@ uniform vec3 east;
 uniform vec3 north;
 uniform vec3 front;
 uniform vec3 sun, earth;
-uniform int layer;
+uniform vec3 visibility;
+uniform bool showPower, showHeat;
 uniform bool possibleEclipse;
 const float pi = 3.14159265359;
-vec3 coverageColor(vec3 normal) {
+void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFraction) {
   vec3 toSun = sun - normal;
   vec3 toEarth = earth - normal;
   bool sunlight = dot(normal, toSun) > 0.0;
@@ -69,20 +70,24 @@ vec3 coverageColor(vec3 normal) {
     float separation = atan(length(cross(s, e)), dot(s, e));
     sunlight = separation + asin(${(sunRadius / radius).toFixed(8)} / length(toSun)) > asin(${(earthRadius / radius).toFixed(8)} / length(toEarth));
   }
-  if (layer == ${coverageLayers.power}) {
+  powerFraction = 0.0;
+  if (showPower && sunlight && powerMax > 0.0) {
     float distanceAu = length(toSun) / ${(astronomicalUnit / radius).toFixed(8)};
-    float incidence = sunlight ? dot(normal, normalize(toSun)) : 0.0;
+    float incidence = dot(normal, normalize(toSun));
     float power = ${referencePanelPower.toFixed(2)} * incidence / (distanceAu * distanceAu);
-    float scaled = powerMax > 0.0 ? 2.0 * clamp(power / powerMax, 0.0, 1.0) : 0.0;
-    if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
-    return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
+    powerFraction = clamp(power / powerMax, 0.0, 1.0);
   }
-  if (layer == ${coverageLayers.sun}) earthView = false;
-  if (layer == ${coverageLayers.earth}) sunlight = false;
-  if (sunlight && earthView) return ${coverageInk(3)};
-  if (sunlight && layer != ${coverageLayers.both}) return ${coverageInk(1)};
-  if (earthView && layer != ${coverageLayers.both}) return ${coverageInk(2)};
-  return ${coverageInk(0)};
+  bool both = sunlight && earthView && visibility.z > 0.0;
+  bool showSun = sunlight && visibility.x > 0.0;
+  bool showEarth = earthView && visibility.y > 0.0;
+  visible = both || showSun || showEarth;
+  bool alternate = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0) >= 7.0;
+  ink = both ? ${coverageInk(3)} : showSun && (!showEarth || !alternate) ? ${coverageInk(1)} : showEarth ? ${coverageInk(2)} : ${coverageInk(0)};
+}
+vec3 powerInk(float fraction) {
+  float scaled = fraction * 2.0;
+  if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
+  return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
 }
 void main() {
   vec2 p = (gl_FragCoord.xy - viewport / 2.0) / sphereRadius;
@@ -104,17 +109,29 @@ void main() {
   }
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
-  if (layer == ${coverageLayers.mission}) {
-    if (latitude <= northLatitude) {
+  if (latitude <= northLatitude) {
+    if (showHeat) {
       float fraction = (northLatitude - latitude) / (northLatitude + pi * .5);
       float heatLat = (fraction * (heatHeight - 1.0) + .5) / heatHeight;
       vec4 heat = texture2D(missionHeat, vec2(uv.x, heatLat));
       // Interpolate toward the terrain across the edge of a colored cell.
       surface = surface * (1.0 - heat.a) + heat.rgb * (.81 + reflectance.r * .25);
     }
-  } else if (layer > 0 && latitude <= northLatitude) {
-    float shade = .56 + reflectance.r * (255.0 / 360.0);
-    surface = coverageColor(normal) * shade;
+    if (showPower || any(greaterThan(visibility, vec3(0.0)))) {
+      vec3 ink;
+      bool visible;
+      float powerFraction;
+      conditions(normal, ink, visible, powerFraction);
+      float shade = .56 + reflectance.r * (255.0 / 360.0);
+      if (showPower && !showHeat) surface = powerInk(powerFraction) * shade;
+      if (!showHeat && !showPower) surface = ink * shade;
+      if ((showHeat || showPower) && visible && all(lessThan(mod(gl_FragCoord.xy, 7.0), vec2(2.0)))) surface = ink;
+      if (showHeat && showPower) {
+        float delta = ${powerContourLevels.reduce((expr, level) => expr ? `min(${expr}, abs(powerFraction - ${level.toFixed(2)}))` : `abs(powerFraction - ${level.toFixed(2)})`, '')};
+        float width = clamp(fwidth(powerFraction), .001, .045);
+        surface = mix(surface, vec3(1.0, .98, .87), 1.0 - smoothstep(width * .35, width * 1.1, delta));
+      }
+    }
   }
   float edge = abs(latitude - ${(artemisSouthLatitude * rad).toFixed(10)});
   float pixel = max(length(vec2(dFdx(latitude), dFdy(latitude))), .00002);
@@ -134,7 +151,7 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature) {
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
@@ -155,7 +172,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.enableVertexAttribArray(point)
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
-    'sun', 'earth', 'layer', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
+    'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
     'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -193,14 +210,16 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let powerMax = solarPowerScaleMax
   let appliedScores
   let scoresDirty = false
-  let overlayLayer = 'off'
+  let visibility = 0
+  let power = false
+  let heatVisible = false
   let selected
   let drag
   const pointers = new Map()
   let ready = false
   let reliefReady = false
   const markers = new Map()
-  const featureContext = featureCanvas.getContext('2d')
+  const featureContext = featureCanvas?.getContext('2d')
   const globeImage = new Image()
   globeImage.onload = () => {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, globeImage)
@@ -224,7 +243,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     ready = true
     draw()
   }
-  if (gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 4096) {
+  if (detail && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 4096) {
     globeImage.addEventListener('load', () => {
       detailImage.src = new URL('./assets/moon-color-4k.webp', import.meta.url).href
     }, { once: true })
@@ -252,10 +271,12 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     const [poleX, poleY, poleDepth] = projectSite(southPoleView, orientation)
     const poleLeft = width / 2 + size * poleX
     const poleTop = height / 2 - size * poleY
-    poleMarker.hidden = poleDepth <= .05 || poleLeft < 6 || poleLeft > width - 6 || poleTop < 6 || poleTop > height - 6
-    poleMarker.style.left = poleLeft + 'px'
-    poleMarker.style.top = poleTop + 'px'
-    poleMarker.classList.toggle('pole-caption-left', poleLeft > width - 122)
+    if (poleMarker) {
+      poleMarker.hidden = poleDepth <= .05 || poleLeft < 6 || poleLeft > width - 6 || poleTop < 6 || poleTop > height - 6
+      poleMarker.style.left = poleLeft + 'px'
+      poleMarker.style.top = poleTop + 'px'
+      poleMarker.classList.toggle('pole-caption-left', poleLeft > width - 122)
+    }
     for (const site of sites) {
       const [x, y, depth] = projectSite(site, orientation)
       const left = width / 2 + size * x
@@ -265,7 +286,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       marker.style.setProperty('--x', left + 'px')
       marker.style.setProperty('--y', top + 'px')
       marker.classList.toggle('selected', selected === site.id)
-      const nearPoleMarker = !poleMarker.hidden && top > poleTop - 18 && top < poleTop + 37 && Math.abs(left - poleLeft) < 55
+      const nearPoleMarker = poleMarker && !poleMarker.hidden && top > poleTop - 18 && top < poleTop + 37 && Math.abs(left - poleLeft) < 55
       marker.classList.toggle('secondary', selected !== site.id && (zoom < 2.4 || nearPoleMarker))
       const label = marker.firstChild.textContent
       marker.classList.toggle('flip', left > width - Math.min(width * .62, label.length * 6.6 + 24))
@@ -276,7 +297,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
 
   function drawFeatures(width, height, size, ratio, orientation) {
     featureHits = []
-    if (featureCanvas.hidden || !featureContext) return
+    if (!featureContext || featureCanvas.hidden) return
     featureCanvas.width = Math.round(width * ratio)
     featureCanvas.height = Math.round(height * ratio)
     const ctx = featureContext
@@ -355,14 +376,14 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       const clientY = event.clientY - bounds.top
       const label = featureHits.find(hit => Math.abs(hit.top - clientY) < 8 && clientX >= hit.left && clientX <= hit.right)
       if (label) {
-        onFeature(label.feature)
+        onFeature?.(label.feature)
         drag = null
         return
       }
       const x = (clientX - bounds.width / 2) / size
       const y = (bounds.height / 2 - clientY) / size
       const point = pointOnGlobe(x, y, globeOrientation(latitude, longitude))
-      if (point) onPoint(point)
+      if (point) onPoint?.(point)
     }
     drag = null
   })
@@ -383,13 +404,18 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     zoom: changeZoom,
     center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
-    setCoverage(frame, layer = 'off', nextNorth = 90, nextPowerMax = solarPowerScaleMax) {
-      if (overlayFrame === frame && overlayLayer === layer && northLatitude === nextNorth && powerMax === nextPowerMax) return
+    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) {
+      if (overlayFrame === frame && visibility === nextVisibility && power === nextPower && heatVisible === Boolean(heatRaster) &&
+          (!heatRaster || heatImage === heatRaster) && northLatitude === nextNorth && powerMax === nextPowerMax) return
       overlayFrame = frame
-      overlayLayer = layer
+      visibility = nextVisibility
+      power = nextPower
+      heatVisible = Boolean(heatRaster)
       northLatitude = nextNorth
       powerMax = nextPowerMax
-      gl.uniform1i(uniforms.layer, frame ? coverageLayers[layer] : 0)
+      gl.uniform3f(uniforms.visibility, visibility & 1, visibility & 2, visibility & 4)
+      gl.uniform1i(uniforms.showPower, Number(power))
+      gl.uniform1i(uniforms.showHeat, Number(heatVisible))
       gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
       gl.uniform1f(uniforms.powerMax, powerMax)
       if (frame) {
@@ -398,23 +424,15 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
         gl.uniform3fv(uniforms.earth, earth.map(value => value / radius))
         gl.uniform1i(uniforms.possibleEclipse, Number(totalityPossible(sun, earth)))
       }
-      draw()
-    },
-    setMissionHeat(image, nextNorth) {
-      if (overlayLayer === 'mission' && heatImage === image && northLatitude === nextNorth) return
-      if (heatImage !== image) {
+      if (heatRaster && heatImage !== heatRaster) {
         gl.activeTexture(gl.TEXTURE2)
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, heatRaster)
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
         gl.activeTexture(gl.TEXTURE0)
-        heatImage = image
+        heatImage = heatRaster
+        gl.uniform1f(uniforms.heatHeight, heatRaster.height)
       }
-      northLatitude = nextNorth
-      gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
-      gl.uniform1f(uniforms.heatHeight, image.height)
-      overlayLayer = 'mission'
-      gl.uniform1i(uniforms.layer, coverageLayers.mission)
       draw()
     },
     reset() { latitude = -12; longitude = 17; zoom = 1; draw() },
@@ -453,7 +471,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
           const label = document.createElement('span')
           label.className = 'pin-text'
           marker.append(label)
-          marker.addEventListener('click', () => onSelect(site.id))
+          if (onSelect) marker.addEventListener('click', () => onSelect(site.id))
+          else marker.tabIndex = -1
           markers.set(site.id, marker)
           markerLayer.append(marker)
         }

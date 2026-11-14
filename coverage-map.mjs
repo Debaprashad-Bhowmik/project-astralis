@@ -16,8 +16,15 @@ export function subPoint([x, y, z]) {
   return { lat: Math.atan2(z, Math.hypot(x, y)) / radians, lon: wrapLongitude(Math.atan2(y, x) / radians) }
 }
 
-export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4, mission: 5, power: 6 }
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
+export const visibilityLayers = { sun: 1, earth: 2, both: 4 }
+export const powerContourLevels = [.25, .5, .75]
+
+export function coverageColorIndex(point, visibility, alternate = false) {
+  if (point === 3 && (visibility & visibilityLayers.both)) return 3
+  const selected = point & visibility & 3
+  return selected === 3 ? (alternate ? 2 : 1) : selected
+}
 export const solarPowerScaleMax = 300
 export const solarPowerPalette = [[48, 51, 65], [225, 139, 61], [255, 243, 159]]
 export function solarPowerColor(watts, maxPower = solarPowerScaleMax) {
@@ -91,7 +98,8 @@ export function createCoverageMap(canvas, onPoint) {
   let basemapDirty = true
   let frame
   let site
-  let mode = 'all'
+  let visibility = 0
+  let power = false
   let heatRaster
   let northLatitude = 90
   let powerMax = solarPowerScaleMax
@@ -125,16 +133,32 @@ export function createCoverageMap(canvas, onPoint) {
       }
       basemapDirty = false
     }
-    const power = mode === 'power'
-    const model = power ? createSolarPowerModel(...frame) : createCoverageModel(...frame)
-    const layer = { all: 3, sun: 1, earth: 2, both: 3 }[mode]
+    const visibilityAt = visibility ? createCoverageModel(...frame) : null
+    const powerAt = power ? createSolarPowerModel(...frame) : null
     for (let row = 0; row < rasterHeight; row++) {
       for (let col = 0; col < rasterWidth; col++) {
-        const point = model(cosLat[row] * cosLon[col], cosLat[row] * sinLon[col], sinLat[row])
+        const x = cosLat[row] * cosLon[col]
+        const y = cosLat[row] * sinLon[col]
+        const z = sinLat[row]
+        const key = visibilityAt ? coverageColorIndex(visibilityAt(x, y, z), visibility, (col + row) % 14 >= 7) : 0
         const offset = 4 * (row * rasterWidth + col)
         const shade = basemap ? .56 + basemap[offset] / 360 : .83
-        if (power) {
-          const scaled = powerMax > 0 ? clamp(point / powerMax, 0, 1) * 2 : 0
+        const fraction = powerAt && powerMax > 0 ? clamp(powerAt(x, y, z) / powerMax, 0, 1) : 0
+        const dotted = key && col % 7 < 2 && row % 7 < 2
+        const contour = heatRaster && power && fraction > .2 && fraction < .8 && powerContourLevels.some(level => Math.abs(fraction - level) < .008)
+        pixels.data[offset + 3] = 255
+        if (contour) {
+          pixels.data[offset] = 255
+          pixels.data[offset + 1] = 249
+          pixels.data[offset + 2] = 221
+          pixels.data[offset + 3] = 245
+        } else if ((power || heatRaster) && dotted) {
+          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel]
+          pixels.data[offset + 3] = 240
+        } else if (heatRaster) {
+          pixels.data[offset + 3] = 0
+        } else if (power) {
+          const scaled = fraction * 2
           const segment = scaled < 1 ? 0 : 1
           const low = solarPowerPalette[segment]
           const high = solarPowerPalette[segment + 1]
@@ -142,10 +166,8 @@ export function createCoverageMap(canvas, onPoint) {
             pixels.data[offset + channel] = (low[channel] + (high[channel] - low[channel]) * (scaled - segment)) * shade
           }
         } else {
-          const key = mode === 'both' ? (point === 3 ? 3 : 0) : point & layer
           for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel] * shade
         }
-        pixels.data[offset + 3] = 255
       }
     }
     rasterCtx.putImageData(pixels, 0, 0)
@@ -154,8 +176,9 @@ export function createCoverageMap(canvas, onPoint) {
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
-    if (!width || !height || !site || (!frame && !heatRaster && mode !== 'off')) return
-    if (!heatRaster && mode !== 'off' && dirty) tint()
+    if (!width || !height || !site) return
+    const live = frame && (visibility || power)
+    if (live && dirty) tint()
     const pixel = Math.min(2, devicePixelRatio || 1)
     const pw = Math.round(width * pixel)
     const ph = Math.round(height * pixel)
@@ -164,7 +187,7 @@ export function createCoverageMap(canvas, onPoint) {
       canvas.height = ph
     }
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
-    if (heatRaster || mode === 'off') {
+    if (heatRaster || !live) {
       ctx.fillStyle = '#111116'
       ctx.fillRect(0, 0, width, height)
       if (texture.naturalWidth) drawTerrain(ctx, width, height)
@@ -172,7 +195,8 @@ export function createCoverageMap(canvas, onPoint) {
         const rowHeight = height / (heatRaster.height - 1)
         ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
       }
-    } else ctx.drawImage(raster, 0, 0, width, height)
+    }
+    if (live) ctx.drawImage(raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
     ctx.lineWidth = 1
@@ -224,25 +248,26 @@ export function createCoverageMap(canvas, onPoint) {
       ctx.fillText(label, left, top)
     }
     mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
-    if (frame && !heatRaster) {
-      mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
-      if (mode !== 'power') mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
+    if (live) {
+      if (power || (visibility & 5)) mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
+      if (visibility & 6) mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
     }
   }
 
   new ResizeObserver(draw).observe(canvas)
   canvas.addEventListener('click', event => {
-    if (!site || (!frame && !heatRaster && mode !== 'off')) return
+    if (!site) return
     const rect = canvas.getBoundingClientRect()
     onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height, northLatitude))
   })
 
-  return (nextFrame, nextSite, nextMode, { heatRaster: nextHeatRaster, northLatitude: nextNorthLatitude = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) => {
+  return (nextFrame, nextSite, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster: nextHeatRaster, northLatitude: nextNorthLatitude = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) => {
     if (northLatitude !== nextNorthLatitude) basemapDirty = true
-    if (frame !== nextFrame || mode !== nextMode || basemapDirty || powerMax !== nextPowerMax) dirty = true
+    if (frame !== nextFrame || visibility !== nextVisibility || power !== nextPower || Boolean(heatRaster) !== Boolean(nextHeatRaster) || basemapDirty || powerMax !== nextPowerMax) dirty = true
     frame = nextFrame
     site = nextSite
-    mode = nextMode
+    visibility = nextVisibility
+    power = nextPower
     heatRaster = nextHeatRaster
     northLatitude = nextNorthLatitude
     powerMax = nextPowerMax

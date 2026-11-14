@@ -7,7 +7,7 @@ import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, system
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
-import { coverageProject, coverageUnproject, createCoverageModel, southPolePowerMax, subPoint } from './coverage-map.mjs'
+import { coverageProject, coverageUnproject, createCoverageModel, coverageColorIndex, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
 import { createSolarPowerModel } from './coverage-map.mjs'
 import { skyPathSegments } from './sky-view.mjs'
@@ -247,6 +247,19 @@ test('global map coordinates round-trip and wrap the longitude seam', () => {
   assert.ok(Math.abs(result.lat - site.lat) < 1e-9 && Math.abs(result.lon - site.lon) < 1e-9)
   assert.deepEqual(coverageProject({ lat: 90, lon: 180 }), { x: 0, y: 0 })
   assert.equal(coverageUnproject(1, .5).lon, -180)
+})
+
+test('visibility checkboxes independently display Sun, Earth, and both', () => {
+  assert.equal(coverageColorIndex(3, 1), 1)
+  assert.equal(coverageColorIndex(3, 2), 2)
+  assert.equal(coverageColorIndex(1, 4), 0)
+  assert.equal(coverageColorIndex(2, 4), 0)
+  assert.equal(coverageColorIndex(3, 4), 3)
+  assert.equal(coverageColorIndex(3, 3, false), 1)
+  assert.equal(coverageColorIndex(3, 3, true), 2)
+  assert.equal(coverageColorIndex(3, 7), 3)
+  assert.equal(coverageColorIndex(1, 7), 1)
+  assert.equal(coverageColorIndex(2, 7), 2)
 })
 
 test('polar map coordinates span only the selected latitude band', () => {
