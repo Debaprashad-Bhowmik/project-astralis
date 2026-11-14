@@ -20,7 +20,7 @@ test('space calendar years use exact UTC bounds and include leap day', () => {
   assert.equal(leap.months[2], 60 * 24)
   assert.equal(calendarSpaceWindow(2029).last - calendarSpaceWindow(2029).start, (365 * 24 - .25) * hour)
 })
-import { overlapStep, missionOverlapGrid, overlapScore, windowHours } from './mission-heat.mjs'
+import { overlapStep, missionOverlapGrid, overlapColors, overlapRgb, windowHours } from './mission-heat.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -35,23 +35,25 @@ test('mission overlap counts the intersection of the two visible parts of each i
   assert.equal(overlapStep(3, -1, -1, 3, 0, .5), .25)
 })
 
-test('mission heat divides by the entire interval and preserves gaps in each quarter', () => {
-  assert.equal(overlapScore(0, 24), 0)
-  assert.equal(overlapScore(6, 24), .25)
-  assert.equal(overlapScore(18, 24), .75)
-  assert.equal(overlapScore(24, 24), 1)
+test('mission heat keeps overlap in hours and colors it from zero through the highest overlap', () => {
+  const overlap = windowHours([[0, 3], [5, 10]], 0, 10)
+  assert.equal(overlap, 8)
+  assert.deepEqual(overlapRgb(0, 8), overlapColors[0])
+  assert.deepEqual(overlapRgb(4, 8), overlapColors[1])
+  assert.deepEqual(overlapRgb(overlap, 8), overlapColors[2])
+  assert.deepEqual(overlapRgb(0, 0), overlapColors[0])
   assert.equal(windowHours([[0, 3], [7, 15], [18, 24]], 6, 12), 5)
   const sun = [149600000000, 0, 0]
   const earthNear = [300000000, 200000000, 0]
   const earthFar = [-300000000, -200000000, 0]
-  const grid = missionOverlapGrid([earthNear, earthNear, earthFar, earthFar, earthFar].map(earth => [sun, earth]), 8, 3)
+  const grid = missionOverlapGrid([earthNear, earthNear, earthFar, earthFar, earthFar].map(earth => [sun, earth]), 2.5, 8, 3)
   const target = 12
-  assert.ok(grid.periods[0].values[target] > .25 && grid.periods[0].values[target] < .375)
-  assert.equal(grid.periods[1].values[target], 1)
-  assert.ok(grid.periods[2].values[target] > .49 && grid.periods[2].values[target] < .5)
+  assert.ok(grid.periods[0].values[target] > 2.5 && grid.periods[0].values[target] < 3.75)
+  assert.equal(grid.periods[1].values[target], 2.5)
+  assert.ok(grid.periods[2].values[target] > 1.225 && grid.periods[2].values[target] < 1.25)
   assert.equal(grid.periods[3].values[target], 0)
   assert.equal(grid.periods[4].values[target], 0)
-  const eclipse = missionOverlapGrid([[sun, [384400000, 0, 0]], [sun, [384400000, 0, 0]]], 8, 4)
+  const eclipse = missionOverlapGrid([[sun, [384400000, 0, 0]], [sun, [384400000, 0, 0]]], .25, 8, 4)
   assert.ok(eclipse.periods.every(period => period.values.every(value => value === 0)))
 })
 

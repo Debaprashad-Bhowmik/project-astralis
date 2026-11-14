@@ -4,7 +4,6 @@ import { totalityPossible } from './coverage-map.mjs'
 export const overlapColors = [[198, 56, 70], [239, 177, 75], [57, 214, 148]]
 export const missionGridHeight = 91
 export const missionQuarters = 4
-export const overlapScore = (hours, duration) => duration > 0 ? Math.min(1, Math.max(0, hours / duration)) : 0
 
 export function windowHours(windows, start, end) {
   return windows.reduce((hours, [from, to]) => hours + Math.max(0, Math.min(to, end) - Math.max(from, start)), 0)
@@ -21,7 +20,7 @@ export function overlapStep(sunBefore, sunAfter, earthBefore, earthAfter, from =
   return Math.max(0, end - start)
 }
 
-export function missionOverlapGrid(frames, width = 180, height = missionGridHeight) {
+export function missionOverlapGrid(frames, stepHours, width = 180, height = missionGridHeight) {
   const radians = Math.PI / 180
   const longitude = Array.from({ length: width }, (_, col) => ((col + .5) * 360 / width - 180) * radians)
   const directions = longitude.map(angle => [Math.cos(angle), Math.sin(angle)])
@@ -30,7 +29,7 @@ export function missionOverlapGrid(frames, width = 180, height = missionGridHeig
     const earthDistance = Math.hypot(...earth)
     return { sun, earth, sunDistance, earthDistance, eclipse: totalityPossible(sun, earth) }
   })
-  const periods = Array.from({ length: missionQuarters + 1 }, () => ({ values: new Float32Array(width * height) }))
+  const periods = Array.from({ length: missionQuarters + 1 }, () => ({ values: new Float32Array(width * height), maxHours: 0 }))
   const quarterLength = (samples.length - 1) / missionQuarters
   const intervals = samples.slice(1).map((_, i) => {
     const first = Math.floor(i / quarterLength)
@@ -73,16 +72,20 @@ export function missionOverlapGrid(frames, width = 180, height = missionGridHeig
       }
       const index = row * width + col
       for (let quarter = 0; quarter < missionQuarters; quarter++) {
-        periods[quarter + 1].values[index] = overlapScore(totals[quarter], quarterLength)
+        periods[quarter + 1].values[index] = totals[quarter] * stepHours
       }
-      periods[0].values[index] = overlapScore(totals.reduce((sum, value) => sum + value, 0), samples.length - 1)
+      periods[0].values[index] = totals.reduce((sum, value) => sum + value, 0) * stepHours
     }
+  }
+  for (const period of periods) {
+    period.maxHours = period.values.reduce((max, value) => Math.max(max, value), 0)
   }
   return { width, height, periods }
 }
 
-export function overlapRgb(score) {
-  const segment = score < .5 ? 0 : 1
-  const amount = score * 2 - segment
+export function overlapRgb(hours, maxHours) {
+  const position = maxHours > 0 ? Math.min(1, Math.max(0, hours / maxHours)) : 0
+  const segment = position < .5 ? 0 : 1
+  const amount = position * 2 - segment
   return overlapColors[segment].map((start, channel) => Math.round(start + (overlapColors[segment + 1][channel] - start) * amount))
 }

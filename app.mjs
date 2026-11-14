@@ -5,7 +5,7 @@ import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
 import { createCoverageMap, subPoint } from './coverage-map.mjs'
-import { missionOverlapGrid, missionQuarters, overlapRgb, overlapScore, windowHours } from './mission-heat.mjs'
+import { missionOverlapGrid, missionQuarters, overlapRgb, windowHours } from './mission-heat.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -222,7 +222,7 @@ function recalculate(reuseSettings = false) {
   const { frames } = missionFrames
   const sites = [...catalog.catalog, ...customSites]
   ranked = rank(sites.map(site => evaluate(site, frames, duration, horizon === 'terrain')), weights, limits, duration)
-  for (const layer of heatLayers.values()) layer.scores = undefined
+  for (const layer of heatLayers.values()) layer.overlaps = undefined
   if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
   get('time-slider').max = duration
@@ -559,6 +559,7 @@ function showMissionHeat(flat) {
     if (heatJob === missionFrames) return
     status.textContent = 'Calculating mission overlap…'
     const job = missionFrames
+    const stepHours = catalog.step / 3600
     heatJob = job
     const publish = grid => {
       if (missionFrames !== job) return
@@ -567,7 +568,7 @@ function showMissionHeat(flat) {
     }
     const fallback = () => setTimeout(() => {
       if (missionFrames !== job) return
-      try { publish(missionOverlapGrid(job.frames)) }
+      try { publish(missionOverlapGrid(job.frames, stepHours)) }
       catch { status.textContent = 'The overlap heat map could not be calculated. Change the mission window to try again.' }
     }, 0)
     try {
@@ -583,7 +584,7 @@ function showMissionHeat(flat) {
         if (heatWorker === worker) heatWorker = undefined
         fallback()
       }
-      worker.postMessage(job.frames)
+      worker.postMessage({ frames: job.frames, stepHours })
     } catch { fallback() }
     return
   }
@@ -595,25 +596,34 @@ function showMissionHeat(flat) {
   const hours = period ? duration / missionQuarters : duration
   const from = period ? (period - 1) * hours : 0
   const to = from + hours
-  if (!heatLayers.has(period)) {
+  if (!heatLayers.has(period)) heatLayers.set(period, {})
+  const layer = heatLayers.get(period)
+  const { site, metrics, sun, earth } = active
+  const gridPeriod = heatGrid.periods[period]
+  if (!layer.overlaps) {
+    const listed = ranked.map(({ site, metrics }) => [site.id, windowHours(metrics.both, from, to)])
+    const best = ranked.reduce((highest, row, index) => listed[index][1] > listed[highest][1] ? index : highest, 0)
+    layer.best = ranked[best]
+    layer.maxHours = Math.max(gridPeriod.maxHours, listed[best][1])
+    layer.overlaps = new Map(listed.map(([id, overlap]) => {
+      const number = formatHours(overlap)
+      return [id, { number, overlap, label: `${number} of simultaneous sunlight and Earth visibility`,
+        color: 'rgb(' + overlapRgb(overlap, layer.maxHours).join(',') + ')', nearZero: overlap <= 1e-8 }]
+    }))
+  }
+  const { maxHours, overlaps, best } = layer
+  if (!layer.colors || layer.colorMax !== maxHours) {
     const colors = document.createElement('canvas')
     colors.width = heatGrid.width
     colors.height = heatGrid.height
     const ctx = colors.getContext('2d')
     const image = ctx.createImageData(heatGrid.width, heatGrid.height)
-    heatGrid.periods[period].values.forEach((value, index) => image.data.set([...overlapRgb(value), 255], index * 4))
+    gridPeriod.values.forEach((value, index) => image.data.set([...overlapRgb(value, maxHours), 255], index * 4))
     ctx.putImageData(image, 0, 0)
-    heatLayers.set(period, { colors })
+    layer.colors = colors
+    layer.colorMax = maxHours
   }
-  const layer = heatLayers.get(period)
-  layer.scores ??= new Map(ranked.map(({ site, metrics }) => {
-    const overlap = windowHours(metrics.both, from, to)
-    const score = overlapScore(overlap, hours)
-    const number = score > 0 && score < .01 ? '<0.01' : score < 1 - 1e-10 && score >= .995 ? '>0.99' : score.toFixed(2)
-    return [site.id, { number, overlap, label: `Overlap score ${number}, ${formatHours(overlap)} together`,
-      color: 'rgb(' + overlapRgb(score).join(',') + ')', nearZero: score <= .01 }]
-  }))
-  const { colors, scores } = layer
+  const { colors } = layer
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
     drawCoverage(null, active.site, 'mission', colors)
@@ -621,17 +631,20 @@ function showMissionHeat(flat) {
     get('coverage-canvas').setAttribute('aria-describedby', 'mission-heat-notes mission-heat-site')
   } else {
     globe?.setMissionHeat(colors)
-    globe?.setSiteScores(scores)
+    globe?.setSiteScores(overlaps)
   }
-  const { site, metrics, sun, earth } = active
-  const best = ranked.reduce((highest, row) => scores.get(row.site.id).overlap > scores.get(highest.site.id).overlap ? row : highest)
-  const bestScore = scores.get(best.site.id)
-  const siteScore = scores.get(site.id)
+  const bestOverlap = overlaps.get(best.site.id).overlap
+  const siteOverlap = overlaps.get(site.id).overlap
+  const scale = get('mission-heat-scale')
+  scale.classList.toggle('no-overlap', maxHours === 0)
+  scale.setAttribute('aria-label', maxHours > 0 ? `Overlap scale from zero to ${formatHours(maxHours)}` : 'Zero overlap hours across the map and all listed sites')
+  get('mission-heat-mid').textContent = maxHours > 0 ? formatHours(maxHours / 2) : ''
+  get('mission-heat-max').textContent = maxHours > 0 ? formatHours(maxHours) + ' · Highest' : ''
   status.textContent = `${period ? 'Quarter ' + period : 'Entire mission'} · ${dateLabel(start + from * hour)} → ${dateLabel(start + to * hour)} · ${formatHours(hours)}`
-  get('mission-heat-best').textContent = bestScore.overlap > 0
-    ? `Best listed overlap · ${siteName(best.site)} · ${formatHours(bestScore.overlap)} of ${formatHours(hours)}`
+  get('mission-heat-best').textContent = bestOverlap > 0
+    ? `Best listed overlap · ${siteName(best.site)} · ${formatHours(bestOverlap)} of ${formatHours(hours)}`
     : 'No listed site has Sun and Earth in view together during this period.'
-  get('mission-heat-site').textContent = `${siteName(site)} · Score ${siteScore.number} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteScore.overlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizon)}`
+  get('mission-heat-site').textContent = `${siteName(site)} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteOverlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizon)}`
   showHeatWindows(metrics.both, from, to)
   results.hidden = false
 }
