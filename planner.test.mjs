@@ -43,6 +43,7 @@ test('space calendar years use exact UTC bounds and include leap day', () => {
 })
 import { overlapStep, missionOverlapGrid, southPoleOverlapGrid, overlapColors, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailOverlapGrid, detailHoursAt } from './mission-heat-detail.mjs'
+import { polarProjection, samplePolarGrid } from './polar-shadows.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -124,6 +125,16 @@ test('a zoomed terrain grid captures a blocked point and leaves the rest of the 
   assert.equal(detailHoursAt({ lat: 0, lon: 8 }, detailed, 4), .25)
   assert.equal(detailHoursAt({ lat: 0, lon: 180 }, detailed, 0), null)
   assert.equal(overviewOverlapGrid(frames, .25, false).width, 360)
+})
+
+test('polar shadows use the LOLA stereographic orientation and interpolate measured height', () => {
+  const north = polarProjection(-89, 0)
+  const east = polarProjection(-89, 90)
+  assert.ok(Math.abs(north.x) < .001 && north.y > 30_000)
+  assert.ok(Math.abs(east.y) < .001 && Math.abs(east.x - north.y) < .001)
+  const grid = { left: 0, top: 20, spacing: 10, width: 2, height: 2, values: new Uint16Array([20000, 20020, 20040, 20060]) }
+  assert.equal(samplePolarGrid(grid, 10, 10), 15)
+  assert.equal(samplePolarGrid(grid, 30, 10), null)
 })
 
 test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {
@@ -312,7 +323,8 @@ test('solar exposure integrates only illuminated time and projects light onto a 
   const partial = solarExposure(timeline, [[.25, .75], [1, 2]], 2)
   assert.ok(Math.abs(partial.beamHours - .75) < 1e-12)
   assert.equal(partial.peak, 30)
-  assert.deepEqual(solarExposure(timeline, [], 2), { beamHours: 0, peak: null })
+  assert.ok(Math.abs(partial.energyKwh - .20415) < 1e-12)
+  assert.deepEqual(solarExposure(timeline, [], 2), { beamHours: 0, peak: null, energyKwh: 0 })
   const rising = solarExposure([{ sunEl: -30 }, { sunEl: 30 }], [[0, 1]], 1)
   assert.ok(Math.abs(rising.beamHours - (1 - Math.cos(Math.PI / 6)) / (Math.PI / 3)) < 1e-12)
 })

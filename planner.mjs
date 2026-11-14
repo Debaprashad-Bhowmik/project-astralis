@@ -160,6 +160,7 @@ export function siteSolarPower({ sunEl, sunHorizon, eclipse, sunDistance }) {
 export function solarExposure(timeline, windows, duration) {
   const step = duration / (timeline.length - 1)
   let beamHours = 0
+  let wattHours = 0
   let peak = null
   for (const [start, end] of windows) {
     for (let i = Math.floor(start / step); i < timeline.length - 1 && i * step < end; i++) {
@@ -177,14 +178,16 @@ export function solarExposure(timeline, windows, duration) {
       const low = Math.min(a, b) * radians
       const litLow = Math.max(0, low)
       const delta = high - low
-      if (delta < 1e-10) beamHours += (to - from) * flatPanelFactor((a + b) / 2)
-      else {
-        const projected = 2 * Math.sin((litLow + high) / 2) * Math.sin((high - litLow) / 2)
-        beamHours += (to - from) * projected / delta
-      }
+      const projected = delta < 1e-10 ? flatPanelFactor((a + b) / 2) :
+        2 * Math.sin((litLow + high) / 2) * Math.sin((high - litLow) / 2) / delta
+      const exposure = (to - from) * projected
+      beamHours += exposure
+      const distance = interpolate(timeline[i].sunDistance ?? astronomicalUnit, timeline[i + 1].sunDistance ?? astronomicalUnit,
+        ((from + to) / 2 - segmentStart) / step)
+      wattHours += exposure * panelPowerFacingSun(distance)
     }
   }
-  return { beamHours, peak }
+  return { beamHours, peak, energyKwh: wattHours / 1000 }
 }
 
 export function eclipseMargin(sun, earth) {
@@ -209,8 +212,8 @@ export function siteSkyModel(site, useTerrain) {
   }
 }
 
-export function evaluate(site, frames, hours, useTerrain, { includeTimeline = true } = {}) {
-  const timeline = includeTimeline ? new Array(frames.length) : null
+export function evaluate(site, frames, hours, useTerrain, { includeTimeline = true, includeEnergy = false } = {}) {
+  const timeline = includeTimeline || includeEnergy ? new Array(frames.length) : null
   const sunClearance = new Float64Array(frames.length)
   const earthClearance = new Float64Array(frames.length)
   const sampleSky = siteSkyModel(site, useTerrain)
@@ -223,7 +226,9 @@ export function evaluate(site, frames, hours, useTerrain, { includeTimeline = tr
   const step = hours / (frames.length - 1)
   const sun = visibility(sunClearance, step)
   const earth = visibility(earthClearance, step)
-  return { site, timeline, sun, earth, metrics: summarize(sun, earth, hours) }
+  const metrics = summarize(sun, earth, hours)
+  if (includeEnergy) metrics.energyKwh = solarExposure(timeline, sun, hours).energyKwh
+  return { site, timeline: includeTimeline ? timeline : null, sun, earth, metrics }
 }
 
 export function binaryFrames(buffer) {

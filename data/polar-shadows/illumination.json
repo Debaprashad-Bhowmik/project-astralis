@@ -1,0 +1,12 @@
+{
+  "name": "NASA average solar illumination",
+  "source": "AVGVISIB_75S_120M_201608.TIF",
+  "file": "illumination.bin.gz",
+  "spacing": 120,
+  "left": -192000,
+  "top": 192000,
+  "width": 3200,
+  "height": 3200,
+  "scale": 4e-05,
+  "offset": -4e-05
+}

@@ -26,9 +26,9 @@ export function coverageColorIndex(point, visibility, alternate = false) {
   return selected === 3 ? (alternate ? 2 : 1) : selected
 }
 export const solarPowerScaleMax = 300
-export const solarPowerPalette = [[48, 51, 65], [225, 139, 61], [255, 243, 159]]
+export const solarPowerPalette = [[28, 40, 74], [50, 137, 151], [250, 232, 155]]
 export function solarPowerColor(watts, maxPower = solarPowerScaleMax) {
-  const scaled = maxPower > 0 ? clamp(watts / maxPower, 0, 1) * 2 : 0
+  const scaled = maxPower > 0 ? Math.sqrt(clamp(watts / maxPower, 0, 1)) * 2 : 0
   const segment = scaled < 1 ? 0 : 1
   const low = solarPowerPalette[segment]
   const high = solarPowerPalette[segment + 1]
@@ -158,7 +158,7 @@ export function createCoverageMap(canvas, onPoint) {
         } else if (heatRaster) {
           pixels.data[offset + 3] = 0
         } else if (power) {
-          const scaled = fraction * 2
+          const scaled = Math.sqrt(fraction) * 2
           const segment = scaled < 1 ? 0 : 1
           const low = solarPowerPalette[segment]
           const high = solarPowerPalette[segment + 1]

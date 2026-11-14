@@ -1,7 +1,7 @@
 import { globeOrientation, pointOnGlobe, projectSite } from './globe.mjs'
 import { missionQuarters, windowHours } from './mission-heat.mjs'
 import { evaluate } from './planner.mjs'
-import { horizonProfile, loadTerrainForPoints } from './terrain.mjs'
+import { horizonProfile, loadPolarSampler, loadTerrainForPoints, polarHorizon } from './terrain.mjs'
 
 export async function detailOverlapGrid(frames, stepHours, view, northLatitude, terrain, anchor, loadTerrain = loadTerrainForPoints) {
   const hours = (frames.length - 1) * stepHours
@@ -14,13 +14,19 @@ export async function detailOverlapGrid(frames, stepHours, view, northLatitude, 
     return point?.lat <= northLatitude ? point : null
   })
   const sample = terrain ? await loadTerrain(points.filter(Boolean)) : null
+  const polarSample = sample && points.some(point => point?.lat <= -84) ? await loadPolarSampler(sample).catch(() => null) : null
   const periods = Array.from({ length: missionQuarters + 1 }, () => ({ values: new Float32Array(points.length).fill(-1), maxHours: 0 }))
   const quarter = hours / missionQuarters
   for (const [index, point] of points.entries()) {
     if (!point) continue
     const centeredOnAnchor = anchor && index === Math.floor(points.length / 2) && Math.abs(anchor.lat - point.lat) < .00001 &&
       Math.hypot(...projectSite(anchor, orientation).slice(0, 2)) < 1e-7
-    const site = sample ? centeredOnAnchor ? anchor : { ...point, ...horizonProfile(point.lat, point.lon, sample, undefined, 4) } : point
+    let site = point
+    if (sample) {
+      const profile = polarSample && point.lat <= -84 ? polarHorizon(point.lat, point.lon, polarSample, 6) :
+        horizonProfile(point.lat, point.lon, sample, undefined, 4)
+      site = centeredOnAnchor ? anchor : { ...point, ...profile }
+    }
     const { metrics } = evaluate(site, frames, hours, Boolean(sample), { includeTimeline: false })
     for (const [period, layer] of periods.entries()) {
       const value = period ? windowHours(metrics.both, (period - 1) * quarter, period * quarter) : metrics.overlap
@@ -28,7 +34,7 @@ export async function detailOverlapGrid(frames, stepHours, view, northLatitude, 
       layer.maxHours = Math.max(layer.maxHours, value)
     }
   }
-  return { view, orientation, size, terrain, periods }
+  return { view, orientation, size, terrain, polarTerrain: Boolean(polarSample), periods }
 }
 
 function bilinear(values, width, height, x, y, wrap = false) {

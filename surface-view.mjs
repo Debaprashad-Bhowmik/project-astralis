@@ -1,5 +1,5 @@
 import { observer, radius } from './planner.mjs'
-import { loadTerrainSampler } from './terrain.mjs'
+import { loadPolarSampler, loadTerrainSampler } from './terrain.mjs'
 
 const radians = Math.PI / 180
 const spokes = 180
@@ -733,5 +733,11 @@ export async function loadSurfaceMesh(site) {
     return new Float32Array(bytes)
   }
   const sample = await loadTerrainSampler(site.lat, site.lon, true)
+  if (site.terrain === 'LOLA polar terrain') {
+    const polar = await loadPolarSampler(sample)
+    const near = Array.from({ length: 65 }, (_, index) => index * (site.lat < -89 ? 20 : 80))
+    const ranges = [...near, ...distance.filter(range => range > near.at(-1))]
+    return terrainVertices(site, polar, ranges)
+  }
   return terrainVertices({ ...site, height: sample(site.lat, site.lon) }, sample)
 }

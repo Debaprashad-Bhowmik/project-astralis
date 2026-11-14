@@ -211,6 +211,7 @@
               <label><input id="layer-earth" type="checkbox"> Earth in view now</label>
               <label><input id="layer-both" type="checkbox"> Both in view now</label>
               <label><input id="layer-power" type="checkbox"> Solar power</label>
+              <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
             </fieldset>
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
@@ -218,6 +219,7 @@
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
           <p class="muted" id="mission-heat-models" hidden></p>
+          <p class="muted mission-heat-key" id="terrain-shadow-status" role="status" hidden></p>
           <p id="mission-heat-detail-status" class="muted mission-heat-key" role="status" hidden></p>
           <div id="globe-view">
             <div id="globe-stage" class="globe-stage">
@@ -324,9 +326,10 @@
           <div class="site-filters">
             <label>Find a site<input type="search" id="site-search" placeholder="Try Apollo 11"></label>
             <label>Site type<select id="site-group"><option value="all">All sites</option><option value="historic">Historic landings</option><option value="clps">Future CLPS targets</option><option value="study">Study points</option><option value="custom">My coordinates</option></select></label>
+            <label>Rank by<select id="rank-sort"><option value="priority">Mission priorities</option><option value="energy">Solar energy</option></select></label>
           </div>
           <p id="future-clps-note" class="muted" hidden>Feature centers represent planned mission regions for comparison. <a href="https://science.nasa.gov/lunar-science/clps-deliveries/">NASA CLPS deliveries</a></p>
-          <div class="rank-legend"><span>Site</span><span>Sunlight</span><span>Earth view</span><span>Both</span></div>
+          <div class="rank-legend"><span>Site</span><span>Sunlight</span><span>Earth view</span><span id="rank-last-column">Both</span></div>
           <ol id="rank-list"></ol>
           <p id="rank-empty" class="muted" hidden>No matching sites. Try another name or site type.</p>
         </section>
@@ -350,9 +353,11 @@
               <dt>Sun elevation at landing</dt><dd id="assessment-sun-angle"></dd>
               <dt>Highest Sun while in view</dt><dd id="assessment-peak"></dd>
               <dt>Equivalent full-sun hours</dt><dd id="assessment-exposure"></dd>
+              <dt>Estimated solar energy</dt><dd id="assessment-energy"></dd>
               <dt>Longest stretch without sunlight</dt><dd id="assessment-dark-gap"></dd>
             </dl>
             <p class="muted" id="assessment-dark-time"></p>
+            <p class="muted" id="assessment-nasa-illumination" hidden><span id="nasa-illumination-value"></span> <a href="https://pgda.gsfc.nasa.gov/products/69">NASA long-term sunlight</a></p>
           </section>
           <section class="assessment-area relay-metrics" aria-labelledby="comms-heading">
             <h3 id="comms-heading">Direct Earth visibility</h3>
@@ -497,7 +502,7 @@
           <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive both views. The 3D scene uses hourly geometric positions. Surface operations use 15-minute apparent positions. The model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. January 2024 through December 2030 is supported.</p><p>Global LOLA terrain is sampled at 16 pixels per degree, about 1.9 km north to south. Eight default polar sites use the finer 80 and 240 m LOLA grids.</p></div>
           <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
         </div>
-        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">Polar LOLA</a><a href="https://svs.gsfc.nasa.gov/4720/#section2">Global LOLA</a><a href="https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html">NASA landing archive</a></p>
+        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">Polar LOLA</a><a href="https://pgda.gsfc.nasa.gov/products/69">NASA polar illumination</a><a href="https://svs.gsfc.nasa.gov/4720/#section2">Global LOLA</a><a href="https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html">NASA landing archive</a></p>
       </section>
     </div>
   </main>

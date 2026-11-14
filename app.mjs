@@ -4,9 +4,10 @@ import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } fro
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
-import { createCoverageMap, powerContourLevels, solarPowerColor, solarPowerPalette, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers } from './coverage-map.mjs'
+import { createCoverageMap, powerContourLevels, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
+import { polarIlluminationAt } from './polar-shadows.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -19,6 +20,8 @@ const controlDate = epoch => new Date(epoch).toISOString().slice(0, 16)
 const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hours.toFixed(1))) + ' h'
 const formatPercent = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 1 })
 const formatPower = watts => `${watts > 0 && watts < .1 ? '<0.1' : Number(watts.toFixed(1))} W/m²`
+const energyNumber = value => value > 0 && value < .01 ? '<0.01' : Number(value.toFixed(2))
+const formatEnergy = value => `${energyNumber(value)} kWh/m²`
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 const skyLookahead = 30 * 24
 const chartColumns = ['sunEl', 'earthEl', 'sunHorizon', 'earthHorizon']
@@ -155,6 +158,7 @@ let coverageFrame
 let coverageEpoch
 let powerFrame
 let regionalPowerMax
+let polarShadowStatus = 'idle'
 let missionFrames
 let siteEvaluations
 let activeRankedRow
@@ -220,6 +224,7 @@ function recalculate(reuseSettings = false) {
     error('input-error')
   }
   const { start, duration, annual, weights, limits, horizon } = settings
+  get('layer-shadows').checked = horizon === 'terrain'
   const yearDates = get('mission-year-dates')
   yearDates.hidden = !annual
   yearDates.textContent = annual ? `${duration / 24} days · Ends ${dateLabel(start + duration * hour)}` : ''
@@ -245,7 +250,7 @@ function recalculate(reuseSettings = false) {
   const { rows } = siteEvaluations
   for (const site of rows.keys()) if (!sites.includes(site)) rows.delete(site)
   for (const site of sites) {
-    if (!rows.has(site)) rows.set(site, evaluate(site, missionFrames.frames, duration, horizon === 'terrain', { includeTimeline: !annual }))
+    if (!rows.has(site)) rows.set(site, evaluate(site, missionFrames.frames, duration, horizon === 'terrain', { includeTimeline: !annual, includeEnergy: true }))
   }
   ranked = rank(sites.map(site => rows.get(site)), weights, limits, duration)
   for (const { layers } of heatMaps.values()) {
@@ -379,8 +384,9 @@ function windowList(windows, start) {
 function showAssessment() {
   const { start, duration, horizon, limits } = settings
   const { site, timeline: samples, sun, earth, metrics, unmet } = active
+  void showNasaIllumination(site)
   const landing = samples[0]
-  const { beamHours, peak } = solarExposure(samples, sun, duration)
+  const { beamHours, peak, energyKwh } = solarExposure(samples, sun, duration)
   const percentage = value => formatPercent.format(value)
   const sunStatus = landing.eclipse ? 'total eclipse' : landing.sunEl > landing.sunHorizon ? 'in view' : 'blocked by skyline'
   const earthVisible = landing.earthEl > landing.earthHorizon
@@ -393,6 +399,7 @@ function showAssessment() {
     'sun-angle': `${signedDegrees(landing.sunEl)} · ${sunStatus} · ${percentage(panelFactor)} of direct beam on a flat panel`,
     peak: peak === null ? 'No sunlight in this window' : signedDegrees(peak),
     exposure: formatHours(beamHours),
+    energy: formatEnergy(energyKwh),
     'dark-gap': formatHours(metrics.darkness),
     'earth-angle': `${signedDegrees(landing.earthEl)} · ${earthVisible ? 'in view' : 'blocked by skyline'}`,
     'earth-run': formatHours(longestView),
@@ -431,30 +438,48 @@ function showAssessment() {
   get('assessment').hidden = false
 }
 
+async function showNasaIllumination(site) {
+  const reference = get('assessment-nasa-illumination')
+  reference.hidden = true
+  if (site.lat > artemisSouthLatitude) return
+  const value = await polarIlluminationAt(site.lat, site.lon).catch(() => null)
+  if (site !== active?.site || value === null) return
+  get('nasa-illumination-value').textContent = formatPercent.format(value) + ' average over the lunar nutation cycle.'
+  reference.hidden = false
+}
+
 function showRanking() {
   const query = searchText(get('site-search').value.trim())
   const group = get('site-group').value
+  const byEnergy = get('rank-sort').value === 'energy'
   const matches = ranked.filter(({ site }) => {
     const text = searchText([siteName(site), site.name, site.kind, site.location].join(' '))
     const type = site.kind.includes('Historic') ? 'historic' : futureClps(site) ? 'clps' : site.kind === 'Custom coordinates' ? 'custom' : 'study'
-    return (group === 'all' || group === type) && text.includes(query)
+    return (!byEnergy || inMapRegion(site)) && (group === 'all' || group === type) && text.includes(query)
   })
+  if (byEnergy) matches.sort((a, b) => a.unmet.length - b.unmet.length || b.metrics.energyKwh - a.metrics.energyKwh)
+  get('rank-last-column').textContent = byEnergy ? 'Energy (kWh/m²)' : 'Both'
+  get('rank-summary').textContent = byEnergy ? `Ranked by solar energy over the operating window${southOnly ? ' · South Pole only' : ''}.` :
+    ranked[0]?.place === null ? 'Showing closest matches first.' : 'Ranked for your mission priorities.'
   get('site-count').textContent = matches.length === ranked.length ? ranked.length + ' sites' : `${matches.length} of ${ranked.length}`
   get('future-clps-note').hidden = group !== 'clps'
   get('rank-empty').hidden = !!matches.length
-  get('rank-list').replaceChildren(...matches.map(row => {
+  get('rank-list').replaceChildren(...matches.map((row, index) => {
     const item = element('li')
     const button = element('button', 'rank-row' + (row.unmet.length ? ' unmet' : ''))
     button.type = 'button'
     button.setAttribute('aria-pressed', String(row.site.id === selected))
     const mission = futureClps(row.site) ? 'Future CLPS · ' + row.site.location : ''
-    button.setAttribute('aria-label', siteName(row.site) + ', ' + (mission ? mission + ', ' : '') + (row.place ? 'rank ' + row.place : 'misses ' + row.unmet.join(', ')) +
-      ', sunlight ' + formatHours(row.metrics.sun) + ', Earth in view ' + formatHours(row.metrics.earth) + ', both ' + formatHours(row.metrics.overlap))
+    const place = byEnergy && !row.unmet.length ? index + 1 : row.place
+    button.setAttribute('aria-label', siteName(row.site) + ', ' + (mission ? mission + ', ' : '') + (place ? 'rank ' + place : 'misses ' + row.unmet.join(', ')) +
+      ', sunlight ' + formatHours(row.metrics.sun) + ', Earth in view ' + formatHours(row.metrics.earth) +
+      (byEnergy ? ', solar energy ' + formatEnergy(row.metrics.energyKwh) : ', both ' + formatHours(row.metrics.overlap)))
     const name = element('span', 'site-name')
     const title = element('span', '', siteName(row.site))
     if (mission) title.append(element('small', 'rank-mission', mission))
-    name.append(element('span', 'place', row.place ?? '–'), title)
-    button.append(name, ...['sun', 'earth', 'overlap'].map(key => element('span', 'value', formatHours(row.metrics[key]))))
+    name.append(element('span', 'place', place ?? '–'), title)
+    const finalMetric = byEnergy ? energyNumber(row.metrics.energyKwh) : formatHours(row.metrics.overlap)
+    button.append(name, element('span', 'value', formatHours(row.metrics.sun)), element('span', 'value', formatHours(row.metrics.earth)), element('span', 'value', finalMetric))
     if (row.unmet.length) button.title = 'Misses: ' + row.unmet.join(', ')
     button.addEventListener('click', () => selectSite(row.site.id, true, true))
     item.append(button)
@@ -542,19 +567,37 @@ function showCoverage() {
   const mission = available && get('layer-overlap').checked
   const power = available && get('layer-power').checked
   const live = Boolean(visibility || power)
+  const shadows = available && settings.horizon === 'terrain'
+  const drawShadows = shadows && onGlobe && (live || !mission)
   const northLatitude = southOnly ? artemisSouthLatitude : 90
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
   get('mission-heat-models').hidden = !mission
-  get('coverage-details').hidden = !live
+  get('coverage-details').hidden = !live && !drawShadows
   get('power-details').hidden = !power
   for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = !visibility
-  get('coverage-clock').hidden = !live
+  get('coverage-clock').hidden = !live && !drawShadows
+  const shadowStatus = get('terrain-shadow-status')
+  shadowStatus.hidden = !shadows
+  if (shadows) {
+    const note = flat ? 'The flat map uses a smooth horizon. Use the 3D Moon for live crater shadows.' :
+      polarShadowStatus === 'loading' ? 'Loading NASA LOLA elevations for live crater shadows…' :
+        polarShadowStatus === 'failed' ? 'Live polar terrain could not load. The 3D overview uses a smooth horizon.' :
+          polarShadowStatus === 'ready' ? 'Live LOLA shadows ready · 84°S–90°S. Scrub time to watch the shadows move.' :
+            'Live crater shadows are available on the 3D Moon from 84°S to 90°S with a current-time layer.'
+    if (shadowStatus.textContent !== note) shadowStatus.textContent = note
+  }
+  const liveTerrain = drawShadows && polarShadowStatus === 'ready'
+  const mapHorizonNote = liveTerrain ? 'The 3D map accounts for LOLA terrain from 84°S to 90°S. Other areas use a smooth horizon.' :
+    'The map uses a smooth horizon.'
+  get('coverage-notes').textContent = mapHorizonNote + ' Selected sites use your chosen horizon model.'
+  get('power-notes').textContent = 'Estimated output for a horizontal panel at 20% efficiency. ' + mapHorizonNote +
+    ' Shadows and total eclipses give zero direct output.'
   queueHeatDetail()
   if (!available) return
   const heat = mission ? showMissionHeat() : null
   const epoch = settings.start + elapsed * hour
-  if (live && coverageEpoch !== epoch) {
+  if ((live || drawShadows) && coverageEpoch !== epoch) {
     coverageEpoch = epoch
     coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
   }
@@ -583,11 +626,12 @@ function showCoverage() {
     const scaleNote = get('power-scale-note')
     scaleNote.hidden = !southOnly && !heat
     const contours = heat && powerMax > 0 ? `Power contours · ${powerContourLevels.map(level => formatPower(level * powerMax)).join(', ')}.` : ''
-    const regional = southOnly ? powerMax > 0 ? 'Scale follows the South Pole maximum at this time.' : 'Zero modeled solar power in this region at this time.' : ''
+    const regional = southOnly ? powerMax > 0 ? 'Scale uses the estimated South Pole upper bound at this time.' : 'Zero modeled solar power in this region at this time.' : ''
     scaleNote.textContent = [contours, regional].filter(Boolean).join(' ')
   }
-  const options = { northLatitude, powerMax, visibility, power, heatRaster: flat ? heat?.colors : heat?.globeRaster, heatContrast: heat?.contrast }
-  const frame = live ? coverageFrame : null
+  const options = { northLatitude, powerMax, visibility, power, terrainShadows: drawShadows,
+    heatRaster: flat ? heat?.colors : heat?.globeRaster, heatContrast: heat?.contrast }
+  const frame = live || drawShadows ? coverageFrame : null
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
     drawCoverage(frame, active.site, options)
@@ -602,12 +646,12 @@ function showCoverage() {
     globe?.setSiteScores(scores)
   }
   const type = [mission && 'mission overlap', visibility && 'visibility', power && 'solar power'].filter(Boolean).join(', ') || 'terrain'
-  const description = ['map-scope', mission && 'mission-heat-models mission-heat-status mission-heat-site mission-heat-reference',
+  const description = ['map-scope', shadows && 'terrain-shadow-status', mission && 'mission-heat-models mission-heat-status mission-heat-site mission-heat-reference',
     visibility && 'coverage-notes coverage-summary', power && 'power-notes power-scale-note power-output power-site-angle'].filter(Boolean).join(' ')
   get('coverage-canvas').setAttribute('aria-label', `${southOnly ? 'South Pole' : 'Whole-Moon'} ${type} map`)
   get('coverage-canvas').setAttribute('aria-describedby', description)
   if (onGlobe) get('globe-canvas').setAttribute('aria-describedby', `globe-pole-note ${description}`)
-  if (!live) return
+  if (!live && !drawShadows) return
   const time = dateLabel(epoch)
   const clock = get('coverage-clock')
   clock.textContent = time
@@ -628,7 +672,7 @@ function showCoverage() {
     get('coverage-summary').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}` : siteOutside
   }
   const overhead = [
-    (power || (visibility & 5)) && `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`,
+    (drawShadows || power || (visibility & 5)) && `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`,
     (visibility & 6) && `Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`,
   ]
   get('coverage-overhead').textContent = overhead.filter(Boolean).join(' · ')
@@ -797,7 +841,7 @@ function showMissionHeat() {
   if (detail) {
     const status = get('mission-heat-detail-status')
     const typicalKm = Math.max(detail.view.x, detail.view.y) * 2 * radius / (detail.size - 1) / 1000
-    status.textContent = `${detail.terrain ? 'LOLA terrain close-up' : 'Smooth-horizon close-up'} · ~${typicalKm.toFixed(0)} km between samples near center.` +
+    status.textContent = `${detail.polarTerrain ? 'LOLA polar terrain close-up' : detail.terrain ? 'LOLA terrain close-up' : 'Smooth-horizon close-up'} · ~${typicalKm.toFixed(1)} km between samples near center.` +
       (layer.contrast ? ` Contrast boosted from ${formatHours(layer.contrast[0] * maxHours)} to ${formatHours(layer.contrast[1] * maxHours)}.` : '')
   }
   const scale = get('mission-heat-scale')
@@ -868,7 +912,8 @@ function showCoverageLegend() {
   get('coverage-overlay-note').hidden = !visibility || !layered
 }
 
-get('power-gradient').style.setProperty('--power-ramp', `linear-gradient(90deg, ${solarPowerPalette.map(color => `rgb(${color.join(',')})`).join(', ')})`)
+const powerStops = Array.from({ length: 21 }, (_, index) => `rgb(${solarPowerColor(index / 20, 1).join(',')}) ${index * 5}%`)
+get('power-gradient').style.setProperty('--power-ramp', `linear-gradient(90deg, ${powerStops.join(', ')})`)
 
 function installGlobe() {
   const canvas = get('globe-canvas')
@@ -881,7 +926,10 @@ function installGlobe() {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
-  }, { onViewChange: queueHeatDetail }) }
+  }, { onViewChange: queueHeatDetail, onTerrainStatus(status) {
+    polarShadowStatus = status
+    requestAnimationFrame(showCoverage)
+  } }) }
   catch (reason) { fallback(reason.message); return }
   canvas.addEventListener('textureerror', () => fallback('The 3D texture could not load. The polar map is available.'))
   canvas.addEventListener('webglcontextlost', () => fallback('3D rendering became unavailable. The polar map is available.'))
@@ -1471,7 +1519,7 @@ function compare() {
       row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
     axis(duration), ...timeline(row, duration, Math.min(elapsed, duration)), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
       ' · Longest Earth gap ' + formatHours(row.metrics.blackout)),
-    element('p', 'muted stats', `${formatHours(power.beamHours)} equivalent full sun · ${power.peak === null ? 'No direct sunlight' : `Peak Sun ${signedDegrees(power.peak)}`}`))
+    element('p', 'muted stats', `${formatHours(power.beamHours)} equivalent full sun · ${formatEnergy(power.energyKwh)} · ${power.peak === null ? 'No direct sunlight' : `Peak Sun ${signedDegrees(power.peak)}`}`))
     const detail = element('article')
     detail.append(element('h3', '', title))
     for (const [key, windows] of [['sun', row.sun], ['earth', row.earth], ['overlap', row.metrics.both]]) {
@@ -1718,6 +1766,7 @@ get('remove-custom').addEventListener('click', () => {
 })
 get('site-search').addEventListener('input', showRanking)
 get('site-group').addEventListener('change', showRanking)
+get('rank-sort').addEventListener('change', showRanking)
 get('named-features').addEventListener('toggle', () => {
   if (get('named-features').open) void loadFeatures()
   updateFeatureLayer()
@@ -1827,7 +1876,11 @@ get('space-year-speed').addEventListener('change', () => {
 get('show-map').addEventListener('click', () => useMap('polar'))
 get('show-globe').addEventListener('click', () => useMap('globe'))
 get('show-coverage').addEventListener('click', () => useMap('coverage'))
-get('coverage-filters').addEventListener('change', () => {
+get('coverage-filters').addEventListener('change', event => {
+  if (event.target.id === 'layer-shadows') {
+    get('model').value = event.target.checked ? 'terrain' : 'reference'
+    recalculate()
+  }
   showCoverageLegend()
   showCoverage()
   showComparisonTime()
@@ -1837,6 +1890,7 @@ get('mission-heat-south').addEventListener('change', event => {
   southOnly = event.currentTarget.checked
   get('map-scope').hidden = !southOnly
   if (active) showMap()
+  if (active) showRanking()
   if (southOnly && !get('globe-view').hidden) globe?.southPole()
   showCoverage()
 })

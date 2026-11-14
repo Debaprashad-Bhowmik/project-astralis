@@ -1,6 +1,7 @@
 import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
 import { coveragePalette, powerContourLevels, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
 import { artemisSouthLatitude, overlapColors } from './mission-heat.mjs'
+import { loadPolarGrids, polarShadowShader, polarUniforms, uploadPolarGrids } from './polar-shadows.mjs'
 export { artemisSouthLatitude } from './mission-heat.mjs'
 
 const rad = Math.PI / 180
@@ -64,7 +65,8 @@ uniform vec3 visibility;
 uniform bool showPower, showHeat;
 uniform bool possibleEclipse;
 const float pi = 3.14159265359;
-void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFraction) {
+${polarShadowShader}
+void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFraction, out bool craterShadow) {
   vec3 toSun = sun - normal;
   vec3 toEarth = earth - normal;
   bool sunlight = dot(normal, toSun) > 0.0;
@@ -75,10 +77,30 @@ void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFrac
     float separation = atan(length(cross(s, e)), dot(s, e));
     sunlight = separation + asin(${(sunRadius / radius).toFixed(8)} / length(toSun)) > asin(${(earthRadius / radius).toFixed(8)} / length(toEarth));
   }
+  bool smoothSun = sunlight;
+  craterShadow = false;
+  if (polarShadows && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)}) {
+    float spacing;
+    float height = terrainHeight(normal, spacing);
+    if (height > missingHeight) {
+      vec3 start = normal * (1.0 + (height + 2.0) / moonRadius);
+      toSun = sun - start;
+      toEarth = earth - start;
+      vec3 solarDirection = normalize(toSun);
+      vec3 earthDirection = normalize(toEarth);
+      bool totality = possibleEclipse && atan(length(cross(solarDirection, earthDirection)), dot(solarDirection, earthDirection)) +
+        asin(${(sunRadius / radius).toFixed(8)} / length(toSun)) <= asin(${(earthRadius / radius).toFixed(8)} / length(toEarth));
+      sunlight = !totality && dot(normal, solarDirection) > -.20 && clearOfTerrain(start, solarDirection, spacing);
+      craterShadow = smoothSun && !sunlight && !totality;
+      if (visibility.y > 0.0 || visibility.z > 0.0) {
+        earthView = dot(normal, earthDirection) > -.20 && clearOfTerrain(start, earthDirection, spacing);
+      }
+    }
+  }
   powerFraction = 0.0;
   if (showPower && sunlight && powerMax > 0.0) {
     float distanceAu = length(toSun) / ${(astronomicalUnit / radius).toFixed(8)};
-    float incidence = dot(normal, normalize(toSun));
+    float incidence = max(0.0, dot(normal, normalize(toSun)));
     float power = ${referencePanelPower.toFixed(2)} * incidence / (distanceAu * distanceAu);
     powerFraction = clamp(power / powerMax, 0.0, 1.0);
   }
@@ -90,7 +112,7 @@ void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFrac
   ink = both ? ${coverageInk(3)} : showSun && (!showEarth || !alternate) ? ${coverageInk(1)} : showEarth ? ${coverageInk(2)} : ${coverageInk(0)};
 }
 vec3 powerInk(float fraction) {
-  float scaled = fraction * 2.0;
+  float scaled = sqrt(fraction) * 2.0;
   if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
   return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
 }
@@ -124,6 +146,18 @@ void main() {
     vec3 relief = texture2D(polarRelief, polarUv).rgb;
     reflectance = mix(reflectance, relief, strength);
   }
+  if (polarShadows && reliefMix > .75 && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)}) {
+    vec2 meters = projectedTerrain(normal);
+    float spacing, unused;
+    float here = polarElevation(meters, spacing);
+    float eastward = polarElevation(meters + vec2(spacing, 0.0), unused);
+    float northward = polarElevation(meters + vec2(0.0, spacing), unused);
+    if (min(here, min(eastward, northward)) > missingHeight) {
+      vec3 slope = normalize(vec3(here - eastward, here - northward, spacing));
+      float reliefLight = .35 + .65 * max(0.0, dot(slope, normalize(vec3(-.55, .66, .60))));
+      reflectance *= reliefLight * 1.25;
+    }
+  }
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
   if (latitude <= northLatitude) {
@@ -142,14 +176,17 @@ void main() {
       }
       surface = mix(surface, overlapInk(heat), .83 * heat.a);
     }
-    if (showPower || any(greaterThan(visibility, vec3(0.0)))) {
+    bool showVisibility = any(greaterThan(visibility, vec3(0.0)));
+    if (showPower || showVisibility || (polarShadows && !showHeat && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)})) {
       vec3 ink;
       bool visible;
+      bool craterShadow;
       float powerFraction;
-      conditions(normal, ink, visible, powerFraction);
+      conditions(normal, ink, visible, powerFraction, craterShadow);
       float shade = .56 + reflectance.r * (255.0 / 360.0);
       if (showPower && !showHeat) surface = powerInk(powerFraction) * shade;
-      if (!showHeat && !showPower) surface = ink * shade;
+      if (!showHeat && !showPower && showVisibility) surface = ink * shade;
+      if (craterShadow && !showHeat && !showPower && !showVisibility) surface = mix(surface, vec3(.20, .18, .47), .78);
       if ((showHeat || showPower) && visible && all(lessThan(mod(gl_FragCoord.xy, 7.0), vec2(2.0)))) surface = ink;
       if (showHeat && showPower) {
         float delta = ${powerContourLevels.reduce((expr, level) => expr ? `min(${expr}, abs(powerFraction - ${level.toFixed(2)}))` : `abs(powerFraction - ${level.toFixed(2)})`, '')};
@@ -176,7 +213,7 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange } = {}) {
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onTerrainStatus } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
@@ -198,7 +235,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
     'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
-    'polarExtent', 'reliefMix', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast'].map(name => [name, gl.getUniformLocation(program, name)]))
+    'polarExtent', 'reliefMix', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -239,6 +276,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let heatImage
   let detailImageData
   let viewKey
+  let shadowRequested = false
+  let polarState = 'idle'
   let northLatitude = 90
   let powerMax = solarPowerScaleMax
   let appliedScores
@@ -300,6 +339,20 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       canvas.height = Math.round(height * ratio)
     }
     if (ready) {
+      const reach = Math.asin(Math.min(1, Math.hypot(width, height) / (2 * size))) / rad
+      const showShadows = shadowRequested && latitude - reach <= artemisSouthLatitude
+      if (showShadows && polarState === 'idle') {
+        polarState = 'loading'
+        onTerrainStatus?.('loading')
+        loadPolarGrids().then(grids => {
+          if (grids.some(grid => Math.max(grid.width, grid.height) > gl.getParameter(gl.MAX_TEXTURE_SIZE))) throw new Error('The polar textures exceed this device’s limit.')
+          uploadPolarGrids(gl, uniforms, grids)
+          polarState = 'ready'
+          onTerrainStatus?.('ready')
+          draw()
+        }).catch(() => { polarState = 'failed'; onTerrainStatus?.('failed') })
+      }
+      gl.uniform1i(uniforms.polarShadows, Number(showShadows && polarState === 'ready'))
       gl.viewport(0, 0, canvas.width, canvas.height)
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.uniform2f(uniforms.viewport, canvas.width, canvas.height)
@@ -431,7 +484,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     pointers.delete(event.pointerId)
     if (drag?.pointer === event.pointerId) drag = null
   })
-  function changeZoom(factor) { zoom = clamp(zoom * factor, .7, 12); draw() }
+  function changeZoom(factor) { zoom = clamp(zoom * factor, .7, detail ? 120 : 12); draw() }
   canvas.addEventListener('wheel', event => {
     if (!event.ctrlKey) return
     event.preventDefault()
@@ -468,13 +521,14 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     zoom: changeZoom,
     center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
-    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1], northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) {
+    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1], northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax, terrainShadows = false } = {}) {
       if (overlayFrame === frame && visibility === nextVisibility && power === nextPower && heatVisible === Boolean(heatRaster) &&
-          (!heatRaster || heatImage === heatRaster) && northLatitude === nextNorth && powerMax === nextPowerMax) return
+          (!heatRaster || heatImage === heatRaster) && northLatitude === nextNorth && powerMax === nextPowerMax && shadowRequested === terrainShadows) return
       overlayFrame = frame
       visibility = nextVisibility
       power = nextPower
       heatVisible = Boolean(heatRaster)
+      shadowRequested = terrainShadows
       northLatitude = nextNorth
       powerMax = nextPowerMax
       gl.uniform3f(uniforms.visibility, visibility & 1, visibility & 2, visibility & 4)

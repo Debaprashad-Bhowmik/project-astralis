@@ -1,4 +1,5 @@
 import { radius } from './planner.mjs'
+import { loadPolarGrids, polarTerrainSampler } from './polar-shadows.mjs'
 
 const radians = Math.PI / 180
 const range = 350_000
@@ -34,8 +35,9 @@ export function horizonProfile(lat, lon, sample, step = globalStep, bearingStep 
   const observerRadius = radius + height + 2
   const sinPhi = Math.sin(phi)
   const cosPhi = Math.cos(phi)
-  const shell = Array.from({ length: Math.floor(range / step) }, (_, index) => {
-    const angle = (index + 1) * step / radius
+  const distances = typeof step === 'number' ? Array.from({ length: Math.floor(range / step) }, (_, index) => (index + 1) * step) : step
+  const shell = distances.map(distance => {
+    const angle = distance / radius
     return [Math.sin(angle), Math.cos(angle)]
   })
   const horizon = Array.from({ length: 360 / bearingStep }, (_, index) => {
@@ -54,6 +56,20 @@ export function horizonProfile(lat, lon, sample, step = globalStep, bearingStep 
     return Math.atan(slope) / radians
   })
   return { height, horizon }
+}
+
+const polarDistances = [[80, 3200, 80], [3440, 20_000, 240], [20_960, range, 960]]
+  .flatMap(([first, last, step]) => Array.from({ length: Math.floor((last - first) / step) + 1 }, (_, i) => first + i * step))
+const fineDistances = [...Array.from({ length: 40 }, (_, i) => (i + 1) * 20), ...polarDistances.filter(distance => distance > 800)]
+
+export async function loadPolarSampler(fallback) {
+  const grids = await loadPolarGrids()
+  const sample = polarTerrainSampler(grids)
+  return (lat, lon) => sample(lat, lon) ?? fallback(lat, lon)
+}
+
+export function polarHorizon(lat, lon, sample, bearingStep = .5) {
+  return horizonProfile(lat, lon, sample, lat <= -89 ? fineDistances : polarDistances, bearingStep)
 }
 
 async function fetchTile(x, y) {
@@ -108,5 +124,9 @@ export function loadTerrainSampler(lat, lon, interpolate = false) {
 
 export async function terrainAt(lat, lon) {
   const sample = await loadTerrainSampler(lat, lon)
+  if (lat <= -84) {
+    const precise = await loadPolarSampler(sample).catch(() => null)
+    if (precise) return { ...polarHorizon(lat, lon, precise), terrain: 'LOLA polar terrain' }
+  }
   return { ...horizonProfile(lat, lon, sample), terrain: 'LOLA 16 px/°' }
 }
