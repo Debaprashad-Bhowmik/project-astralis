@@ -132,7 +132,7 @@
 
         <section class="panel map-panel" aria-labelledby="map-heading">
           <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
-            <div class="map-view" aria-label="Map view"><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button></div>
+            <div class="map-view" role="group" aria-label="Map view"><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-coverage" aria-pressed="false">Visibility map</button></div>
           </div>
           <details id="named-features" class="named-features">
             <summary>Explore named lunar features</summary>
@@ -179,7 +179,24 @@
             <div class="map-scale"><i></i>100 km at pole</div>
           </div>
           </div>
-          <div class="map-caption"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
+          <section id="coverage-view" aria-label="Whole-Moon visibility" hidden>
+            <div class="coverage-toolbar">
+              <label for="coverage-layer">Map overlay
+                <select id="coverage-layer"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></select>
+              </label>
+              <time id="coverage-clock" class="muted"></time>
+            </div>
+            <figure class="coverage-figure">
+              <canvas id="coverage-canvas" role="img" aria-label="Whole-Moon map of sunlight and a direct view of Earth. West is left and east is right." aria-describedby="coverage-notes coverage-summary"></canvas>
+              <div class="coverage-axis" aria-hidden="true"><span>180°W</span><span>90°W</span><span>0°</span><span>90°E</span><span>180°E</span></div>
+              <figcaption class="muted" id="coverage-notes">Colors show the smooth-Moon horizon. The site readout uses your selected horizon model. Click the map to evaluate a point.</figcaption>
+            </figure>
+            <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
+            <p class="muted" id="coverage-summary"></p>
+            <p class="muted" id="coverage-overhead"></p>
+            <div class="scrub coverage-scrub"><button type="button" class="subtle" id="coverage-play" aria-label="Play map timeline">▶</button><label class="sr-only" for="coverage-time">Visibility map mission time</label><input id="coverage-time" type="range" min="0" max="24" step=".25" value="0"></div>
+          </section>
+          <div class="map-caption" id="site-map-legend"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
           <div class="map-site" aria-live="polite">
             <h3 id="map-site-name"></h3>
             <p class="muted" id="map-site-detail"></p>

@@ -4,6 +4,7 @@ import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh } from './surface-view.mjs'
+import { createCoverageMap, subPoint } from './coverage-map.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -59,6 +60,9 @@ let localSky
 let surfaceView
 let surfaceSite
 let surfaceRequest = 0
+let drawCoverage
+let coverageFrame
+let coverageEpoch
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -310,7 +314,7 @@ function selectSite(id, focus, center = false) {
   inspectedSite = true
   showResult()
   if (center) {
-    if (globe && !get('show-globe').disabled) useMap('globe')
+    if (globe && !get('show-globe').disabled && get('coverage-view').hidden) useMap('globe')
     globe?.center(active.site)
   }
   if (focus) [...get('rank-list').querySelectorAll('button')].find(button => button.getAttribute('aria-pressed') === 'true')?.focus()
@@ -352,12 +356,56 @@ function showMap() {
 }
 
 function useMap(view) {
-  const isGlobe = view === 'globe'
-  get('polar-view').hidden = isGlobe
-  get('globe-view').hidden = !isGlobe
-  get('show-map').setAttribute('aria-pressed', String(!isGlobe))
-  get('show-globe').setAttribute('aria-pressed', String(isGlobe))
-  if (isGlobe) globe?.draw()
+  for (const [mode, button] of [['polar', 'show-map'], ['globe', 'show-globe'], ['coverage', 'show-coverage']]) {
+    get(`${mode}-view`).hidden = view !== mode
+    get(button).setAttribute('aria-pressed', String(view === mode))
+  }
+  get('site-map-legend').hidden = view === 'coverage'
+  if (view === 'globe') globe?.draw()
+  if (view === 'coverage') showCoverage()
+}
+
+function evaluateMapPoint({ lat, lon }) {
+  get('latitude').value = lat.toFixed(5)
+  get('longitude').value = lon.toFixed(5)
+  void addCoordinate()
+}
+
+function showCoverage() {
+  if (!active || get('coverage-view').hidden) return
+  drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
+  const epoch = settings.start + elapsed * hour
+  if (coverageEpoch !== epoch) {
+    coverageEpoch = epoch
+    coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
+  }
+  const mode = get('coverage-layer').value
+  drawCoverage(coverageFrame, active.site, mode)
+  const time = dateLabel(epoch)
+  const clock = get('coverage-clock')
+  clock.textContent = time
+  clock.dateTime = new Date(epoch).toISOString()
+  const slider = get('coverage-time')
+  slider.max = settings.duration
+  slider.value = String(elapsed)
+  slider.setAttribute('aria-valuetext', time)
+  const sample = active.timeline[Math.round(elapsed * 4)]
+  const sun = sample.eclipse ? 'Sun eclipsed' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
+  const earth = sample.earthEl > sample.earthHorizon ? 'Earth in view' : 'Earth blocked by skyline'
+  get('coverage-summary').textContent = `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}`
+  const overhead = `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))} · Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`
+  get('coverage-overhead').textContent = overhead
+  get('coverage-canvas').setAttribute('aria-label', `Whole-Moon visibility map. ${overhead}.`)
+}
+
+function showCoverageLegend() {
+  const entries = {
+    all: [['sun', 'Sunlight only'], ['earth', 'Earth view only'], ['both', 'Both'], ['none', 'Neither']],
+    sun: [['sun', 'Sunlight'], ['none', 'No direct sunlight']],
+    earth: [['earth', 'Earth in view'], ['none', 'Earth below horizon']],
+    both: [['both', 'Both in view'], ['none', 'At least one blocked']],
+  }[get('coverage-layer').value]
+  get('coverage-legend').replaceChildren(...entries.map(([color, name]) => element('li', `coverage-${color}`, name)))
 }
 
 function installGlobe() {
@@ -367,11 +415,7 @@ function installGlobe() {
     useMap('polar')
     error('globe-error', message)
   }
-  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), id => selectSite(id, false), point => {
-    get('latitude').value = point.lat.toFixed(5)
-    get('longitude').value = point.lon.toFixed(5)
-    void addCoordinate()
-  }, feature => {
+  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), id => selectSite(id, false), evaluateMapPoint, feature => {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
@@ -556,6 +600,7 @@ function showTime() {
   get('time-slider').setAttribute('aria-valuetext', time)
   get('tracks').replaceChildren(...timeline(active, duration, elapsed))
   showLocalSky(window, start + elapsed * hour)
+  showCoverage()
   if (updateSpace) {
     const { lunarKm, solarKm } = updateSpace((start + elapsed * hour - catalog.startMs) / (spaceStep * 1000), active.site)
     const slider = get('space-time')
@@ -809,6 +854,8 @@ function stop() {
   get('play').setAttribute('aria-label', 'Play timeline')
   get('space-play').textContent = '▶'
   get('space-play').setAttribute('aria-label', 'Play 3D timeline')
+  get('coverage-play').textContent = '▶'
+  get('coverage-play').setAttribute('aria-label', 'Play map timeline')
 }
 
 function play() {
@@ -821,6 +868,8 @@ function play() {
   get('play').setAttribute('aria-label', 'Pause timeline')
   get('space-play').textContent = 'Ⅱ'
   get('space-play').setAttribute('aria-label', 'Pause 3D timeline')
+  get('coverage-play').textContent = 'Ⅱ'
+  get('coverage-play').setAttribute('aria-label', 'Pause map timeline')
   function update(now) {
     const next = Math.min(settings.duration, Math.round((initial + (now - began) * settings.duration / 20_000) * 4) / 4)
     if (next !== elapsed) {
@@ -861,6 +910,11 @@ async function start() {
     installGlobe()
     drawGrid()
     recalculate()
+    if (location.hash === '#coverage-view') {
+      showCoverageLegend()
+      useMap('coverage')
+      requestAnimationFrame(() => get('map-heading').scrollIntoView({ behavior: 'instant' }))
+    }
     if (['#local-sky', '#assessment'].includes(location.hash)) requestAnimationFrame(() => get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' }))
     void startSpace()
   } catch (reason) {
@@ -960,13 +1014,21 @@ for (const body of ['sun', 'earth']) get(`surface-${body}`).addEventListener('cl
   surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
 })
 get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
-for (const slider of inputs('time-slider', 'space-time')) slider.addEventListener('input', event => {
+for (const slider of inputs('time-slider', 'space-time', 'coverage-time')) slider.addEventListener('input', event => {
   stop()
   elapsed = Number(event.target.value)
   showTime()
 })
 get('show-map').addEventListener('click', () => useMap('polar'))
 get('show-globe').addEventListener('click', () => useMap('globe'))
+get('show-coverage').addEventListener('click', () => {
+  showCoverageLegend()
+  useMap('coverage')
+})
+get('coverage-layer').addEventListener('change', () => {
+  showCoverageLegend()
+  showCoverage()
+})
 get('elevation-chart').addEventListener('pointerdown', event => {
   if (!active) return
   stop()
@@ -974,7 +1036,7 @@ get('elevation-chart').addEventListener('pointerdown', event => {
   elapsed = Math.round(fraction * settings.duration * 4) / 4
   showTime()
 })
-for (const button of inputs('play', 'space-play')) button.addEventListener('click', play)
+for (const button of inputs('play', 'space-play', 'coverage-play')) button.addEventListener('click', play)
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))
 new ResizeObserver(redrawLocalSky).observe(get('sky-canvas'))

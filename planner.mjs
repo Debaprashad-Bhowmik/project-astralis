@@ -155,7 +155,7 @@ export function solarExposure(timeline, windows, duration) {
   return { beamHours, peak }
 }
 
-function eclipseMargin(sun, earth) {
+export function eclipseMargin(sun, earth) {
   const sunDistance = Math.hypot(...sun)
   const earthDistance = Math.hypot(...earth)
   const separation = Math.acos(Math.min(1, Math.max(-1, dot(sun, earth) / (sunDistance * earthDistance))))

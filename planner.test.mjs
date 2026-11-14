@@ -7,9 +7,32 @@ import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-vi
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { surfaceCamera, terrainVertices } from './surface-view.mjs'
+import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('global coverage uses finite distance, both hemispheres, and local total eclipses', () => {
+  const sun = [149600000000, 0, 0]
+  const earth = [0, 384400000, 0]
+  const mask = createCoverageModel(sun, earth)
+  assert.equal(mask(.7071068, .7071068, 0), 3)
+  assert.equal(mask(.7071068, -.7071068, 0), 1)
+  assert.equal(mask(-.7071068, .7071068, 0), 2)
+  assert.equal(mask(-.7071068, -.7071068, 0), 0)
+  assert.equal(mask(-.9999955, .003, 0), 0)
+  assert.equal(createCoverageModel(sun, [384400000, 0, 0])(1, 0, 0), 2)
+  assert.deepEqual(subPoint(earth), { lat: 0, lon: 90 })
+})
+
+test('global map coordinates round-trip and wrap the longitude seam', () => {
+  const site = { lat: -84.7906, lon: 29.1957 }
+  const point = coverageProject(site)
+  const result = coverageUnproject(point.x, point.y)
+  assert.ok(Math.abs(result.lat - site.lat) < 1e-9 && Math.abs(result.lon - site.lon) < 1e-9)
+  assert.deepEqual(coverageProject({ lat: 90, lon: 180 }), { x: 0, y: 0 })
+  assert.equal(coverageUnproject(1, .5).lon, -180)
 })
 
 test('first-person terrain curves below the eye, and a camera centered on a body projects it to the center', () => {

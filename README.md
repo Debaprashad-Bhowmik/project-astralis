@@ -8,6 +8,8 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** See the Sun and Earth against the selected site's terrain horizon, or switch to the first-person 3D surface view and look around. The timeline updates the view and the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
 
+**[Explore the lunar maps](https://debaprashad-bhowmik.github.io/project-astralis/#map-heading).** Choose the 3D Moon, the south-pole map, or the whole-Moon visibility map to see where sunlight and a direct view of Earth overlap at the selected time. The global overlay uses a smooth sphere. Individual sites use the selected horizon model.
+
 **[Check power and communications](https://debaprashad-bhowmik.github.io/project-astralis/#assessment).** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.
 
 ## Run locally
