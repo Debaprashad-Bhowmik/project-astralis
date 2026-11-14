@@ -30,16 +30,15 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
     return { sun, earth, sunDistance, earthDistance, eclipse: totalityPossible(sun, earth) }
   })
   const periods = Array.from({ length: missionQuarters + 1 }, () => ({ values: new Float32Array(width * height), maxHours: 0 }))
+  if (samples.length < 2) return { width, height, periods }
   const quarterLength = (samples.length - 1) / missionQuarters
-  const intervals = samples.slice(1).map((_, i) => {
-    const first = Math.floor(i / quarterLength)
-    const last = Math.ceil((i + 1) / quarterLength) - 1
-    return Array.from({ length: last - first + 1 }, (_, offset) => {
-      const quarter = first + offset
-      return { quarter, from: Math.max(0, quarterLength * quarter - i), to: Math.min(1, quarterLength * (quarter + 1) - i) }
-    })
+  const quarters = periods.slice(1).map((period, index) => {
+    const start = index * quarterLength
+    const end = (index + 1) * quarterLength
+    const first = Math.floor(start)
+    const last = Math.ceil(end)
+    return { values: period.values, first, last, from: start - first, to: end - (last - 1) }
   })
-  const totals = new Float64Array(missionQuarters)
   for (let row = 0; row < height; row++) {
     const lat = (90 - row * 180 / (height - 1)) * radians
     const cosLat = row === 0 || row === height - 1 ? 0 : Math.cos(lat)
@@ -47,34 +46,31 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
     for (let col = 0; col < width; col++) {
       const x = cosLat * directions[col][0]
       const y = cosLat * directions[col][1]
-      let previousSun
-      let previousEarth
-      totals.fill(0)
-      let count = 0
-      for (const { sun, earth, sunDistance, earthDistance, eclipse } of samples) {
-        let sunlight = (x * sun[0] + y * sun[1] + z * sun[2] - radius) / sunDistance
-        const earthView = (x * earth[0] + y * earth[1] + z * earth[2] - radius) / earthDistance
-        if (eclipse) {
-          const offset = [x * radius, y * radius, z * radius]
-          const margin = eclipseMargin(sun.map((v, i) => v - offset[i]), earth.map((v, i) => v - offset[i]))
-          sunlight = Math.min(sunlight, margin * radians)
-        }
-        if (count > 0) {
-          const parts = intervals[count - 1]
-          if (parts.length === 1) totals[parts[0].quarter] += overlapStep(previousSun, sunlight, previousEarth, earthView)
-          else for (const { quarter, from, to } of parts) {
-            totals[quarter] += overlapStep(previousSun, sunlight, previousEarth, earthView, from, to)
+      const offset = [x * radius, y * radius, z * radius]
+      const cell = row * width + col
+      let total = 0
+      for (const { values, first, last, from, to } of quarters) {
+        let quarterTotal = 0
+        let previousSun
+        let previousEarth
+        for (let i = first; i <= last; i++) {
+          const { sun, earth, sunDistance, earthDistance, eclipse } = samples[i]
+          let sunlight = (x * sun[0] + y * sun[1] + z * sun[2] - radius) / sunDistance
+          const earthView = (x * earth[0] + y * earth[1] + z * earth[2] - radius) / earthDistance
+          if (eclipse) {
+            const margin = eclipseMargin(sun.map((v, i) => v - offset[i]), earth.map((v, i) => v - offset[i]))
+            sunlight = Math.min(sunlight, margin * radians)
           }
+          if (i > first) {
+            quarterTotal += overlapStep(previousSun, sunlight, previousEarth, earthView, i === first + 1 ? from : 0, i === last ? to : 1)
+          }
+          previousSun = sunlight
+          previousEarth = earthView
         }
-        previousSun = sunlight
-        previousEarth = earthView
-        count++
+        values[cell] = quarterTotal * stepHours
+        total += quarterTotal
       }
-      const index = row * width + col
-      for (let quarter = 0; quarter < missionQuarters; quarter++) {
-        periods[quarter + 1].values[index] = totals[quarter] * stepHours
-      }
-      periods[0].values[index] = totals.reduce((sum, value) => sum + value, 0) * stepHours
+      periods[0].values[cell] = total * stepHours
     }
   }
   for (const period of periods) {

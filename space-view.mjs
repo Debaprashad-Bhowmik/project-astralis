@@ -87,7 +87,7 @@ export function createSpaceView(canvas, samples, controls) {
     const cached = paths.get(kind)
     if (cached?.start === start && cached.period === period) return cached.points
     const points = Array.from({ length: segments + 1 }, (_, i) => {
-      const offset = (start + Math.round(i * period / segments)) * stride + (lunar ? 0 : 3)
+      const offset = Math.round(start + i * period / segments) * stride + (lunar ? 0 : 3)
       const vector = Array.from(samples.subarray(offset, offset + 3))
       if (lunar) return scale(vector, 1 / earthMoonScale)
       return kind === 'earth' ? scale(vector, -1 / 149597871) : scale(unit(vector), sunDrawingDistance)

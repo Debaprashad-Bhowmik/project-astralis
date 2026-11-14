@@ -12,7 +12,9 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **3D orbit view.** Switch between Earth-centered and Sun-centered views. Select **Whole year** to explore any calendar year from 2024 through 2030 in UTC. Jump to a month, scrub the date slider, or play at 1, 5, or 15 simulation days per second. **Mission window** returns to the shared mission timeline.
 
-The **One lunar day** operating window plays 29.5 Earth days from landing. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list. The map, surface views, and orbit scene’s **Mission window** mode share the mission clock.
+In **Mission setup → Operating window**, select **Full year** to run from landing to the same UTC date and time the next year. The window has 365 or 366 days, and a starting date of February 29 ends on March 1 the following year. The end must be within the bundled ephemeris, which runs through January 1, 2031 at 00:00 UTC. The heat map, comparisons, surface views, and orbit scene’s **Mission window** mode all use that window.
+
+The **One lunar day** preset spans 29.5 Earth days. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list.
 
 **[Explore the South Pole on the 3D Moon](https://debaprashad-bhowmik.github.io/project-astralis/#south-pole).** The 90°S marker and 84°S ring show the pole and the edge of NASA’s six-degree Artemis exploration zone. Select a **Surface layer** to see sunlight, direct Earth visibility, or their overlap on the rotatable globe or flat visibility map. Global coverage uses a smooth reference horizon. Individual sites use the selected horizon model.
 

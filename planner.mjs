@@ -5,6 +5,13 @@ export const earthRadius = 6378137
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const interpolate = (a, b, t) => a + (b - a) * t
 
+export function annualMissionHours(start) {
+  const end = new Date(start)
+  // UTC date rollover makes a February 29 start end on March 1 the next year.
+  end.setUTCFullYear(end.getUTCFullYear() + 1)
+  return (end - start) / 3_600_000
+}
+
 export function observer(lat, lon, height) {
   const phi = lat * radians
   const lambda = lon * radians
@@ -189,10 +196,17 @@ export function siteSkyModel(site, useTerrain) {
   }
 }
 
-export function evaluate(site, frames, hours, useTerrain) {
-  const timeline = frames.map(siteSkyModel(site, useTerrain))
-  const sunClearance = timeline.map(item => Math.min(item.sunEl - item.sunHorizon, item.eclipseMargin))
-  const earthClearance = timeline.map(item => item.earthEl - item.earthHorizon)
+export function evaluate(site, frames, hours, useTerrain, { includeTimeline = true } = {}) {
+  const timeline = includeTimeline ? new Array(frames.length) : null
+  const sunClearance = new Float64Array(frames.length)
+  const earthClearance = new Float64Array(frames.length)
+  const sampleSky = siteSkyModel(site, useTerrain)
+  for (let i = 0; i < frames.length; i++) {
+    const sample = sampleSky(frames[i])
+    sunClearance[i] = Math.min(sample.sunEl - sample.sunHorizon, sample.eclipseMargin)
+    earthClearance[i] = sample.earthEl - sample.earthHorizon
+    if (timeline) timeline[i] = sample
+  }
   const step = hours / (frames.length - 1)
   const sun = visibility(sunClearance, step)
   const earth = visibility(earthClearance, step)

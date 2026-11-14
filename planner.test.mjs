@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
+import { annualMissionHours, horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
 import { artemisSouthLatitude, globeOrientation, projectSite, southPoleView } from './globe.mjs'
 import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
@@ -10,6 +10,26 @@ import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowF
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
+
+test('a full mission year runs from the selected UTC time to its next anniversary', () => {
+  assert.equal(annualMissionHours(Date.parse('2026-11-14T18:30Z')), 8_760)
+  assert.equal(annualMissionHours(Date.parse('2027-11-14T18:30Z')), 8_784)
+  assert.equal(annualMissionHours(Date.parse('2028-11-14T18:30Z')), 8_760)
+  assert.equal(annualMissionHours(Date.parse('2028-02-29T18:30Z')), 8_784)
+})
+
+test('ranking without chart samples preserves visibility windows and metrics over a mission year', () => {
+  const catalog = JSON.parse(readFileSync(new URL('./data/catalog.json', import.meta.url)))
+  const ephemeris = readFileSync(new URL('./data/ephemeris.bin', import.meta.url))
+  const values = binaryFrames(ephemeris.buffer.slice(ephemeris.byteOffset, ephemeris.byteOffset + ephemeris.byteLength))
+  const hours = 8_784
+  const frames = Array.from({ length: hours * 4 + 1 }, (_, index) => frameAt(values, index))
+  const { timeline, ...detailed } = evaluate(catalog.catalog[0], frames, hours, true)
+  const { timeline: omitted, ...summary } = evaluate(catalog.catalog[0], frames, hours, true, { includeTimeline: false })
+  assert.equal(timeline.length, hours * 4 + 1)
+  assert.equal(omitted, null)
+  assert.deepEqual(summary, detailed)
+})
 
 test('space calendar years use exact UTC bounds and include leap day', () => {
   const hour = 3_600_000

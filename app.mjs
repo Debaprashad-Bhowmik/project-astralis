@@ -1,4 +1,4 @@
-import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, skyCrossings, solarExposure } from './planner.mjs'
+import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
@@ -19,6 +19,7 @@ const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hour
 const formatPercent = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 1 })
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 const skyLookahead = 30 * 24
+const chartColumns = ['sunEl', 'earthEl', 'sunHorizon', 'earthHorizon']
 const timelineStep = duration => duration > 24 ? 24 : 1
 const signedDegrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
 const presets = { sun: [100, 0, 0], earth: [0, 100, 0], overlap: [0, 0, 100], balanced: [40, 40, 20] }
@@ -151,6 +152,8 @@ let drawCoverage
 let coverageFrame
 let coverageEpoch
 let missionFrames
+let siteEvaluations
+let activeRankedRow
 let heatJob
 let heatWorker
 let heatGrid
@@ -164,21 +167,28 @@ function error(id, message = '') {
 
 function currentSettings() {
   const start = Date.parse(get('landing-date').value + 'T' + get('landing-time').value + 'Z')
-  const duration = Number(get('duration').value)
+  const window = get('duration').value
+  const annual = window === 'year'
+  const duration = annual ? annualMissionHours(start) : Number(window)
   const [sun, earth, overlap] = weightInputs.map(input => Number(input.value))
   const weightSum = sun + earth + overlap
   weightInputs.forEach(input => {
     document.querySelector('output[for="' + input.id + '"]').value = weightSum ? Math.round(Number(input.value) / weightSum * 100) + '%' : '0%'
   })
   if (!Number.isFinite(start) || !get('landing-date').validity.valid || start < catalog.startMs || start + duration * hour > catalog.endMs) {
+    if (annual) {
+      const latest = new Date(catalog.endMs)
+      latest.setUTCFullYear(latest.getUTCFullYear() - 1)
+      throw new Error(`For a full year, choose a landing time from ${dateLabel(catalog.startMs)} through ${dateLabel(latest.getTime())}.`)
+    }
     throw new Error('Choose a UTC landing time that keeps the mission between 1 Jan 2024 and 1 Jan 2031.')
   }
   if (!weightSum) throw new Error('Set at least one priority weight above zero.')
   const requirements = inputs('min-sun', 'min-earth', 'min-overlap', 'max-dark', 'max-earth-gap')
-  if (requirements.some(input => !input.validity.valid)) throw new Error('Enter requirement values from 0 to 720 hours.')
+  if (requirements.some(input => !input.validity.valid)) throw new Error('Enter requirement values from 0 to 8,784 hours.')
   const [minSun, minEarth, minOverlap] = requirements.map(input => Number(input.value))
   const maximum = id => get(id).value === '' ? Infinity : Number(get(id).value)
-  return { start, duration, horizon: get('model').value, weights: { sun, earth, overlap },
+  return { start, duration, annual, horizon: get('model').value, weights: { sun, earth, overlap },
     limits: { sun: minSun, earth: minEarth, overlap: minOverlap, darkness: maximum('max-dark'), blackout: maximum('max-earth-gap') } }
 }
 
@@ -201,7 +211,10 @@ function recalculate(reuseSettings = false) {
     settings = nextSettings
     error('input-error')
   }
-  const { start, duration, weights, limits, horizon } = settings
+  const { start, duration, annual, weights, limits, horizon } = settings
+  const yearDates = get('mission-year-dates')
+  yearDates.hidden = !annual
+  yearDates.textContent = annual ? `${duration / 24} days · Ends ${dateLabel(start + duration * hour)}` : ''
   if (missionFrames?.start !== start || missionFrames?.duration !== duration) {
     heatWorker?.terminate()
     heatWorker = undefined
@@ -213,15 +226,23 @@ function recalculate(reuseSettings = false) {
     const menu = get('mission-heat-period')
     const period = menu.value || '0'
     const quarters = Array.from({ length: missionQuarters }, (_, index) => {
-      const hours = duration / missionQuarters
-      return new Option(`Quarter ${index + 1} · +${index * hours} to +${(index + 1) * hours} h`, index + 1)
+      const unit = annual ? 'd' : 'h'
+      const length = duration / (annual ? 24 : 1) / missionQuarters
+      return new Option(`Quarter ${index + 1} · +${index * length} to +${(index + 1) * length} ${unit}`, index + 1)
     })
     menu.replaceChildren(new Option('Entire mission', '0'), ...quarters)
     menu.value = period
   }
-  const { frames } = missionFrames
   const sites = [...catalog.catalog, ...customSites]
-  ranked = rank(sites.map(site => evaluate(site, frames, duration, horizon === 'terrain')), weights, limits, duration)
+  if (siteEvaluations?.mission !== missionFrames || siteEvaluations.horizon !== horizon) {
+    siteEvaluations = { mission: missionFrames, horizon, rows: new Map() }
+  }
+  const { rows } = siteEvaluations
+  for (const site of rows.keys()) if (!sites.includes(site)) rows.delete(site)
+  for (const site of sites) {
+    if (!rows.has(site)) rows.set(site, evaluate(site, missionFrames.frames, duration, horizon === 'terrain', { includeTimeline: !annual }))
+  }
+  ranked = rank(sites.map(site => rows.get(site)), weights, limits, duration)
   for (const layer of heatLayers.values()) layer.overlaps = undefined
   if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
@@ -285,8 +306,17 @@ function resultNarrative(best, second) {
     formatHours(best.metrics.sun) + ' of sunlight and ' + formatHours(best.metrics.earth) + ' with Earth in view.'
 }
 
+function withMissionTimeline(row) {
+  if (row.timeline) return row
+  if (row === activeRankedRow) return active
+  const sampleSky = siteSkyModel(row.site, settings.horizon === 'terrain')
+  return { ...row, timeline: missionFrames.frames.map(sampleSky) }
+}
+
 function showResult() {
-  active = ranked.find(row => row.site.id === selected)
+  const row = ranked.find(candidate => candidate.site.id === selected)
+  active = withMissionTimeline(row)
+  activeRankedRow = row
   if (localSky?.row !== active) prepareLocalSky()
   for (const siteControl of inputs('space-site', 'assessment-site')) {
     siteControl.replaceChildren(...ranked.map(({ site }) => {
@@ -557,7 +587,7 @@ function showMissionHeat(flat) {
     results.hidden = true
     if (!flat) globe?.setCoverage(null)
     if (heatJob === missionFrames) return
-    status.textContent = 'Calculating mission overlap…'
+    status.textContent = settings.annual ? `Calculating overlap for all ${settings.duration / 24} days…` : 'Calculating mission overlap…'
     const job = missionFrames
     const stepHours = catalog.step / 3600
     heatJob = job
@@ -824,10 +854,8 @@ function drawChart() {
   const left = 45
   const plotWidth = width - left - 13
   const plotHeight = bottom - 10
-  const columns = ['sunEl', 'earthEl', 'sunHorizon', 'earthHorizon']
-  const values = series.flatMap(row => columns.map(key => row[key]))
-  const min = Math.min(-2, Math.floor(Math.min(...values) / 5) * 5)
-  const max = Math.max(2, Math.ceil(Math.max(...values) / 5) * 5)
+  if (plotWidth <= 0 || plotHeight <= 0) return
+  const [min, max] = localSky.chartRange
   const px = hours => left + hours / settings.duration * plotWidth
   const py = value => bottom - (value - min) / (max - min) * plotHeight
 
@@ -855,17 +883,16 @@ function drawChart() {
     ruler(px(hours), 10, px(hours), bottom)
   }
   const colors = ['#ffc975', '#acc4ff', '#ffc975ba', '#acc4ffb5']
-  columns.forEach((key, index) => {
+  const stride = Math.max(1, Math.floor((series.length - 1) / plotWidth))
+  const last = series.length - 1
+  chartColumns.forEach((key, index) => {
     ctx.beginPath()
     ctx.setLineDash(index >= 2 ? [5, 5] : [])
     ctx.lineWidth = index >= 2 ? 1.1 : 2
     ctx.strokeStyle = colors[index]
-    series.forEach((row, i) => {
-      const x = left + i / (series.length - 1) * plotWidth
-      const y = py(row[key])
-      if (i) ctx.lineTo(x, y)
-      else ctx.moveTo(x, y)
-    })
+    ctx.moveTo(left, py(series[0][key]))
+    for (let i = stride; i < last; i += stride) ctx.lineTo(left + i / last * plotWidth, py(series[i][key]))
+    ctx.lineTo(left + plotWidth, py(series[last][key]))
     ctx.stroke()
   })
   ctx.setLineDash([4, 3])
@@ -874,7 +901,7 @@ function drawChart() {
   ruler(px(elapsed), 10, px(elapsed), bottom)
   ctx.setLineDash([])
   const item = series[Math.round(elapsed * 4)]
-  columns.slice(0, 2).forEach((key, index) => {
+  chartColumns.slice(0, 2).forEach((key, index) => {
     ctx.beginPath()
     ctx.fillStyle = colors[index]
     ctx.arc(px(elapsed), py(item[key]), 3.8, 0, Math.PI * 2)
@@ -901,13 +928,14 @@ function showTime() {
 
 function showSpaceTime() {
   if (!updateSpace || !active) return
-  const { start, duration, horizon } = settings
+  const { start, duration, annual, horizon } = settings
   const site = active.site
   const year = spaceYearMode ? spaceYearWindow : null
   const hours = year ? spaceYearHours : elapsed
   const epoch = (year?.start ?? start) + hours * hour
   const index = time => (time - catalog.startMs) / (spaceStep * 1000)
-  const { lunarKm, solarKm } = updateSpace(index(epoch), site, year ? [index(year.start), index(year.end)] : null)
+  const trail = year ? [index(year.start), index(year.end)] : annual ? [index(start), index(start + duration * hour)] : null
+  const { lunarKm, solarKm } = updateSpace(index(epoch), site, trail)
   const sample = year
     ? siteSkyModel(site, horizon === 'terrain')(frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000)))
     : active.timeline[Math.round(elapsed * 4)]
@@ -966,9 +994,19 @@ function prepareLocalSky() {
   const profile = horizon === 'terrain' ? active.site.horizon : null
   const reach = Math.min(duration + skyLookahead, (catalog.endMs - start) / hour)
   const extension = Math.floor((reach - duration) * 4 + 1e-8) / 4
-  const ahead = extension > 0 ? evaluate(active.site, framesFor(start + duration * hour, extension), extension, Boolean(profile)).timeline.slice(1) : []
+  const sampleSky = siteSkyModel(active.site, Boolean(profile))
+  const ahead = extension > 0 ? framesFor(start + duration * hour, extension).slice(1).map(sampleSky) : []
+  let min = 0
+  let max = 0
+  for (const sample of active.timeline) {
+    for (const key of chartColumns) {
+      min = Math.min(min, sample[key])
+      max = Math.max(max, sample[key])
+    }
+  }
+  const chartRange = [Math.min(-2, Math.floor(min / 5) * 5), Math.max(2, Math.ceil(max / 5) * 5)]
   localSky = { row: active, profile, range: skyRange(active.timeline, profile),
-    endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25), paths: null }
+    endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25), paths: null, chartRange }
   get('tracks').replaceChildren(...timeline(active, duration, elapsed))
   showMissionEvents()
   get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
@@ -1165,33 +1203,37 @@ function updateComparisonOptions() {
 function compare() {
   if (!settings) return
   const startB = Date.parse(get('compare-time').value + 'Z')
-  const { start, duration, horizon, weights, limits } = settings
+  const { start, duration, annual, horizon, weights, limits } = settings
+  const durationB = annual ? annualMissionHours(startB) : duration
   const result = get('compare-result')
   const windowDetail = get('window-detail')
-  if (!Number.isFinite(startB) || startB < catalog.startMs || startB + duration * hour > catalog.endMs) {
+  if (!Number.isFinite(startB) || startB < catalog.startMs || startB + durationB * hour > catalog.endMs) {
     error('compare-error', 'Choose a UTC time for B that keeps its full mission inside the supported dates.')
     result.replaceChildren()
     windowDetail.replaceChildren()
     return
   }
   error('compare-error')
-  const a = ranked.find(row => row.site.id === get('compare-a').value)
-  const siteB = ranked.find(row => row.site.id === get('compare-b').value).site
-  const [b] = rank([evaluate(siteB, framesFor(startB, duration), duration, horizon === 'terrain')], weights, limits, duration)
-  const scenarios = [[a, start], [b, startB]]
+  const a = withMissionTimeline(ranked.find(row => row.site.id === get('compare-a').value))
+  const rowB = ranked.find(row => row.site.id === get('compare-b').value)
+  const b = startB === start ? withMissionTimeline(rowB) :
+    rank([evaluate(rowB.site, framesFor(startB, durationB), durationB, horizon === 'terrain')], weights, limits, durationB)[0]
+  const scenarios = [[a, start, duration], [b, startB, durationB]]
   const decision = a.unmet.length && b.unmet.length ? 'Both scenarios miss mission requirements.' :
     a.unmet.length ? 'Only B meets the mission requirements.' : b.unmet.length ? 'Only A meets the mission requirements.' :
       a.score === b.score ? 'The scenarios tie for the chosen priorities.' :
         'Scenario ' + (a.score > b.score ? 'A' : 'B') + ' scores higher for the chosen priorities.'
   const grid = element('div', 'compare-grid')
   const details = element('div', 'window-grid')
-  scenarios.forEach(([row, epoch], index) => {
+  scenarios.forEach(([row, epoch, duration], index) => {
     const title = (index === 0 ? 'A' : 'B') + ' · ' + siteName(row.site)
     const card = element('article', 'compare-scenario')
     const time = element('time', '', dateLabel(epoch))
     time.dateTime = new Date(epoch).toISOString()
     const power = solarExposure(row.timeline, row.sun, duration)
-    card.append(element('h3', '', title), time, element('p', 'muted', terrainLabel(row.site, horizon)), element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
+    card.append(element('h3', '', title), time,
+      element('p', 'muted', annual ? `${duration / 24} days · Ends ${dateLabel(epoch + duration * hour)} · ${terrainLabel(row.site, horizon)}` : terrainLabel(row.site, horizon)),
+      element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
       row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
     axis(duration), ...timeline(row, duration), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
       ' · Longest Earth gap ' + formatHours(row.metrics.blackout)),
@@ -1205,7 +1247,9 @@ function compare() {
     }
     details.append(detail)
   })
-  result.replaceChildren(element('p', 'compare-context', decision + ' Timelines are aligned by hours since landing.'), grid)
+  const context = duration === durationB ? 'Timelines are aligned to the same elapsed time after landing.' :
+    'Each timeline runs from landing to its own one-year anniversary.'
+  result.replaceChildren(element('p', 'compare-context', decision + ' ' + context), grid)
   windowDetail.replaceChildren(details)
 }
 

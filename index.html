@@ -73,12 +73,14 @@
               <label>Time (UTC) <input id="landing-time" type="time" required value="00:00"></label>
             </div>
             <label>Operating window
-              <select id="duration">
+              <select id="duration" aria-describedby="mission-year-dates">
                 <option value="24" selected>First 24 hours</option><option value="72">First 3 days</option>
                 <option value="168">First 7 days</option><option value="336">First 14 days</option>
                 <option value="708">One lunar day (~29.5 Earth days)</option><option value="720">First 30 days</option>
+                <option value="year">Full year (365 or 366 days)</option>
               </select>
             </label>
+            <p class="muted" id="mission-year-dates" hidden></p>
             <fieldset class="priorities">
               <legend>What matters most?</legend>
               <div class="presets" id="presets" aria-label="Priority presets">
@@ -98,11 +100,11 @@
               <div class="weight weight-overlap"><label for="overlap-weight">Both</label><input id="overlap-weight" type="range" min="0" max="100" step="5" value="100"><output for="overlap-weight"></output></div>
               <p>Sites must meet these limits to qualify.</p>
               <div class="limit-grid">
-                <label>Min sunlight (h)<input id="min-sun" type="number" min="0" max="720" step="any" value="0"></label>
-                <label>Min Earth view (h)<input id="min-earth" type="number" min="0" max="720" step="any" value="0"></label>
-                <label>Min overlap (h)<input id="min-overlap" type="number" min="0" max="720" step="any" value="0"></label>
-                <label>Max darkness (h)<input id="max-dark" type="number" min="0" max="720" step="any" placeholder="Unlimited"></label>
-                <label>Max Earth visibility gap (h)<input id="max-earth-gap" type="number" min="0" max="720" step="any" placeholder="Unlimited"></label>
+                <label>Min sunlight (h)<input id="min-sun" type="number" min="0" max="8784" step="any" value="0"></label>
+                <label>Min Earth view (h)<input id="min-earth" type="number" min="0" max="8784" step="any" value="0"></label>
+                <label>Min overlap (h)<input id="min-overlap" type="number" min="0" max="8784" step="any" value="0"></label>
+                <label>Max darkness (h)<input id="max-dark" type="number" min="0" max="8784" step="any" placeholder="Unlimited"></label>
+                <label>Max Earth visibility gap (h)<input id="max-earth-gap" type="number" min="0" max="8784" step="any" placeholder="Unlimited"></label>
               </div>
             </details>
             <p id="input-error" class="error" role="alert" hidden></p>
