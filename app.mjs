@@ -1,6 +1,6 @@
-import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, skyCrossings, solarExposure } from './planner.mjs'
+import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
-import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
+import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
@@ -12,6 +12,7 @@ const inputs = (...ids) => ids.map(get)
 const hour = 3_600_000
 const day = 24 * hour
 const utc = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })
+const monthLabel = new Intl.DateTimeFormat('en', { month: 'short', timeZone: 'UTC' })
 const dateLabel = epoch => utc.format(new Date(epoch)) + ' UTC'
 const controlDate = epoch => new Date(epoch).toISOString().slice(0, 16)
 const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hours.toFixed(1))) + ' h'
@@ -65,6 +66,7 @@ function syncExperience() {
   }
   if (exploring) {
     stop()
+    stopSpaceYear()
     renderLesson()
     requestAnimationFrame(() => get('explore').scrollIntoView({ behavior: 'instant' }))
   } else if (active) requestAnimationFrame(() => {
@@ -130,6 +132,10 @@ let playing = null
 let comparisonEdited = false
 let globe
 let updateSpace
+let spaceYearMode = false
+let spaceYearWindow
+let spaceYearHours = 0
+let spaceYearPlayback = null
 let inspectedSite = false
 let features = []
 let gazetteerRequest
@@ -317,6 +323,7 @@ function showResult() {
   }))
   showMap()
   showTime()
+  if (spaceYearMode) showSpaceTime()
 }
 
 function windowList(windows, start) {
@@ -820,7 +827,7 @@ function drawChart() {
 
 function showTime() {
   if (!active) return
-  const { start, duration, horizon } = settings
+  const { start, duration } = settings
   const window = active.timeline[Math.round(elapsed * 4)]
   const time = dateLabel(start + elapsed * hour)
   get('selected-time').value = time
@@ -831,25 +838,70 @@ function showTime() {
   for (const marker of get('tracks').querySelectorAll('.now')) marker.style.left = Math.min(99.8, elapsed / duration * 100) + '%'
   showLocalSky(window, start + elapsed * hour)
   showCoverage()
-  if (updateSpace) {
-    const { lunarKm, solarKm } = updateSpace((start + elapsed * hour - catalog.startMs) / (spaceStep * 1000), active.site)
-    const slider = get('space-time')
-    slider.max = duration
-    slider.value = String(elapsed)
-    slider.setAttribute('aria-valuetext', time)
-    get('space-clock').value = time
-    const skyline = horizon === 'terrain' ? 'local skyline' : '0° reference horizon'
-    const clearance = difference => {
-      if (Math.abs(difference) < .005) return 'at the ' + skyline
-      return Math.abs(difference).toFixed(2) + '° ' + (difference > 0 ? 'above' : 'below') + ' the ' + skyline
-    }
-    get('space-caption').textContent = terrainLabel(active.site, horizon)
-    get('space-sun').textContent = clearance(window.sunEl - window.sunHorizon) + (window.eclipse ? ' · Total solar eclipse' : '')
-    get('space-earth').textContent = clearance(window.earthEl - window.earthHorizon)
-    get('space-lunar-km').textContent = lunarKm + ' km'
-    get('space-solar-km').textContent = solarKm + ' km'
-  }
+  if (!spaceYearMode) showSpaceTime()
   drawChart()
+}
+
+function showSpaceTime() {
+  if (!updateSpace || !active) return
+  const { start, duration, horizon } = settings
+  const site = active.site
+  const year = spaceYearMode ? spaceYearWindow : null
+  const hours = year ? spaceYearHours : elapsed
+  const epoch = (year?.start ?? start) + hours * hour
+  const index = time => (time - catalog.startMs) / (spaceStep * 1000)
+  const { lunarKm, solarKm } = updateSpace(index(epoch), site, year ? [index(year.start), index(year.end)] : null)
+  const sample = year
+    ? siteSkyModel(site, horizon === 'terrain')(frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000)))
+    : active.timeline[Math.round(elapsed * 4)]
+  const time = dateLabel(epoch)
+  const slider = get('space-time')
+  slider.max = year?.hours ?? duration
+  slider.value = String(hours)
+  slider.setAttribute('aria-valuetext', time)
+  get('space-clock').value = time
+  if (year) get('space-month').value = new Date(epoch).getUTCMonth()
+  const skyline = horizon === 'terrain' ? 'local skyline' : '0° reference horizon'
+  const clearance = difference => {
+    if (Math.abs(difference) < .005) return 'at the ' + skyline
+    return Math.abs(difference).toFixed(2) + '° ' + (difference > 0 ? 'above' : 'below') + ' the ' + skyline
+  }
+  get('space-caption').textContent = terrainLabel(site, horizon)
+  get('space-sun').textContent = clearance(sample.sunEl - sample.sunHorizon) + (sample.eclipse ? ' · Total solar eclipse' : '')
+  get('space-earth').textContent = clearance(sample.earthEl - sample.earthHorizon)
+  get('space-lunar-km').textContent = lunarKm + ' km'
+  get('space-solar-km').textContent = solarKm + ' km'
+}
+
+function setSpaceYear(year, epoch) {
+  spaceYearWindow = calendarSpaceWindow(year)
+  spaceYearHours = epoch === undefined ? 0
+    : Math.max(0, Math.min(spaceYearWindow.hours, Math.round((epoch - spaceYearWindow.start) / hour * 4) / 4))
+  get('space-year').value = year
+  const labels = spaceYearWindow.months.map((hours, month) => new Option(monthLabel.format(spaceYearWindow.start + hours * hour), month))
+  get('space-month').replaceChildren(...labels)
+  get('space-month-scale').replaceChildren(...labels.filter((_, month) => month % 3 === 0).map(label => {
+    const tick = element('span', '', label.text)
+    tick.style.setProperty('--month-position', spaceYearWindow.months[Number(label.value)] * 100 / spaceYearWindow.hours + '%')
+    return tick
+  }))
+}
+
+function setSpaceMode(year) {
+  if (!updateSpace || spaceYearMode === year) return
+  stop()
+  stopSpaceYear()
+  spaceYearMode = year
+  if (year && !spaceYearWindow) {
+    const epoch = settings.start + elapsed * hour
+    setSpaceYear(new Date(Math.min(epoch, catalog.endMs - 1)).getUTCFullYear(), epoch)
+  }
+  get('space-mission-mode').setAttribute('aria-pressed', String(!year))
+  get('space-year-mode').setAttribute('aria-pressed', String(year))
+  for (const id of ['space-year-controls', 'space-month-scale', 'space-year-note']) get(id).hidden = !year
+  get('space-time-label').textContent = year ? 'Time within selected year' : '3D view mission time'
+  syncSpacePlayButton()
+  showSpaceTime()
 }
 
 function prepareLocalSky() {
@@ -1152,10 +1204,41 @@ function stop() {
   playing = null
   get('play').textContent = '▶'
   get('play').setAttribute('aria-label', 'Play timeline')
-  get('space-play').textContent = '▶'
-  get('space-play').setAttribute('aria-label', 'Play 3D timeline')
+  syncSpacePlayButton()
   get('coverage-play').textContent = '▶'
   get('coverage-play').setAttribute('aria-label', 'Play map timeline')
+}
+
+function syncSpacePlayButton() {
+  const running = (spaceYearMode ? spaceYearPlayback : playing) !== null
+  get('space-play').textContent = running ? 'Ⅱ' : '▶'
+  get('space-play').setAttribute('aria-label', (running ? 'Pause' : 'Play') + (spaceYearMode ? ' whole year' : ' 3D timeline'))
+}
+
+function stopSpaceYear() {
+  if (spaceYearPlayback !== null) cancelAnimationFrame(spaceYearPlayback)
+  spaceYearPlayback = null
+  syncSpacePlayButton()
+}
+
+function playSpaceYear() {
+  if (spaceYearPlayback !== null) { stopSpaceYear(); return }
+  if (spaceYearHours >= spaceYearWindow.hours) spaceYearHours = 0
+  const initial = spaceYearHours
+  const began = performance.now()
+  const rate = Number(get('space-year-speed').value) * 24 / 1000
+  function tick(now) {
+    const next = Math.min(spaceYearWindow.hours, Math.round((initial + (now - began) * rate) * 4) / 4)
+    if (next !== spaceYearHours) {
+      spaceYearHours = next
+      showSpaceTime()
+    }
+    if (next >= spaceYearWindow.hours) stopSpaceYear()
+    else spaceYearPlayback = requestAnimationFrame(tick)
+  }
+  spaceYearPlayback = requestAnimationFrame(tick)
+  syncSpacePlayButton()
+  showSpaceTime()
 }
 
 function seekTime(hours) {
@@ -1174,8 +1257,6 @@ function play() {
   const speed = Number(get('timeline-speed').value)
   get('play').textContent = 'Ⅱ'
   get('play').setAttribute('aria-label', 'Pause timeline')
-  get('space-play').textContent = 'Ⅱ'
-  get('space-play').setAttribute('aria-label', 'Pause 3D timeline')
   get('coverage-play').textContent = 'Ⅱ'
   get('coverage-play').setAttribute('aria-label', 'Pause map timeline')
   function update(now) {
@@ -1188,6 +1269,7 @@ function play() {
     else playing = requestAnimationFrame(update)
   }
   playing = requestAnimationFrame(update)
+  syncSpacePlayButton()
 }
 
 function exportCsv() {
@@ -1251,6 +1333,9 @@ async function startSpace() {
       left: get('space-left'), right: get('space-right'), up: get('space-up'), down: get('space-down'), reset: get('space-reset'),
     }
     updateSpace = createSpaceView(get('space-canvas'), samples, controls)
+    const firstYear = new Date(catalog.startMs).getUTCFullYear()
+    const lastYear = new Date(catalog.endMs - 1).getUTCFullYear()
+    get('space-year').replaceChildren(...Array.from({ length: lastYear - firstYear + 1 }, (_, i) => new Option(firstYear + i, firstYear + i)))
     get('space-content').hidden = false
     for (const button of Object.values(controls)) if (button.tagName === 'BUTTON') button.disabled = false
     for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
@@ -1367,8 +1452,32 @@ get('timeline-speed').addEventListener('change', () => {
   stop()
   play()
 })
-for (const slider of inputs('time-slider', 'space-time', 'coverage-time')) slider.addEventListener('input', event => {
+for (const slider of inputs('time-slider', 'coverage-time')) slider.addEventListener('input', event => {
   seekTime(Number(event.target.value))
+})
+get('space-time').addEventListener('input', event => {
+  const hours = Number(event.target.value)
+  if (!spaceYearMode) { seekTime(hours); return }
+  stopSpaceYear()
+  spaceYearHours = hours
+  showSpaceTime()
+})
+get('space-mission-mode').addEventListener('click', () => setSpaceMode(false))
+get('space-year-mode').addEventListener('click', () => setSpaceMode(true))
+get('space-year').addEventListener('change', event => {
+  stopSpaceYear()
+  setSpaceYear(Number(event.target.value))
+  showSpaceTime()
+})
+get('space-month').addEventListener('change', event => {
+  stopSpaceYear()
+  spaceYearHours = spaceYearWindow.months[Number(event.target.value)]
+  showSpaceTime()
+})
+get('space-year-speed').addEventListener('change', () => {
+  if (spaceYearPlayback === null) return
+  stopSpaceYear()
+  playSpaceYear()
 })
 get('show-map').addEventListener('click', () => useMap('polar'))
 get('show-globe').addEventListener('click', () => useMap('globe'))
@@ -1382,7 +1491,8 @@ get('elevation-chart').addEventListener('pointerdown', event => {
   const fraction = Math.max(0, Math.min(1, (event.offsetX - 45) / (event.currentTarget.clientWidth - 58)))
   seekTime(Math.round(fraction * settings.duration * 4) / 4)
 })
-for (const button of inputs('play', 'space-play', 'coverage-play')) button.addEventListener('click', play)
+for (const button of inputs('play', 'coverage-play')) button.addEventListener('click', play)
+get('space-play').addEventListener('click', () => spaceYearMode ? playSpaceYear() : play())
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))
 new ResizeObserver(redrawLocalSky).observe(get('sky-canvas'))

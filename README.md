@@ -10,9 +10,9 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Choose Illustrated or Natural, or point toward a nearby named crater. Both styles use NASA LOLA terrain and LROC reflectance, with illustrative small impact pits and image-generated dust. The Shackleton Rim study site includes NASA’s 5 m/pixel local elevation raster.
 
-**[Open the 3D orbit view](https://debaprashad-bhowmik.github.io/project-astralis/#space).** Switch between Earth-centered and Sun-centered views. Toggle the Moon’s orbit, the annual Sun or Earth path, and the dashed body links independently.
+**3D orbit view.** Switch between Earth-centered and Sun-centered views. Select **Whole year** to explore any calendar year from 2024 through 2030 in UTC. Jump to a month, scrub the date slider, or play at 1, 5, or 15 simulation days per second. **Mission window** returns to the shared mission timeline.
 
-The **One lunar day** operating window plays 29.5 Earth days from landing. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list. The map, orbit scene, and surface views share the same mission clock.
+The **One lunar day** operating window plays 29.5 Earth days from landing. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list. The map, surface views, and orbit scene’s **Mission window** mode share the mission clock.
 
 **[Explore the South Pole on the 3D Moon](https://debaprashad-bhowmik.github.io/project-astralis/#south-pole).** The 90°S marker and 84°S ring show the pole and the edge of NASA’s six-degree Artemis exploration zone. Select a **Surface layer** to see sunlight, direct Earth visibility, or their overlap on the rotatable globe or flat visibility map. Global coverage uses a smooth reference horizon. Individual sites use the selected horizon model.
 

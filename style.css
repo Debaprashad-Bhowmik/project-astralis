@@ -335,6 +335,10 @@ canvas{display:block;width:100%;height:190px}
 
 .space-panel{grid-column:1/-1;order:0}
 .space-heading{align-items:center;flex-wrap:wrap}
+.space-date-controls,#space-year-controls{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:end}
+.space-date-controls{margin-top:8px}
+#space-year-controls label{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:.78rem}
+#space-year-controls select{min-height:30px;width:auto;padding:3px 5px;font-size:.78rem}
 .space-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(215px,275px);gap:16px;margin-top:10px}
 #space-canvas{height:285px;background:radial-gradient(ellipse at 55% 50%,#121218,#060608 75%);border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:grab}
 #space-canvas:active{cursor:grabbing}
@@ -352,6 +356,9 @@ canvas{display:block;width:100%;height:190px}
 .space-distance dd{margin:0;text-align:right}
 .space-marker{padding-top:6px;border-top:1px solid var(--line)}
 .space-scrub{margin-top:11px}
+.space-scrub:has(.space-month-scale:not([hidden])){row-gap:0}
+.space-month-scale{position:relative;grid-column:2;grid-row:2;height:19px;margin:0 7px;color:var(--muted);font-size:.72rem}
+.space-month-scale span{position:absolute;left:var(--month-position)}
 .local-sky{margin:14px 0 13px;padding-bottom:13px;border-bottom:1px solid var(--line);scroll-margin-top:12px}
 .sky-heading{display:flex;justify-content:space-between;align-items:baseline;gap:5px 15px;flex-wrap:wrap;margin-bottom:8px}
 .sky-heading p{margin-top:3px}

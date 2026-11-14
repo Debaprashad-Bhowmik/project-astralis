@@ -175,22 +175,24 @@ export function eclipseMargin(sun, earth) {
   return (separation + Math.asin(sunRadius / sunDistance) - Math.asin(earthRadius / earthDistance)) / radians
 }
 
-export function evaluate(site, frames, hours, useTerrain) {
+export function siteSkyModel(site, useTerrain) {
   const base = observer(site.lat, site.lon, useTerrain ? site.height + 2 : 0)
   const profile = useTerrain ? site.horizon : null
-  const sunClearance = []
-  const earthClearance = []
-  const timeline = frames.map(([sunPosition, earthPosition]) => {
+  return ([sunPosition, earthPosition]) => {
     const [sunAz, sunEl, sunVector] = localAngles(sunPosition, base)
     const [earthAz, earthEl, earthVector] = localAngles(earthPosition, base)
     const sunHorizon = horizonAt(profile, sunAz)
     const earthHorizon = horizonAt(profile, earthAz)
     const eclipse = eclipseMargin(sunVector, earthVector)
-    sunClearance.push(Math.min(sunEl - sunHorizon, eclipse))
-    earthClearance.push(earthEl - earthHorizon)
-    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0,
+    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0, eclipseMargin: eclipse,
       sunRadius: Math.asin(sunRadius / Math.hypot(...sunVector)), earthRadius: Math.asin(earthRadius / Math.hypot(...earthVector)) }
-  })
+  }
+}
+
+export function evaluate(site, frames, hours, useTerrain) {
+  const timeline = frames.map(siteSkyModel(site, useTerrain))
+  const sunClearance = timeline.map(item => Math.min(item.sunEl - item.sunHorizon, item.eclipseMargin))
+  const earthClearance = timeline.map(item => item.earthEl - item.earthHorizon)
   const step = hours / (frames.length - 1)
   const sun = visibility(sunClearance, step)
   const earth = visibility(earthClearance, step)

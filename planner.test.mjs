@@ -3,13 +3,23 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
 import { artemisSouthLatitude, globeOrientation, projectSite, southPoleView } from './globe.mjs'
-import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
+import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
+
+test('space calendar years use exact UTC bounds and include leap day', () => {
+  const hour = 3_600_000
+  const leap = calendarSpaceWindow(2028)
+  assert.equal(leap.start, Date.parse('2028-01-01T00:00:00Z'))
+  assert.equal(leap.last, Date.parse('2028-12-31T23:45:00Z'))
+  assert.equal(leap.hours, 366 * 24 - .25)
+  assert.equal(leap.months[2], 60 * 24)
+  assert.equal(calendarSpaceWindow(2029).last - calendarSpaceWindow(2029).start, (365 * 24 - .25) * hour)
+})
 import { overlapStep, missionOverlapGrid, overlapScore } from './mission-heat.mjs'
 
 test('interpolates terrain across north', () => {

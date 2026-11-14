@@ -8,6 +8,19 @@ const scale = (vector, factor) => vector.map(value => value * factor)
 const unit = vector => scale(vector, 1 / magnitude(vector))
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 export const spaceStep = 3600
+const hourMs = spaceStep * 1000
+
+export function calendarSpaceWindow(year) {
+  const start = Date.UTC(year, 0, 1)
+  const end = Date.UTC(year + 1, 0, 1)
+  return {
+    start,
+    end,
+    last: end - hourMs / 4,
+    hours: (end - start) / hourMs - .25,
+    months: Array.from({ length: 12 }, (_, month) => (Date.UTC(year, month, 1) - start) / hourMs),
+  }
+}
 
 export function readSpaceSamples(buffer, start, end) {
   const count = (end - start) / (spaceStep * 1000) + 1
@@ -67,18 +80,19 @@ export function createSpaceView(canvas, samples, controls) {
   function trail(index, kind) {
     const last = samples.length / stride - 1
     const lunar = kind === 'moon'
-    const period = Math.min(last, lunar ? 656 : 8766)
+    const yearRange = lunar ? null : current.yearRange
+    const period = yearRange ? yearRange[1] - yearRange[0] : Math.min(last, lunar ? 656 : 8766)
     const segments = Math.max(1, Math.ceil(period / (lunar ? 4 : 36)))
-    const start = clamp(Math.floor(index / 24) * 24 - Math.floor(period / 2), 0, last - period)
+    const start = yearRange ? yearRange[0] : clamp(Math.floor(index / 24) * 24 - Math.floor(period / 2), 0, last - period)
     const cached = paths.get(kind)
-    if (cached?.start === start) return cached.points
+    if (cached?.start === start && cached.period === period) return cached.points
     const points = Array.from({ length: segments + 1 }, (_, i) => {
       const offset = (start + Math.round(i * period / segments)) * stride + (lunar ? 0 : 3)
       const vector = Array.from(samples.subarray(offset, offset + 3))
       if (lunar) return scale(vector, 1 / earthMoonScale)
       return kind === 'earth' ? scale(vector, -1 / 149597871) : scale(unit(vector), sunDrawingDistance)
     })
-    paths.set(kind, { start, points })
+    paths.set(kind, { start, period, points })
     return points
   }
 
@@ -241,10 +255,10 @@ export function createSpaceView(canvas, samples, controls) {
   }
   new ResizeObserver(draw).observe(canvas)
 
-  return (index, site) => {
+  return (index, site, yearRange = null) => {
     const state = systemAt(samples, index)
     heading ??= Math.atan2(state.sun[1], state.sun[0])
-    current = { state, site, index }
+    current = { state, site, index, yearRange }
     draw()
     return {
       lunarKm: distanceLabel.format(magnitude(state.moon)),

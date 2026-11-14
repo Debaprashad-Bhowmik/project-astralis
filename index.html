@@ -121,6 +121,17 @@
           <p id="space-error" class="error" role="status" hidden></p>
           <p id="space-status" class="muted" role="status">Loading 3D positions…</p>
           <div id="space-content" hidden>
+            <div class="space-date-controls">
+              <div class="map-view" role="group" aria-label="3D timescale">
+                <button type="button" class="subtle" id="space-mission-mode" aria-pressed="true">Mission window</button>
+                <button type="button" class="subtle" id="space-year-mode" aria-pressed="false">Whole year</button>
+              </div>
+              <div id="space-year-controls" hidden>
+                <label>Year <select id="space-year"></select></label>
+                <label>Jump to month <select id="space-month"></select></label>
+                <label>Playback speed <select id="space-year-speed"><option value="15">15 days/sec</option><option value="5" selected>5 days/sec</option><option value="1">1 day/sec</option></select></label>
+              </div>
+            </div>
             <div class="space-grid">
               <div>
                 <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
@@ -154,10 +165,12 @@
             </div>
             <div class="scrub space-scrub">
               <button type="button" class="subtle" id="space-play" aria-label="Play 3D timeline" disabled>▶</button>
-              <label class="sr-only" for="space-time">3D view mission time</label>
+              <label class="sr-only" id="space-time-label" for="space-time">3D view mission time</label>
               <input id="space-time" type="range" min="0" max="24" step=".25" value="0" disabled>
+              <div id="space-month-scale" class="space-month-scale" aria-hidden="true" hidden></div>
               <output id="space-clock" for="space-time"></output>
             </div>
+            <p id="space-year-note" class="muted globe-help" hidden>The yearly preview has its own clock. Switch to Mission window to return to the mission timeline.</p>
           </div>
         </section>
 
