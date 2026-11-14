@@ -211,6 +211,7 @@
             </label>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
+          <p class="muted" id="mission-heat-models" hidden></p>
           <div id="globe-view">
             <div id="globe-stage" class="globe-stage">
               <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." aria-describedby="globe-pole-note" role="img"></canvas>
@@ -256,13 +257,13 @@
                 <span>0 h · No overlap</span><span id="mission-heat-mid"></span><span id="mission-heat-max"></span>
               </div>
               <p class="muted mission-heat-key">× marks sites with zero overlap.</p>
-              <p class="muted mission-heat-key" id="mission-heat-scale-note">Uncolored terrain has no overlap. The right label shows the highest overlap for this period out of the full mission duration.</p>
+              <p class="muted mission-heat-key" id="mission-heat-scale-note">Uncolored areas have zero modeled overlap. Green is the highest estimate across the map and pins for this period. The label gives that value out of the full mission duration.</p>
               <p id="mission-heat-best"></p>
               <p id="mission-heat-site"></p>
+              <p class="muted" id="mission-heat-reference" hidden></p>
               <div id="mission-heat-track"></div>
-              <p class="muted mission-heat-key">Green shows overlap. Hatched sections show gaps.</p>
+              <p class="muted mission-heat-key">The strip below the site values shows overlap in green and gaps with hatching.</p>
               <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
-              <p id="mission-heat-notes" class="muted">Green shows the highest overlap among map cells and listed sites in this period. Map cells use a smooth lunar horizon. Site pins use the selected local horizon model.</p>
             </div>
           </div>
           <div id="coverage-details" hidden>

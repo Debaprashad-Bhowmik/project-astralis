@@ -160,6 +160,7 @@ let heatWorker
 let heatGrid
 const heatLayers = new Map()
 let heatDisplay
+let heatReference
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -534,6 +535,7 @@ function showCoverage() {
   const power = visible && mode === 'power'
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
+  get('mission-heat-models').hidden = !mission
   get('coverage-details').hidden = !visible || mission
   get('power-details').hidden = !power
   for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = power
@@ -604,7 +606,14 @@ function showMissionHeat(flat) {
   const status = get('mission-heat-status')
   const results = get('mission-heat-results')
   const globeCanvas = get('globe-canvas')
-  globeCanvas.setAttribute('aria-describedby', 'globe-pole-note mission-heat-status mission-heat-best mission-heat-site mission-heat-notes')
+  const { start, duration, horizon } = settings
+  const models = get('mission-heat-models')
+  const modelNote = horizon === 'terrain'
+    ? 'Shading assumes a smooth lunar horizon. Pins use the local LOLA skyline, where ridges and crater walls can block the Sun or Earth.'
+    : 'Both the shading and the pins use a smooth horizon. The shading estimates overlap on a 2° grid.'
+  if (models.textContent !== modelNote) models.textContent = modelNote
+  const description = 'mission-heat-models mission-heat-status mission-heat-site' + (horizon === 'terrain' ? ' mission-heat-reference' : '')
+  globeCanvas.setAttribute('aria-describedby', 'globe-pole-note ' + description)
   if (!heatGrid) {
     results.hidden = true
     if (!flat) globe?.setCoverage(null)
@@ -641,7 +650,6 @@ function showMissionHeat(flat) {
     return
   }
 
-  const { start, duration, horizon } = settings
   const period = Number(get('mission-heat-period').value)
   if (heatDisplay?.flat === flat && heatDisplay.active === active && heatDisplay.period === period) return
   heatDisplay = { flat, active, period }
@@ -657,9 +665,10 @@ function showMissionHeat(flat) {
     const best = ranked.reduce((highest, row, index) => listed[index][1] > listed[highest][1] ? index : highest, 0)
     layer.best = ranked[best]
     layer.maxHours = Math.max(gridPeriod.maxHours, listed[best][1])
+    const model = horizon === 'terrain' ? 'local LOLA skyline' : 'smooth horizon'
     layer.overlaps = new Map(listed.map(([id, overlap]) => {
       const number = formatHours(overlap)
-      return [id, { number, overlap, label: `${number} of simultaneous sunlight and Earth visibility`,
+      return [id, { number, overlap, label: `${number} of simultaneous sunlight and Earth visibility using the ${model}`,
         color: overlap > 0 ? 'rgb(' + overlapRgb(overlap, layer.maxHours).join(',') + ')' : '#c6c3cc', nearZero: overlap === 0 }]
     }))
   }
@@ -682,7 +691,7 @@ function showMissionHeat(flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
     drawCoverage(null, active.site, 'mission', colors)
     get('coverage-canvas').setAttribute('aria-label', period ? `Whole-Moon overlap heat map for quarter ${period}` : 'Whole-Moon mission overlap heat map')
-    get('coverage-canvas').setAttribute('aria-describedby', 'mission-heat-notes mission-heat-site')
+    get('coverage-canvas').setAttribute('aria-describedby', description)
   } else {
     globe?.setMissionHeat(colors)
     globe?.setSiteScores(overlaps)
@@ -697,9 +706,18 @@ function showMissionHeat(flat) {
   get('mission-heat-max').textContent = maxLabel
   status.textContent = `${period ? 'Quarter ' + period : 'Entire mission'} · ${dateLabel(start + from * hour)} → ${dateLabel(start + to * hour)} · ${formatHours(hours)}`
   get('mission-heat-best').textContent = bestOverlap > 0
-    ? `Best listed overlap · ${siteName(best.site)} · ${formatHours(bestOverlap)} of ${formatHours(hours)}`
-    : 'No listed site has Sun and Earth in view together during this period.'
+    ? `Best evaluated site · ${siteName(best.site)} · ${formatHours(bestOverlap)} of ${formatHours(hours)}`
+    : 'No evaluated site has Sun and Earth in view together during this period.'
   get('mission-heat-site').textContent = `${siteName(site)} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteOverlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizon)}`
+  const reference = get('mission-heat-reference')
+  reference.hidden = horizon !== 'terrain'
+  if (horizon === 'terrain') {
+    if (heatReference?.mission !== missionFrames || heatReference.site !== site) {
+      const smooth = evaluate(site, missionFrames.frames, duration, false, { includeTimeline: false })
+      heatReference = { mission: missionFrames, site, windows: smooth.metrics.both }
+    }
+    reference.textContent = `Same coordinates with a smooth horizon · ${formatHours(windowHours(heatReference.windows, from, to))} of ${formatHours(hours)}`
+  }
   showHeatWindows(metrics.both, from, to)
   results.hidden = false
 }
