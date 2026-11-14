@@ -1,7 +1,7 @@
 const radians = Math.PI / 180
 export const radius = 1737400
-const sunRadius = 695700000
-const earthRadius = 6378137
+export const sunRadius = 695700000
+export const earthRadius = 6378137
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const interpolate = (a, b, t) => a + (b - a) * t
 

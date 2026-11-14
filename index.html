@@ -187,11 +187,18 @@
             <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
           </details>
           <p class="error" id="globe-error" hidden></p>
+          <div class="coverage-toolbar" id="coverage-toolbar">
+            <label for="coverage-layer">Surface layer
+              <select id="coverage-layer"><option value="off">Terrain only</option><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></select>
+            </label>
+            <time id="coverage-clock" class="muted" hidden></time>
+          </div>
           <div id="globe-view">
             <div id="globe-stage" class="globe-stage">
-              <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." role="img"></canvas>
+              <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." aria-describedby="globe-pole-note" role="img"></canvas>
               <canvas id="globe-features" aria-hidden="true" hidden></canvas>
               <div id="globe-markers"></div>
+              <span id="globe-pole-marker" hidden>South Pole · 90°S</span>
             </div>
             <div class="globe-controls" aria-label="3D Moon controls">
               <button type="button" class="subtle" id="globe-left" aria-label="Rotate Moon west">←</button>
@@ -205,6 +212,7 @@
               <button type="button" class="subtle" id="globe-far">Far side</button>
               <button type="button" class="subtle" id="globe-pole">South pole</button>
             </div>
+            <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>Artemis exploration zone</strong> · 84°S to 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s six-degree definition</a></p>
             <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
           </div>
           <div id="polar-view" hidden>
@@ -217,22 +225,18 @@
           </div>
           </div>
           <section id="coverage-view" aria-label="Whole-Moon visibility" hidden>
-            <div class="coverage-toolbar">
-              <label for="coverage-layer">Map overlay
-                <select id="coverage-layer"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></select>
-              </label>
-              <time id="coverage-clock" class="muted"></time>
-            </div>
             <figure class="coverage-figure">
               <canvas id="coverage-canvas" role="img" aria-label="Whole-Moon map of sunlight and a direct view of Earth. West is left and east is right." aria-describedby="coverage-notes coverage-summary"></canvas>
               <div class="coverage-axis" aria-hidden="true"><span>180°W</span><span>90°W</span><span>0°</span><span>90°E</span><span>180°E</span></div>
-              <figcaption class="muted" id="coverage-notes">Colors show the smooth-Moon horizon. The site readout uses your selected horizon model. Click the map to evaluate a point.</figcaption>
             </figure>
+          </section>
+          <div id="coverage-details" hidden>
             <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
+            <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
             <p class="muted" id="coverage-summary"></p>
             <p class="muted" id="coverage-overhead"></p>
             <div class="scrub coverage-scrub"><button type="button" class="subtle" id="coverage-play" aria-label="Play map timeline">▶</button><label class="sr-only" for="coverage-time">Visibility map mission time</label><input id="coverage-time" type="range" min="0" max="24" step=".25" value="0"></div>
-          </section>
+          </div>
           <div class="map-caption" id="site-map-legend"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
           <div class="map-site" aria-live="polite">
             <h3 id="map-site-name"></h3>
@@ -351,7 +355,6 @@
                   <label class="surface-crater" hidden>Look toward <select id="surface-crater"><option value="">Nearby crater</option></select></label>
                   <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
                   <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
-                  <label class="sky-path-toggle"><input type="checkbox" id="surface-detail" checked> Illustrative craters and texture</label>
                   <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show arcs and labels</label>
                 </div>
                 <p class="muted" id="surface-landmark" hidden></p>

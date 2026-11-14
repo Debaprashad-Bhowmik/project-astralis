@@ -447,8 +447,13 @@ function useMap(view) {
     get(button).setAttribute('aria-pressed', String(view === mode))
   }
   get('site-map-legend').hidden = view === 'coverage'
+  get('coverage-toolbar').hidden = view === 'polar'
+  const layer = get('coverage-layer')
+  layer.options[0].disabled = view === 'coverage'
+  if (view === 'coverage' && layer.value === 'off') layer.value = 'all'
   if (view === 'globe') globe?.draw()
-  if (view === 'coverage') showCoverage()
+  showCoverageLegend()
+  showCoverage()
 }
 
 function evaluateMapPoint({ lat, lon }) {
@@ -458,15 +463,31 @@ function evaluateMapPoint({ lat, lon }) {
 }
 
 function showCoverage() {
-  if (!active || get('coverage-view').hidden) return
-  drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
+  const flat = !get('coverage-view').hidden
+  const onGlobe = !get('globe-view').hidden
+  const mode = get('coverage-layer').value
+  const visible = Boolean(active) && (flat || (onGlobe && mode !== 'off'))
+  get('coverage-details').hidden = !visible
+  get('coverage-clock').hidden = !visible
+  if (!visible) {
+    if (onGlobe) {
+      globe?.setCoverage(null)
+      get('globe-canvas').setAttribute('aria-describedby', 'globe-pole-note')
+    }
+    return
+  }
   const epoch = settings.start + elapsed * hour
   if (coverageEpoch !== epoch) {
     coverageEpoch = epoch
     coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
   }
-  const mode = get('coverage-layer').value
-  drawCoverage(coverageFrame, active.site, mode)
+  if (flat) {
+    drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
+    drawCoverage(coverageFrame, active.site, mode)
+  } else {
+    globe?.setCoverage(coverageFrame, mode)
+    get('globe-canvas').setAttribute('aria-describedby', 'globe-pole-note coverage-notes coverage-summary coverage-overhead')
+  }
   const time = dateLabel(epoch)
   const clock = get('coverage-clock')
   clock.textContent = time
@@ -490,7 +511,7 @@ function showCoverageLegend() {
     sun: [['sun', 'Sunlight'], ['none', 'No direct sunlight']],
     earth: [['earth', 'Earth in view'], ['none', 'Earth below horizon']],
     both: [['both', 'Both in view'], ['none', 'At least one blocked']],
-  }[get('coverage-layer').value]
+  }[get('coverage-layer').value] ?? []
   get('coverage-legend').replaceChildren(...entries.map(([color, name]) => element('li', `coverage-${color}`, name)))
 }
 
@@ -501,7 +522,7 @@ function installGlobe() {
     useMap('polar')
     error('globe-error', message)
   }
-  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), id => selectSite(id, false), evaluateMapPoint, feature => {
+  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), get('globe-pole-marker'), catalog.mapExtent, id => selectSite(id, false), evaluateMapPoint, feature => {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
@@ -519,7 +540,7 @@ function installGlobe() {
     'globe-focus': () => active && globe.center(active.site),
     'globe-reset': () => globe.reset(),
     'globe-far': () => globe.center({ lat: 0, lon: 180 }),
-    'globe-pole': () => globe.center({ lat: -90, lon: 16 }),
+    'globe-pole': () => globe.southPole(),
   }
   for (const [id, handler] of Object.entries(controls)) get(id).addEventListener('click', handler)
 }
@@ -853,7 +874,7 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. The optional small craters and generated dust texture are illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Small foreground pits and dust texture are illustrative.' +
     (settings.horizon === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
@@ -1089,8 +1110,12 @@ async function start() {
     get('explore-open').disabled = false
     if (location.hash === '#explore') renderLesson()
     if (location.hash === '#coverage-view') {
-      showCoverageLegend()
       useMap('coverage')
+      requestAnimationFrame(() => get('map-heading').scrollIntoView({ behavior: 'instant' }))
+    }
+    if (location.hash === '#south-pole' && globe) {
+      useMap('globe')
+      globe.southPole()
       requestAnimationFrame(() => get('map-heading').scrollIntoView({ behavior: 'instant' }))
     }
     if (['#local-sky', '#assessment'].includes(location.hash)) requestAnimationFrame(() => get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' }))
@@ -1206,7 +1231,6 @@ get('sky-paths').addEventListener('change', redrawLocalSky)
 get('surface-paths').addEventListener('change', redrawLocalSky)
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
-get('surface-detail').addEventListener('change', event => surfaceView?.setDetail(event.target.checked))
 get('surface-crater').addEventListener('change', event => {
   const crater = surfaceCraters.find(item => String(item.id) === event.target.value)
   const description = get('surface-landmark')
@@ -1236,10 +1260,7 @@ for (const slider of inputs('time-slider', 'space-time', 'coverage-time')) slide
 })
 get('show-map').addEventListener('click', () => useMap('polar'))
 get('show-globe').addEventListener('click', () => useMap('globe'))
-get('show-coverage').addEventListener('click', () => {
-  showCoverageLegend()
-  useMap('coverage')
-})
+get('show-coverage').addEventListener('click', () => useMap('coverage'))
 get('coverage-layer').addEventListener('change', () => {
   showCoverageLegend()
   showCoverage()

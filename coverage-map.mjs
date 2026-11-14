@@ -16,9 +16,13 @@ export function subPoint([x, y, z]) {
   return { lat: Math.atan2(z, Math.hypot(x, y)) / radians, lon: wrapLongitude(Math.atan2(y, x) / radians) }
 }
 
+export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4 }
+export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
+// The observer offset across the surface cannot produce totality outside this margin.
+export const totalityPossible = (sun, earth) => eclipseMargin(sun, earth) <= .4
+
 export function createCoverageModel(sun, earth) {
-  // Outside this center-to-center margin, the observer's offset on the Moon cannot produce totality.
-  const possibleEclipse = eclipseMargin(sun, earth) <= .4
+  const possibleEclipse = totalityPossible(sun, earth)
   return (x, y, z) => {
     const earthUp = x * earth[0] + y * earth[1] + z * earth[2] > radius
     let sunUp = x * sun[0] + y * sun[1] + z * sun[2] > radius
@@ -30,7 +34,6 @@ export function createCoverageModel(sun, earth) {
   }
 }
 
-const palette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
 const inks = ['#777986', '#ffc975', '#acc4ff', '#83dccb']
 const rasterWidth = 480
 const rasterHeight = 240
@@ -72,7 +75,7 @@ export function createCoverageMap(canvas, onPoint) {
         const key = mode === 'both' ? (point === 3 ? 3 : 0) : point & layer
         const offset = 4 * (row * rasterWidth + col)
         const shade = basemap ? .56 + basemap[offset] / 360 : .83
-        for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = palette[key][channel] * shade
+        for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel] * shade
         pixels.data[offset + 3] = 255
       }
     }

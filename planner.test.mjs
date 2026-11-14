@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
-import { globeOrientation, projectSite } from './globe.mjs'
+import { artemisSouthLatitude, globeOrientation, projectSite, southPoleView } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
@@ -13,6 +13,18 @@ import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('the south pole view centers 90°S and projects the NASA 84°S boundary at its true angular distance', () => {
+  const orientation = globeOrientation(southPoleView.lat, southPoleView.lon)
+  const pole = projectSite({ lat: -90, lon: 0 }, orientation)
+  assert.ok(Math.hypot(...pole.slice(0, 2)) < 1e-12)
+  assert.equal(artemisSouthLatitude, -84)
+  for (const lon of [-180, -90, 0, 90, 180]) {
+    const [x, y, depth] = projectSite({ lat: artemisSouthLatitude, lon }, orientation)
+    assert.ok(Math.abs(Math.hypot(x, y) - Math.sin(Math.PI / 30)) < 1e-12)
+    assert.ok(depth > 0)
+  }
 })
 
 test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {

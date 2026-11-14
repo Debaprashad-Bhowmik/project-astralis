@@ -261,7 +261,7 @@ const fragment = `
 #extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec3 sunDirection;
-uniform float daylight, inkStyle, showDetail, impactScale;
+uniform float daylight, inkStyle, impactScale;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent;
@@ -338,28 +338,24 @@ void main() {
   float footprint = max(length(dFdx(local)),length(dFdy(local)));
   float patches = (grain(local*.009)-.5) * (1.0-smoothstep(30.0,115.0,footprint));
   vec2 relief = (grit.gb - .5) * .52 + (fragments.gb - .5) * .85;
-  vec3 textured = normalize(n + vec3(relief.x,0,relief.y));
   float direct = daylight > 0.0 ? shadow() : 0.0;
   float detail = (grit.r - .51) * .63 + (fragments.r - .51) * .75 + patches * .26;
-  vec3 displayNormal = n;
-  if (showDetail > .5) {
-    vec2 impactCoords = local / (${impactPeriod.toFixed(1)} * impactScale);
-    vec4 pits = texture2D(impactMap, impactCoords);
-    const mat2 rotation = mat2(.8,.6,-.6,.8);
-    vec4 largerPits = texture2D(impactMap, rotation * impactCoords * .34 + vec2(.26,.69));
-    float distant = smoothstep(8.0, 32.0, length(local)) * (1.0 - smoothstep(1.0, 10.0, footprint));
-    vec2 walls = (pits.rg - .5) * 2.35 + (largerPits.rg - .5) * rotation * 2.23 * distant;
-    float cavity = max(pits.b, largerPits.b * distant);
-    float rim = max(pits.a, largerPits.a * distant);
-    displayNormal = normalize(n + vec3(walls.x,0,walls.y));
-    textured = normalize(displayNormal + vec3(relief.x,0,relief.y)*.45);
+  vec2 impactCoords = local / (${impactPeriod.toFixed(1)} * impactScale);
+  vec4 pits = texture2D(impactMap, impactCoords);
+  const mat2 rotation = mat2(.8,.6,-.6,.8);
+  vec4 largerPits = texture2D(impactMap, rotation * impactCoords * .34 + vec2(.26,.69));
+  float distant = smoothstep(8.0, 32.0, length(local)) * (1.0 - smoothstep(1.0, 10.0, footprint));
+  vec2 walls = (pits.rg - .5) * 2.35 + (largerPits.rg - .5) * rotation * 2.23 * distant;
+  float cavity = max(pits.b, largerPits.b * distant);
+  float rim = max(pits.a, largerPits.a * distant);
+  vec3 displayNormal = normalize(n + vec3(walls.x,0,walls.y));
+  vec3 textured = normalize(displayNormal + vec3(relief.x,0,relief.y)*.45);
 
-    float nearDust = texture2D(dustMap, local / 4.0).r;
-    float coarseDust = texture2D(dustMap, rotation * local / 19.0 + vec2(.35,.81)).r;
-    float dust = (nearDust - .36) * 1.75 + (coarseDust - .36) * .84;
-    float occlusion = cavity * .20 + cavity * cavity * .19;
-    detail = detail * .39 + dust + rim * .24 - occlusion;
-  }
+  float nearDust = texture2D(dustMap, local / 4.0).r;
+  float coarseDust = texture2D(dustMap, rotation * local / 19.0 + vec2(.35,.81)).r;
+  float dust = (nearDust - .36) * 1.75 + (coarseDust - .36) * .84;
+  float occlusion = cavity * .20 + cavity * cavity * .19;
+  detail = detail * .39 + dust + rim * .24 - occlusion;
   if (inkStyle > .5) {
     float lit = sqrt(max(0.0, dot(normalize(mix(displayNormal, textured, .42)), sunDirection)) * direct);
     gl_FragColor = vec4(celColor(displayNormal, lit, reflectance, detail, local, footprint), 1.0);
@@ -413,7 +409,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   const shadowNames = ['shadowRight', 'shadowUp', 'shadowDepth', 'shadowExtent']
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
   const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'lens', 'sunDirection', 'daylight', 'inkStyle',
-    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'impactMap', 'dustMap', 'showDetail', 'impactScale', 'shadowPixel', ...shadowNames])
+    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'impactMap', 'dustMap', 'impactScale', 'shadowPixel', ...shadowNames])
   const shadowUniforms = locations(shadowProgram, shadowNames)
   const vertices = gl.createBuffer()
   const normals = gl.createBuffer()
@@ -479,7 +475,6 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   let elevation = 1
   let zoom = 1
   let illustrated = true
-  let showDetail = true
   let drag
   let paths
   let shadowSample
@@ -551,7 +546,6 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform3fv(uniforms.sunDirection, direction(sample.sunAz, sample.sunEl))
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
     gl.uniform1f(uniforms.inkStyle, Number(illustrated))
-    gl.uniform1f(uniforms.showDetail, Number(showDetail))
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
 
     sky.setTransform(pixel, 0, 0, pixel, 0, 0)
@@ -703,7 +697,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   new ResizeObserver(draw).observe(canvas)
 
   return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, setStyle(value) { illustrated = value === 'illustrated'; draw() },
-    setDetail(value) { showDetail = value; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
+    update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
     const indices = indexTerrain(mesh.length / 3)
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices)
     gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)

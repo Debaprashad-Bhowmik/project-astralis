@@ -8,13 +8,13 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **[Explore three guided examples](https://debaprashad-bhowmik.github.io/project-astralis/#explore).** Compare a three-day landing delay, near-side and far-side Earth visibility, or the solar power implications of a low Sun. Each example uses the mission planner’s data and can open as an editable comparison.
 
-**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Choose Illustrated or Natural, or point toward a nearby named crater. Turn off **Illustrative craters and texture** to remove the added small impact pits and ImageGen dust. Both styles use NASA LOLA terrain and LROC reflectance. The Shackleton Rim study site includes NASA’s 5 m/pixel local elevation raster.
+**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Choose Illustrated or Natural, or point toward a nearby named crater. Both styles use NASA LOLA terrain and LROC reflectance, with illustrative small impact pits and image-generated dust. The Shackleton Rim study site includes NASA’s 5 m/pixel local elevation raster.
 
 **[Open the 3D orbit view](https://debaprashad-bhowmik.github.io/project-astralis/#space).** Switch between Earth-centered and Sun-centered views. Toggle the Moon’s orbit, the annual Sun or Earth path, and the dashed body links independently.
 
 The **One lunar day** operating window plays 29.5 Earth days from landing. Use **Show paths over the mission** to trace both bodies, choose a playback speed, or open **Jump to a rise or set** to inspect a crossing from the event list. The map, orbit scene, and surface views share the same mission clock.
 
-**[Explore the lunar maps](https://debaprashad-bhowmik.github.io/project-astralis/#map-heading).** Choose the 3D Moon, the south-pole map, or the whole-Moon visibility map to see where sunlight and a direct view of Earth overlap at the selected time. The global overlay uses a smooth sphere. Individual sites use the selected horizon model.
+**[Explore the South Pole on the 3D Moon](https://debaprashad-bhowmik.github.io/project-astralis/#south-pole).** The 90°S marker and 84°S ring show the pole and the edge of NASA’s six-degree Artemis exploration zone. Select a **Surface layer** to see sunlight, direct Earth visibility, or their overlap on the rotatable globe or flat visibility map. Global coverage uses a smooth reference horizon. Individual sites use the selected horizon model.
 
 **[Check power and communications](https://debaprashad-bhowmik.github.io/project-astralis/#assessment).** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.
 
