@@ -369,11 +369,11 @@ canvas{display:block;width:100%;height:190px}
 #event-list time{color:var(--muted);font-variant-numeric:tabular-nums}
 .crossing-sun strong{color:var(--sun)}
 .crossing-earth strong{color:var(--earth)}
-.surface-stage{position:relative;height:320px;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:#060607}
-#surface-canvas,#surface-labels{position:absolute;inset:0;width:100%;height:100%}
+.surface-stage{position:relative;height:clamp(340px,38vw,510px);overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#020205}
+#surface-sky,#surface-canvas,#surface-labels{position:absolute;inset:0;width:100%;height:100%}
 #surface-canvas{touch-action:none;cursor:grab}
 #surface-canvas:active{cursor:grabbing}
-#surface-labels{pointer-events:none}
+#surface-sky,#surface-labels{pointer-events:none}
 #surface-heading{position:absolute;bottom:9px;left:9px;padding:3px 7px;border-radius:4px;background:#0a0a0ee8;font-size:.8rem;pointer-events:none}
 .surface-guides{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none}
 .surface-guides button{pointer-events:auto;min-height:28px;background:#0a0a0ee8}
@@ -412,7 +412,7 @@ canvas{display:block;width:100%;height:190px}
   .sky-grid{grid-template-columns:1fr;gap:8px}
   #sky-canvas{height:215px}
   .sky-path-toggle{margin-left:0}
-  .surface-stage{height:270px}
+  .surface-stage{height:clamp(285px,78vw,370px)}
   .assessment-grid,.assessment-windows .window-grid{grid-template-columns:1fr}
   .topbar nav a[href="#map-heading"]{display:none}
 }

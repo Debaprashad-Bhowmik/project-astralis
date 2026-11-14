@@ -175,6 +175,7 @@ export function createSpaceView(canvas, samples, controls) {
       ctx.strokeStyle = light ? color + '88' : color
       ctx.stroke()
     }
+    if (!controls.yearPath.checked && !controls.moonPath.checked) return
     ctx.font = '600 13px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
     const labels = []

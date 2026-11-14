@@ -9,6 +9,58 @@ const bearing = value => (value % 360 + 360) % 360
 const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0)
 // Pixel bounds of Earth's limb in NASA's 540 × 540 Apollo 17 JPG.
 const earthPhotoCrop = [15, 15, 508, 508]
+const regolithSize = 256
+
+// An unlit material with periodic relief. Elevation and reflectance at map scale come from NASA.
+function regolithMaterial() {
+  const size = regolithSize
+  const relief = new Float32Array(size * size)
+  const tone = new Float32Array(relief.length)
+  const texels = new Uint8Array(relief.length * 4)
+  let seed = 4073
+  const random = () => {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  const index = (x, y) => (y & (size - 1)) * size + (x & (size - 1))
+  for (let k = 0; k < relief.length; k++) {
+    relief[k] = random() * .12
+    tone[k] = .41 + random() * .22
+  }
+  for (let stone = 0; stone < 1250; stone++) {
+    const cx = Math.floor(random() * size)
+    const cy = Math.floor(random() * size)
+    const extent = 1.3 + random() ** 4 * 12
+    const flatten = .5 + random() * .5
+    const angle = random() * Math.PI * 2
+    const tint = .36 + random() * .42
+    const span = Math.ceil(extent)
+    for (let y = -span; y <= span; y++) {
+      for (let x = -span; x <= span; x++) {
+        const across = (x * Math.cos(angle) + y * Math.sin(angle)) / extent
+        const along = (-x * Math.sin(angle) + y * Math.cos(angle)) / (extent * flatten)
+        const edge = Math.max(Math.abs(across), Math.abs(along * .65 + across * .35), Math.abs(along * .7 - across * .3))
+        if (edge >= 1) continue
+        const k = index(cx + x, cy + y)
+        const height = Math.min(.85, (1 - edge) * extent * .16)
+        if (height > relief[k]) {
+          relief[k] = height
+          tone[k] = tint
+        }
+      }
+    }
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const k = index(x, y)
+      texels[k * 4] = Math.round(tone[k] * 255)
+      texels[k * 4 + 1] = Math.round(clamp(.5 + relief[index(x - 1, y)] - relief[index(x + 1, y)], 0, 1) * 255)
+      texels[k * 4 + 2] = Math.round(clamp(.5 + relief[index(x, y - 1)] - relief[index(x, y + 1)], 0, 1) * 255)
+      texels[k * 4 + 3] = 255
+    }
+  }
+  return texels
+}
 
 function direction(az, el) {
   const a = az * radians
@@ -132,7 +184,7 @@ uniform float daylight;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent;
-uniform sampler2D albedoMap, shadowMap;
+uniform sampler2D albedoMap, shadowMap, regolithMap;
 uniform float shadowPixel;
 varying vec3 terrain;
 varying vec3 groundNormal;
@@ -153,12 +205,17 @@ float shadow() {
   vec3 uv = position * .5 + .5;
   if (any(lessThan(uv, vec3(0))) || any(greaterThan(uv, vec3(1)))) return 1.0;
   float depth = uv.z - 40.0 / (2.0 * shadowExtent.z);
+  vec2 texel = uv.xy / shadowPixel - .5;
+  vec2 fraction = fract(texel);
+  vec2 center = (floor(texel) + .5) * shadowPixel;
   float sum = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      vec3 pixel = texture2D(shadowMap, uv.xy + vec2(float(x),float(y))*shadowPixel).rgb;
+  for (int x = -1; x <= 2; x++) {
+    for (int y = -1; y <= 2; y++) {
+      vec2 offset = vec2(float(x),float(y));
+      vec3 pixel = texture2D(shadowMap, center + offset * shadowPixel).rgb;
       float occluder = dot(pixel, vec3(1.0, 1.0/255.0, 1.0/65025.0));
-      sum += step(depth, occluder);
+      vec2 weight = min(vec2(1.0), 2.0 - abs(offset - fraction));
+      sum += step(depth, occluder) * weight.x * weight.y;
     }
   }
   return sum / 9.0;
@@ -169,20 +226,20 @@ void main() {
   vec2 uv = vec2(atan(point.y, point.x) / (2.0*pi) + .5, .5 - asin(clamp(point.z,-1.0,1.0)) / pi);
   float reflectance = dot(texture2D(albedoMap, uv).rgb, vec3(.299,.587,.114));
   vec2 local = terrain.xz;
+  vec3 grit = texture2D(regolithMap, local / 4.0).rgb;
+  vec3 fragments = texture2D(regolithMap, local / 28.0 + vec2(.29,.53)).rgb;
   float footprint = max(length(dFdx(local)),length(dFdy(local)));
-  float fine = (grain(local*2.4)-.5) * (1.0-smoothstep(.16,.9,footprint));
-  float gravel = (grain(local*.28)-.5) * (1.0-smoothstep(1.5,9.0,footprint));
-  float patches = (grain(local*.016)-.5) * (1.0-smoothstep(20.0,95.0,footprint));
-  float relief = 1.0-smoothstep(.6,8.0,footprint);
-  vec2 chips = vec2(grain(local*.42+vec2(.22,0))-grain(local*.42-vec2(.22,0)),
-    grain(local*.42+vec2(0,.22))-grain(local*.42-vec2(0,.22)));
-  n = normalize(n + vec3(chips.x,0,chips.y)*.3*relief);
+  float patches = (grain(local*.009)-.5) * (1.0-smoothstep(30.0,115.0,footprint));
+  vec2 relief = (grit.gb - .5) * .52 + (fragments.gb - .5) * .85;
+  vec3 textured = normalize(n + vec3(relief.x,0,relief.y));
   float lit = 0.0;
-  float incidence = max(0.0, dot(n, sunDirection));
-  if (daylight > 0.0 && incidence > 0.0) lit = incidence * shadow();
-  float albedo = (.25 + reflectance*.85) * (1.0 + .37*fine + .52*gravel + .34*patches);
-  float brightness = albedo * (.095 + .94 * sqrt(lit));
-  gl_FragColor = vec4(vec3(1.03,1.0,.97) * brightness, 1.0);
+  if (daylight > 0.0) lit = max(0.0, dot(textured, sunDirection)) * shadow();
+  float material = 1.0 + (grit.r - .51) * .63 + (fragments.r - .51) * .75 + patches * .26;
+  float albedo = (.20 + reflectance*.83) * material;
+  // Display exposure and a faint fill preserve shape in modeled shadow.
+  vec3 shade = vec3(.056,.064,.077) + vec3(1.04,1.0,.935) * (1.28 * sqrt(lit));
+  vec3 exposed = albedo * shade;
+  gl_FragColor = vec4(exposed / (1.0 + exposed * .38), 1.0);
 }`
 
 const shadowVertex = `
@@ -215,16 +272,17 @@ function terrainProgram(gl, vertexSource, fragmentSource) {
   return program
 }
 
-export function createSurfaceView(canvas, overlay, showHeading) {
-  const gl = canvas.getContext('webgl', { alpha: false, antialias: true })
+export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: true })
+  const sky = skyCanvas.getContext('2d')
   const ctx = overlay.getContext('2d')
-  if (!gl || !ctx || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D terrain is unavailable in this browser. Use the skyline plot.')
+  if (!gl || !sky || !ctx || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D terrain is unavailable in this browser. Use the skyline plot.')
   const program = terrainProgram(gl, vertex, fragment)
   const shadowProgram = terrainProgram(gl, shadowVertex, shadowFragment)
   const shadowNames = ['shadowRight', 'shadowUp', 'shadowDepth', 'shadowExtent']
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
   const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'lens', 'sunDirection', 'daylight',
-    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'shadowPixel', ...shadowNames])
+    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'shadowPixel', ...shadowNames])
   const shadowUniforms = locations(shadowProgram, shadowNames)
   const vertices = gl.createBuffer()
   const normals = gl.createBuffer()
@@ -263,8 +321,17 @@ export function createSurfaceView(canvas, overlay, showHeading) {
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, shadowBuffer)
   const hasShadows = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  const regolith = gl.createTexture()
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, regolith)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, regolithSize, regolithSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, regolithMaterial())
+  gl.generateMipmap(gl.TEXTURE_2D)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+  const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic')
+  if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)))
   gl.uniform1i(uniforms.albedoMap, 0)
   gl.uniform1i(uniforms.shadowMap, 1)
+  gl.uniform1i(uniforms.regolithMap, 2)
   gl.uniform1f(uniforms.shadowPixel, hasShadows ? 1 / shadowSize : 0)
 
   let sample
@@ -320,15 +387,15 @@ export function createSurfaceView(canvas, overlay, showHeading) {
     const pixelWidth = Math.round(width * pixel)
     const pixelHeight = Math.round(height * pixel)
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-      canvas.width = overlay.width = pixelWidth
-      canvas.height = overlay.height = pixelHeight
+      canvas.width = skyCanvas.width = overlay.width = pixelWidth
+      canvas.height = skyCanvas.height = overlay.height = pixelHeight
     }
     const camera = surfaceCamera(azimuth, elevation)
     const scale = Math.min(width, height) * .83 * zoom
     drawShadows()
     gl.useProgram(program)
     gl.viewport(0, 0, canvas.width, canvas.height)
-    gl.clearColor(.012, .012, .018, 1)
+    gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.uniform3fv(uniforms.cameraRight, camera.right)
     gl.uniform3fv(uniforms.cameraUp, camera.up)
@@ -338,6 +405,8 @@ export function createSurfaceView(canvas, overlay, showHeading) {
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
 
+    sky.setTransform(pixel, 0, 0, pixel, 0, 0)
+    sky.clearRect(0, 0, width, height)
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
     ctx.clearRect(0, 0, width, height)
     ctx.font = '700 13px DM Sans, sans-serif'
@@ -370,9 +439,9 @@ export function createSurfaceView(canvas, overlay, showHeading) {
       ctx.setLineDash([])
     }
     const status = {}
-    for (const [body, name, az, el, angle, visible] of [
-      ['sun', 'Sun', sample.sunAz, sample.sunEl, sample.sunRadius, sample.sunEl > sample.sunHorizon && !sample.eclipse],
-      ['earth', 'Earth', sample.earthAz, sample.earthEl, sample.earthRadius, sample.earthEl > sample.earthHorizon],
+    for (const [body, name, az, el, angle, horizon, eclipsed] of [
+      ['sun', 'Sun', sample.sunAz, sample.sunEl, sample.sunRadius, sample.sunHorizon, sample.eclipse],
+      ['earth', 'Earth', sample.earthAz, sample.earthEl, sample.earthRadius, sample.earthHorizon, false],
     ]) {
       const target = surfaceTarget(camera, az, el, angle, width, height, scale)
       status[body] = target
@@ -384,36 +453,73 @@ export function createSurfaceView(canvas, overlay, showHeading) {
       const sin = Math.sin(angle)
       const cos = Math.cos(angle)
       const color = colors[body]
-      const limb = []
-      for (let i = 0; i < 32; i++) {
+      const visible = el > horizon && !eclipsed
+      const vectors = Array.from({ length: 32 }, (_, i) => {
         const roll = i * Math.PI / 16
-        const position = project(axis.map((v, j) => cos * v + sin * (Math.cos(roll) * horizontal[j] + Math.sin(roll) * vertical[j])))
-        if (position) limb.push(position)
+        return axis.map((v, j) => cos * v + sin * (Math.cos(roll) * horizontal[j] + Math.sin(roll) * vertical[j]))
+      })
+      const limb = vectors.map(project).filter(Boolean)
+      function traceDisk(targetContext, points) {
+        targetContext.beginPath()
+        targetContext.moveTo(...points[0])
+        for (const point of points.slice(1)) targetContext.lineTo(...point)
+        targetContext.closePath()
       }
       if (!limb.length) continue
-      ctx.beginPath()
-      ctx.moveTo(...limb[0])
-      for (const point of limb.slice(1)) ctx.lineTo(...point)
-      ctx.closePath()
-      ctx.fillStyle = color
+      let exposed = limb
+      if (Math.abs(el - horizon) < angle / radians) {
+        const cutoff = Math.sin(horizon * radians)
+        exposed = vectors.flatMap((from, i) => {
+          const to = vectors[(i + 1) % vectors.length]
+          const above = from[1] >= cutoff
+          const points = above ? [from] : []
+          if (above !== (to[1] >= cutoff)) {
+            const fraction = (cutoff - from[1]) / (to[1] - from[1])
+            points.push(from.map((v, j) => v + (to[j] - v) * fraction))
+          }
+          return points
+        }).map(project).filter(Boolean)
+      }
+      if (!eclipsed && exposed.length && el + angle / radians > horizon) {
+        if (body === 'sun') {
+          if (visible) {
+            const reach = clamp(target.radius * 16, 22, 76)
+            const bloom = sky.createRadialGradient(cx, cy, target.radius * .5, cx, cy, reach)
+            bloom.addColorStop(0, 'rgba(255,238,203,.66)')
+            bloom.addColorStop(.15, 'rgba(247,212,165,.24)')
+            bloom.addColorStop(.44, 'rgba(233,183,135,.068)')
+            bloom.addColorStop(1, 'rgba(232,171,112,0)')
+            sky.fillStyle = bloom
+            sky.fillRect(cx - reach, cy - reach, reach * 2, reach * 2)
+          }
+          traceDisk(sky, exposed)
+          sky.fillStyle = '#fff9e9'
+          sky.fill()
+        } else if (earthPhoto.naturalWidth) {
+          const xs = limb.map(([x]) => x)
+          const ys = limb.map(([, y]) => y)
+          const left = Math.min(...xs)
+          const top = Math.min(...ys)
+          sky.save()
+          traceDisk(sky, exposed)
+          sky.clip()
+          sky.drawImage(earthPhoto, ...earthPhotoCrop, left, top, Math.max(...xs) - left, Math.max(...ys) - top)
+          sky.restore()
+        } else {
+          traceDisk(sky, exposed)
+          sky.fillStyle = color
+          sky.fill()
+        }
+      }
+      if (!paths) continue
       ctx.strokeStyle = color
       ctx.lineWidth = 1
-      if (!visible) ctx.stroke()
-      else if (body === 'earth' && earthPhoto.naturalWidth) {
-        const xs = limb.map(([x]) => x)
-        const ys = limb.map(([, y]) => y)
-        const left = Math.min(...xs)
-        const top = Math.min(...ys)
-        ctx.save()
-        ctx.clip()
-        ctx.drawImage(earthPhoto, ...earthPhotoCrop, left, top, Math.max(...xs) - left, Math.max(...ys) - top)
-        ctx.restore()
-      } else {
-        ctx.fillStyle = body === 'sun' ? '#fff6df' : color
-        ctx.fill()
-        ctx.fillStyle = color
+      if (!visible) {
+        traceDisk(ctx, limb)
+        ctx.stroke()
       }
-      const text = visible ? name : `${name} (${body === 'sun' && sample.eclipse ? 'eclipsed' : 'blocked'})`
+      ctx.fillStyle = color
+      const text = visible ? name : `${name} (${eclipsed ? 'eclipsed' : 'blocked'})`
       const labelX = clamp(cx + 11, 5, width - ctx.measureText(text).width - 8)
       const labelY = cy < 21 ? cy + 21 : cy - 13
       ctx.beginPath()

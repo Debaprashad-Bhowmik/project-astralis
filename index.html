@@ -330,6 +330,7 @@
               <button type="button" class="subtle" id="surface-retry" hidden>Reload terrain</button>
               <div id="surface-scene" hidden>
                 <div class="surface-stage">
+                  <canvas id="surface-sky" aria-hidden="true"></canvas>
                   <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
                   <span id="surface-heading" aria-label="Camera bearing"></span>
@@ -346,8 +347,8 @@
                   <button type="button" class="subtle" id="surface-sun">Find Sun</button>
                   <button type="button" class="subtle" id="surface-earth">Find Earth</button>
                   <button type="button" class="subtle" id="surface-north">Face north</button>
-                  <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option></select></label>
-                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show sky arcs</label>
+                  <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
+                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show arcs and labels</label>
                 </div>
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>

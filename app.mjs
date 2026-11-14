@@ -801,6 +801,9 @@ function redrawLocalSky() {
 
 function updateSurface(sample) {
   const showPaths = get('surface-paths').checked
+  get('surface-heading').hidden = !showPaths
+  get('surface-labels').hidden = !showPaths
+  get('surface-guide-sun').parentElement.hidden = !showPaths
   if (showPaths && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
   surfaceView?.update(sample, showPaths ? localSky.surfacePaths : null)
   const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
@@ -814,8 +817,8 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Shadows follow the selected time. Fine ground grain and shadow detail are approximate.' +
-    (settings.horizon === 'terrain' ? '' : ' Marker visibility uses your 0° reference setting.')
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Fine surface detail and solar glare are illustrative.' +
+    (settings.horizon === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
     get('surface-retry').hidden = true
@@ -827,7 +830,7 @@ async function showSurface() {
   get('surface-scene').hidden = true
   get('surface-status').textContent = 'Loading NASA terrain…'
   try {
-    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-labels'), (angle, targets) => {
+    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-sky'), get('surface-labels'), (angle, targets) => {
       get('surface-heading').textContent = `${angle}° ${compass[Math.round(angle / 45) % compass.length]}`
       for (const [key, target] of Object.entries(targets)) {
         const button = get(`surface-guide-${key}`)
