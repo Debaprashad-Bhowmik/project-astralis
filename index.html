@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Compare lunar landing sites, dates, sunlight, and Earth visibility with NASA data.">
+  <meta name="ai-disclosure" content="Application code and UI exploration used OpenAI Codex and ImageGen. Numerical inputs are attributed NASA and USGS products.">
+  <meta name="theme-color" content="#0c1420">
+  <title>Astralis · Lunar Site Navigator</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#mission">Skip to mission setup</a>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Astralis home">
+      <svg viewBox="0 0 36 36" fill="none" aria-hidden="true"><ellipse cx="18" cy="18" rx="17" ry="6.5" transform="rotate(-32 18 18)" stroke="currentColor" stroke-width="1.8"/><circle cx="25" cy="10" r="3.5" fill="currentColor"/><circle cx="13" cy="20" r="1.5" fill="currentColor"/></svg>
+      <strong>ASTRALIS</strong><span>Lunar Site Navigator</span>
+    </a>
+    <nav aria-label="App navigation"><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div class="hero-inner">
+        <h1>Where should we land?</h1>
+        <p>Compare sunlight and Earth visibility across lunar sites and dates.</p>
+      </div>
+      <a class="hero-credit" href="https://svs.gsfc.nasa.gov/3686/" target="_blank" rel="noreferrer">LRO / LOLA flyover · NASA SVS</a>
+    </div>
+
+    <div class="workspace">
+      <div id="boot-error" class="error" role="alert" hidden></div>
+      <div class="primary-grid">
+        <section class="panel setup" id="mission" aria-labelledby="setup-heading">
+          <h2 id="setup-heading">Mission setup</h2>
+          <form id="mission-form" novalidate>
+            <div class="dates">
+              <label>Landing date <input id="landing-date" type="date" required value="2026-12-01"></label>
+              <label>Time (UTC) <input id="landing-time" type="time" required value="00:00"></label>
+            </div>
+            <label>Operating window
+              <select id="duration">
+                <option value="24" selected>First 24 hours</option><option value="72">First 3 days</option>
+                <option value="168">First 7 days</option><option value="336">First 14 days</option>
+                <option value="720">First 30 days</option>
+              </select>
+            </label>
+            <fieldset class="priorities">
+              <legend>What matters most?</legend>
+              <div class="presets" id="presets" aria-label="Priority presets">
+                <button type="button" data-preset="sun" aria-pressed="false">More sunlight</button>
+                <button type="button" data-preset="earth" aria-pressed="false">More time to contact Earth</button>
+                <button type="button" data-preset="overlap" aria-pressed="true">Both at the same time</button>
+                <button type="button" data-preset="balanced" aria-pressed="false">Balanced</button>
+              </div>
+            </fieldset>
+            <details class="limits">
+              <summary>Advanced settings</summary>
+              <label>Horizon model
+                <select id="model"><option value="terrain" selected>Local terrain · LOLA</option><option value="reference">0° reference plane</option></select>
+              </label>
+              <div class="weight weight-sun"><label for="sun-weight">Sunlight</label><input id="sun-weight" type="range" min="0" max="100" step="5" value="0"><output for="sun-weight"></output></div>
+              <div class="weight weight-earth"><label for="earth-weight">Earth view</label><input id="earth-weight" type="range" min="0" max="100" step="5" value="0"><output for="earth-weight"></output></div>
+              <div class="weight weight-overlap"><label for="overlap-weight">Both</label><input id="overlap-weight" type="range" min="0" max="100" step="5" value="100"><output for="overlap-weight"></output></div>
+              <p>Sites must meet these limits to qualify.</p>
+              <div class="limit-grid">
+                <label>Min sunlight (h)<input id="min-sun" type="number" min="0" max="720" step="any" value="0"></label>
+                <label>Min Earth view (h)<input id="min-earth" type="number" min="0" max="720" step="any" value="0"></label>
+                <label>Min overlap (h)<input id="min-overlap" type="number" min="0" max="720" step="any" value="0"></label>
+                <label>Max darkness (h)<input id="max-dark" type="number" min="0" max="720" step="any" placeholder="Unlimited"></label>
+              </div>
+            </details>
+            <p id="input-error" class="error" role="alert" hidden></p>
+            <button id="offset" class="subtle delay" type="button">Shift landing by 3 days <span aria-hidden="true">↗</span></button>
+          </form>
+        </section>
+
+        <section class="panel public-answer" aria-labelledby="answer-title">
+          <div class="answer-copy" aria-live="polite"><h2 id="answer-title">Finding the best match…</h2><p id="answer-body" class="muted"></p></div>
+          <div id="answer-tracks"></div>
+          <nav class="answer-nav" aria-label="Explore results"><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#ops-heading">See sky positions</a></nav>
+        </section>
+
+        <section class="panel map-panel" aria-labelledby="map-heading">
+          <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
+            <div class="map-view" aria-label="Map view"><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button></div>
+          </div>
+          <p class="error" id="globe-error" hidden></p>
+          <div id="globe-view">
+            <div id="globe-stage" class="globe-stage">
+              <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." role="img"></canvas>
+              <div id="globe-markers"></div>
+            </div>
+            <div class="globe-controls" aria-label="3D Moon controls">
+              <button type="button" class="subtle" id="globe-left" aria-label="Rotate Moon west">←</button>
+              <button type="button" class="subtle" id="globe-right" aria-label="Rotate Moon east">→</button>
+              <button type="button" class="subtle" id="globe-north" aria-label="Rotate Moon toward north">↑</button>
+              <button type="button" class="subtle" id="globe-south" aria-label="Rotate Moon toward south">↓</button>
+              <button type="button" class="subtle" id="globe-zoom-in" aria-label="Zoom in">+</button>
+              <button type="button" class="subtle" id="globe-zoom-out" aria-label="Zoom out">−</button>
+              <button type="button" class="subtle" id="globe-focus">Center on site</button>
+              <button type="button" class="subtle" id="globe-reset">South pole</button>
+            </div>
+            <p class="muted globe-help">Drag to rotate. Select a marker to inspect conditions. Display lighting helps show the globe’s shape. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
+          </div>
+          <div id="polar-view" hidden>
+          <div class="polar-map" id="polar-map">
+            <img id="relief" src="./data/polar-relief.webp" alt="Shaded elevation of the lunar south pole from NASA's LOLA data">
+            <svg id="graticule" viewBox="0 0 600 600" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div id="pins" class="pins"></div>
+            <span class="map-pole">90°S</span>
+            <div class="map-scale"><i></i>100 km at pole</div>
+          </div>
+          </div>
+          <div class="map-caption"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point</span></div>
+          <details class="custom">
+            <summary>Add a coordinate</summary>
+            <form id="coordinates" novalidate>
+              <div class="limit-grid">
+                <label>Latitude (°)<input id="latitude" type="number" min="-90" max="-60" step="any" placeholder="-85.3" required></label>
+                <label>East longitude (°)<input id="longitude" type="number" min="-180" max="360" step="any" placeholder="24.5" required></label>
+              </div>
+              <p>Custom coordinates use the 0° reference plane. All sites switch to that model for the comparison. Custom points outside the polar map remain visible on the 3D Moon.</p>
+              <p class="error" id="coordinate-error" role="alert" hidden></p>
+              <button type="submit" class="subtle">Add &amp; evaluate</button>
+              <button type="button" id="remove-custom" class="subtle" hidden>Remove point</button>
+            </form>
+          </details>
+        </section>
+
+        <section class="panel ranking" aria-labelledby="rank-heading">
+          <div class="panel-heading"><h2 id="rank-heading">Site ranking</h2><span id="site-count" class="tag"></span></div>
+          <p id="rank-summary" class="rank-summary" aria-live="polite">Loading lunar data…</p>
+          <div class="rank-legend"><span>Site</span><span>Sunlight</span><span>Earth view</span><span>Both</span></div>
+          <ol id="rank-list"></ol>
+          <p id="rank-note" class="muted"></p>
+        </section>
+      </div>
+
+      <section class="panel operations" aria-labelledby="ops-heading">
+        <div class="panel-heading operations-title"><div><h2 id="ops-heading">Surface operations</h2><p id="ops-subtitle" class="muted"></p></div><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
+        <div class="ops-grid">
+          <div class="charts">
+            <canvas id="elevation-chart" aria-label="Sun and Earth elevation curves and their local terrain horizons" role="img"></canvas>
+            <div id="tracks"></div>
+            <div class="scrub"><button type="button" class="subtle" id="play" aria-label="Play timeline">▶</button><label class="sr-only" for="time-slider">Elapsed mission time</label><input id="time-slider" type="range" min="0" max="72" step=".25" value="0"><output id="selected-time" for="time-slider"></output></div>
+          </div>
+          <aside class="snapshot" aria-label="Conditions at selected time">
+            <div class="chart-legend"><span><i></i>Sun elevation</span><span><i></i>Earth elevation</span><span><i></i>Horizon in each direction</span></div>
+            <div id="snapshot"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel comparison" id="compare" aria-labelledby="compare-heading">
+        <div class="panel-heading"><div><h2 id="compare-heading">Compare scenarios</h2><p class="muted">Change a site, delay the landing, or do both. The operating window and priorities stay the same.</p></div></div>
+        <div class="compare-controls">
+          <label>Scenario A <select id="compare-a" aria-label="Scenario A site"></select></label>
+          <label>Scenario B <select id="compare-b" aria-label="Scenario B site"></select></label>
+          <label>Landing time for B (UTC) <input id="compare-time" type="datetime-local" step="60" required></label>
+        </div>
+        <div class="compare-actions"><button id="same-date" type="button" class="subtle">Use A’s date</button><button id="delay-b" type="button" class="subtle">Delay B by 3 days</button></div>
+        <p id="compare-error" class="error" role="alert" hidden></p>
+        <div id="compare-result"></div>
+        <details class="windows"><summary>View estimated visibility windows</summary><div id="window-detail"></div></details>
+      </section>
+
+      <section class="panel methods" id="methods" aria-labelledby="methods-heading">
+        <h2 id="methods-heading">Data &amp; methods</h2>
+        <div class="method-grid">
+          <div><h3>What the ranking means</h3><p>Astralis filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
+          <div><h3>How visibility is estimated</h3><p>Positions come from JPL’s DE440 and lunar orientation kernels at 15-minute intervals. The terrain model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. Support runs from January 2024 through December 2030.</p></div>
+          <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
+        </div>
+        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">LOLA elevation</a></p>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><span>Astralis</span><span>NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+</body>
+</html>

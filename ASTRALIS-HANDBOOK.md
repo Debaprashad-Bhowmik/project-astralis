@@ -4,7 +4,7 @@
 
 Astralis explores how a change in landing site or date affects sunlight and the view toward Earth from the Moon. This handbook gives the team one place to understand the challenge, reproduce the NASA data check, choose a direction, build a demo, and submit it for judging.
 
-**Current state, November 14, 2026.** The GitHub repository and judging rubric are in place. A repeatable JPL Horizons query has returned Sun and Earth positions for two real lunar landing locations. The app, terrain model, hosted project, and demo are pending. The workflow and screen sketch below are starting points for the team's own design. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
+**Current state.** The working app ranks eight sites using JPL and LOLA data. It includes a 3D Moon and a 2D polar map, independently dated comparisons, custom coordinates, activity timelines, visibility transitions, and CSV export. The team can use the checklist below to prepare its recording and finish the submission form. [Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/) · [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
 ## Contents
 
@@ -12,6 +12,7 @@ Astralis explores how a change in landing site or date affects sunlight and the 
 - [What the challenge asks for](#what-the-challenge-asks-for)
 - [What the app could look like](#what-the-app-could-look-like)
 - [NASA data and useful resources](#nasa-data-and-useful-resources)
+- [Implementation and data provenance](#implementation-and-data-provenance)
 - [Reproduce the NASA data check](#reproduce-the-nasa-data-check)
 - [Build the prototype](#build-the-prototype)
 - [Add a terrain horizon](#add-a-terrain-horizon)
@@ -44,7 +45,7 @@ NASA emphasizes fast comparisons and clear visualization. Site presets, custom c
 
 ## What the app could look like
 
-**Example screen.** Each side starts at its scenario's landing time. Use a shared UTC clock for a same-date comparison and elapsed time since landing when the dates differ. Selecting a point on the timeline moves both views to the same comparison time and updates their angles. The values below are from the JPL check, with a 0° reference horizon.
+**Reference-horizon example.** Each side starts at its scenario's landing time. Align both timelines by hours since landing to make different dates comparable. The values below are from the original two-site Horizons check with a 0° reference horizon. The working app shows values from the selected model and can rank the full catalog.
 
 ```text
 Astralis                                      0° reference horizon
@@ -103,6 +104,54 @@ The Resources tab lists the following four entries. Horizons supplies the dated 
 | [20 m per pixel, 80°–90° S](https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_20MPP_ADJ.TIF) | Finer candidate grid for sensitivity checks. About 2.5 GiB. |
 
 These Cloud-Optimized GeoTIFFs use south polar stereographic coordinates in metres in the DE421 lunar Mean Earth frame. Use the raster's metadata and height values rather than reading pixels from a hillshade image. A separate map of effective resolution is available from the product page. For preprocessing, read only the windows you need and publish the compact derived skyline profiles with the source product names. [NASA product documentation](https://pgda.gsfc.nasa.gov/products/90) · [Rasterio windowed reads](https://rasterio.readthedocs.io/en/stable/topics/windowed-rw.html) · [GDAL remote raster access](https://gdal.org/en/stable/user/virtual_file_systems.html#vsicurl-http-https-ftp-files-random-access)
+
+## Implementation and data provenance
+
+### Files and downloads
+
+The browser reads `data/catalog.json` and `data/ephemeris.bin`. The preprocessing script `scripts/prepare_data.py` builds those files from the dated ephemeris, elevation rasters and published coordinates below. The 3D globe image is a separate visualization asset.
+
+| Input | Exact source |
+| --- | --- |
+| JPL planetary and lunar ephemeris | [de440s.bsp](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp) |
+| JPL lunar rotational orientation | [moon_pa_de440_200625.bpc](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de440_200625.bpc) |
+| Lunar reference frames | [moon_de440_250416.tf](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_de440_250416.tf) |
+| UTC to ephemeris time | [naif0012.tls](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls) |
+| Local and regional elevation | [80 m LOLA GeoTIFF](https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_80MPP_ADJ.TIF) · [240 m LOLA GeoTIFF](https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_60S_240MPP_ADJ.TIF) |
+| Historic sites | [NASA NSSDC lunar spacecraft catalog](https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html) |
+| Study-point coordinates | [NASA Lunar Surface Data Book](https://ntrs.nasa.gov/citations/20250002845) · USGS [Mons Mouton](https://planetarynames.wr.usgs.gov/Feature/16070), [Haworth](https://planetarynames.wr.usgs.gov/Feature/14502), [Shoemaker](https://planetarynames.wr.usgs.gov/Feature/5494), [Shackleton](https://planetarynames.wr.usgs.gov/Feature/5450) |
+| Globe and header imagery | [NASA LROC global texture](https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_1k.jpg) from the [NASA CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/) · [NASA SVS south-pole flyover still](https://svs.gsfc.nasa.gov/3686/) |
+
+To regenerate the browser data, download the four kernels and two GeoTIFFs into one directory, keeping their filenames. Install the Python dependencies and run the script from the repository root. [SpiceyPy](https://github.com/AndrewAnnex/SpiceyPy) · [Rasterio](https://rasterio.readthedocs.io/) · [pyproj](https://pyproj4.github.io/pyproj/stable/) · [NumPy](https://numpy.org/) · [Pillow](https://python-pillow.github.io/)
+
+```sh
+python -m pip install numpy rasterio pyproj spiceypy Pillow
+python scripts/prepare_data.py /path/to/nasa-files
+node --test planner.test.mjs
+```
+
+### Calculation and limits
+
+- **Ephemeris.** SPICE computes apparent Sun and Earth vectors from the Moon center in the DE440 lunar Mean Earth frame aligned with DE421. The browser interpolates the 15-minute samples and subtracts each surface observer position. The data cover January 2024 through December 2030. The dated calculations reflect the SPICE orbit and lunar orientation model, including libration. Near a crossing, the app estimates the time between neighboring samples. Events shorter than the sampling interval may be missed. [JPL lunar frames](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/23_lunar-earth_pck-fk.pdf)
+- **Terrain.** The script traces bearings every 0.5° using a 350 km search, a 2 m observer height, and lunar curvature. It uses the 80 m grid within 25 km where available and the 240 m grid for wider coverage. Small terrain features below grid resolution and local slopes matter. Custom coordinates use the 0° reference plane, and the app applies that same model to all sites while a custom point is active. The 3D globe uses display lighting for orientation. [NASA LOLA terrain](https://pgda.gsfc.nasa.gov/products/90) · [Terrain-horizon research](https://ntrs.nasa.gov/citations/20205009660)
+- **Ranking.** Qualifying sites meet all user-entered minimum hours and the optional maximum dark gap. The score is the weighted share of the mission with sunlight, Earth visibility, or both, scaled to 100. Equal displayed scores share a rank. Figures use Sun-center and Earth-center geometry and exclude total solar eclipses from the Sun series. Solar array output, partial obscuration, ground-station availability, radio link budgets, and landing hazards require further analysis. [NASA polar illumination](https://pgda.gsfc.nasa.gov/products/69)
+- **Cross-check.** In the reference-plane case at Mons Mouton on November 14, 2026 at 00:00 UTC, the app returns the Sun at about +0.87828° elevation and Earth at −0.15391°. The separate Horizons check below gives +0.87828° and −0.15388°. At the same position and time using LOLA, the Sun's skyline is about +3.29°, which places the Sun's center behind terrain. [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/)
+
+### Evidence for judging
+
+| Criterion | What to show in the working app |
+| --- | --- |
+| Impact | Compare the same Mons Mouton coordinate at November 14 and November 17, 2026, at 00:00 UTC for 24 hours. The modeled overlap grows from 0 to 24 hours. Explain the schedule decision it changes. |
+| Creativity | At December 1, 2026 at 00:00 UTC, switch between **More sunlight** and **Both at the same time**. Connecting Ridge and Peak near Shackleton have full-day modeled sunlight, while Malapert A leads for overlap. |
+| Validity | Use the independent Horizons values above, then reveal the terrain skyline and explain why an angle above 0° can still mean no sunlight. Show the model limits on the methods page. |
+| Relevance | Open the 3D Moon, pick a site, and scrub the Sun and Earth elevation curves against their terrain horizons. Compare the visibility tracks for two sites or dates. |
+| Presentation | Give the user a three-day delay and one goal. Show the before-and-after result in one comparison, then credit JPL SPICE and LOLA clearly. |
+
+### Partner research and AI disclosure
+
+The Canadian Space Agency's lunar rover descriptions provide mission context for the darkness constraint. NEOSSat's astronomy archive and CSA's composition spectroscopy data are useful for other questions. The listed ephemeris and LOLA products supply the numerical inputs here. [CSA utility rover](https://www.asc-csa.gc.ca/eng/astronomy/moon-exploration/canadian-utility-rover-on-the-moon.asp) · [Canada Open Government catalog](https://search.open.canada.ca/opendata/?owner_org=csa-asc) · [CSA NEOSSat archive](https://donnees-data.asc-csa.gc.ca/en/dataset/neossat) · [CSA planetary LIBS](https://open.canada.ca/data/en/dataset/137bdc17-2f46-4d70-98e7-acc46f602e9f)
+
+OpenAI Codex assisted with implementation, data-processing code, and documentation. Built-in ImageGen produced two visibly watermarked UI concepts used during design. The app's globe and terrain imagery are attributed NASA resources, and its numbers are calculated from the source products above. The app uses DM Sans and Space Grotesk with their included SIL Open Font License notices. [DM Sans](https://fonts.google.com/specimen/DM+Sans) · [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk)
 
 ## Reproduce the NASA data check
 
