@@ -183,7 +183,7 @@ For a later iteration, model the Sun's finite disk and eclipses where the projec
 
 ## Work together on GitHub
 
-The repository is private for team development. The owner invites teammates by GitHub username. Each teammate accepts from their own account and then uses the repository link. Each person can contribute code or notes using their own editor. Codex use follows the account or workspace that runs it. [Astralis repository](https://github.com/Debaprashad-Bhowmik/project-astralis) · [Collaborator settings](https://github.com/Debaprashad-Bhowmik/project-astralis/settings/access) · [GitHub invitation guide](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/repository-access-and-collaboration/inviting-collaborators-to-a-personal-repository)
+Anyone can open or clone the public repository. For write access, the owner invites teammates by GitHub username and each teammate accepts from their own account. Each person can use their own editor. Codex use follows the account or workspace that runs it. [Astralis repository](https://github.com/Debaprashad-Bhowmik/project-astralis) · [Collaborator settings](https://github.com/Debaprashad-Bhowmik/project-astralis/settings/access) · [GitHub invitation guide](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/repository-access-and-collaboration/inviting-collaborators-to-a-personal-repository)
 
 ```sh
 git clone https://github.com/Debaprashad-Bhowmik/project-astralis.git
@@ -223,7 +223,7 @@ NASA scores each criterion from **1 to 5** at every judging level. These are par
 | **Project Name** | Use the final team-approved title. The current form shows Project The Astralis. |
 | **Summary** | Explain what the team built, how it answers the challenge, and who benefits. The form suggests 50–200 words and displays a 1,500-character limit. |
 | **Project Demonstration** | Paste the complete public demo URL. |
-| **Project** | Paste the complete public project URL. If submitting the private team's repo as the project link, make it public when it is ready to publish. A published app or other public final-project page is also an option. |
+| **Project** | Paste the complete URL of the finished project. The public Astralis repository can serve as the project link once it contains the final work. A published app or other public final-project page is also an option. |
 | **Project Details** | Describe the user flow, the implementation and data, a verified example, and important assumptions. Include the languages or tools used and the team's original contribution. |
 | **Use of Super Intelligence (SI)** | Select the options that reflect actual AI use. The guide assigns the original solution idea to the team and permits AI assistance. It calls for visible watermarks on AI-generated images or video and acknowledgments in descriptive text and metadata for AI-generated audio, code, and data. Keep NASA branding out of generated content. |
 | **NASA Data** | List the actual NASA datasets and resources used, with names and complete URLs. Global Award eligibility requires at least one NASA data source or resource. Explain how it contributes to the solution. |
