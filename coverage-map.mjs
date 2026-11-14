@@ -1,4 +1,4 @@
-import { eclipseMargin, radius } from './planner.mjs'
+import { eclipseMargin, panelPowerFacingSun, radius } from './planner.mjs'
 
 const radians = Math.PI / 180
 const wrapLongitude = lon => ((lon + 180) % 360 + 360) % 360 - 180
@@ -16,8 +16,17 @@ export function subPoint([x, y, z]) {
   return { lat: Math.atan2(z, Math.hypot(x, y)) / radians, lon: wrapLongitude(Math.atan2(y, x) / radians) }
 }
 
-export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4, mission: 5 }
+export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4, mission: 5, power: 6 }
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
+export const solarPowerScaleMax = 300
+export const solarPowerPalette = [[48, 51, 65], [225, 139, 61], [255, 243, 159]]
+export function solarPowerColor(watts) {
+  const scaled = clamp(watts / solarPowerScaleMax, 0, 1) * 2
+  const segment = scaled < 1 ? 0 : 1
+  const low = solarPowerPalette[segment]
+  const high = solarPowerPalette[segment + 1]
+  return low.map((value, channel) => Math.round(value + (high[channel] - value) * (scaled - segment)))
+}
 // The observer offset across the surface cannot produce totality outside this margin.
 export const totalityPossible = (sun, earth) => eclipseMargin(sun, earth) <= .4
 
@@ -31,6 +40,19 @@ export function createCoverageModel(sun, earth) {
       sunUp = eclipseMargin(sun.map((v, i) => v - offset[i]), earth.map((v, i) => v - offset[i])) > 0
     }
     return Number(sunUp) + 2 * Number(earthUp)
+  }
+}
+
+export function createSolarPowerModel(sun, earth) {
+  const [sx, sy, sz] = sun
+  const sunDistanceSquared = sx * sx + sy * sy + sz * sz
+  const visibility = totalityPossible(sun, earth) ? createCoverageModel(sun, earth) : null
+  return (x, y, z) => {
+    const projection = x * sx + y * sy + z * sz
+    if (projection <= radius || (visibility && !(visibility(x, y, z) & 1))) return 0
+    const distance = Math.sqrt(sunDistanceSquared - 2 * radius * projection + radius * radius)
+    // The dot product of the vertical with the unit Sun direction is sin(elevation).
+    return (projection - radius) / distance * panelPowerFacingSun(distance)
   }
 }
 
@@ -68,15 +90,26 @@ export function createCoverageMap(canvas, onPoint) {
   texture.src = new URL('./assets/moon-color.jpg', import.meta.url).href
 
   function tint() {
-    const mask = createCoverageModel(...frame)
+    const power = mode === 'power'
+    const model = power ? createSolarPowerModel(...frame) : createCoverageModel(...frame)
     const layer = { all: 3, sun: 1, earth: 2, both: 3 }[mode]
     for (let row = 0; row < rasterHeight; row++) {
       for (let col = 0; col < rasterWidth; col++) {
-        const point = mask(cosLat[row] * cosLon[col], cosLat[row] * sinLon[col], sinLat[row])
-        const key = mode === 'both' ? (point === 3 ? 3 : 0) : point & layer
+        const point = model(cosLat[row] * cosLon[col], cosLat[row] * sinLon[col], sinLat[row])
         const offset = 4 * (row * rasterWidth + col)
         const shade = basemap ? .56 + basemap[offset] / 360 : .83
-        for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel] * shade
+        if (power) {
+          const scaled = clamp(point / solarPowerScaleMax, 0, 1) * 2
+          const segment = scaled < 1 ? 0 : 1
+          const low = solarPowerPalette[segment]
+          const high = solarPowerPalette[segment + 1]
+          for (let channel = 0; channel < 3; channel++) {
+            pixels.data[offset + channel] = (low[channel] + (high[channel] - low[channel]) * (scaled - segment)) * shade
+          }
+        } else {
+          const key = mode === 'both' ? (point === 3 ? 3 : 0) : point & layer
+          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel] * shade
+        }
         pixels.data[offset + 3] = 255
       }
     }
@@ -154,7 +187,7 @@ export function createCoverageMap(canvas, onPoint) {
     mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
     if (!heatRaster) {
       mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
-      mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
+      if (mode !== 'power') mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
     }
   }
 

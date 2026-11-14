@@ -1,5 +1,5 @@
-import { earthRadius, radius, sunRadius } from './planner.mjs'
-import { coverageLayers, coveragePalette, totalityPossible } from './coverage-map.mjs'
+import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
+import { coverageLayers, coveragePalette, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
 import { missionGridHeight } from './mission-heat.mjs'
 
 const rad = Math.PI / 180
@@ -68,6 +68,14 @@ vec3 coverageColor(vec3 normal) {
     float separation = atan(length(cross(s, e)), dot(s, e));
     sunlight = separation + asin(${(sunRadius / radius).toFixed(8)} / length(toSun)) > asin(${(earthRadius / radius).toFixed(8)} / length(toEarth));
   }
+  if (layer == ${coverageLayers.power}) {
+    float distanceAu = length(toSun) / ${(astronomicalUnit / radius).toFixed(8)};
+    float incidence = sunlight ? dot(normal, normalize(toSun)) : 0.0;
+    float power = ${referencePanelPower.toFixed(2)} * incidence / (distanceAu * distanceAu);
+    float scaled = 2.0 * clamp(power / ${solarPowerScaleMax.toFixed(1)}, 0.0, 1.0);
+    if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
+    return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
+  }
   if (layer == ${coverageLayers.sun}) earthView = false;
   if (layer == ${coverageLayers.earth}) sunlight = false;
   if (sunlight && earthView) return ${coverageInk(3)};
@@ -115,7 +123,11 @@ void main() {
 `
 
 function coverageInk(index) {
-  return 'vec3(' + coveragePalette[index].map(value => (value / 255).toFixed(6)).join(',') + ')'
+  return glslColor(coveragePalette[index])
+}
+
+function glslColor(color) {
+  return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
 export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature) {

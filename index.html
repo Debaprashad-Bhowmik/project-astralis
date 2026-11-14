@@ -204,7 +204,7 @@
           <p class="error" id="globe-error" hidden></p>
           <div class="coverage-toolbar" id="coverage-toolbar">
             <label for="coverage-layer">Surface layer
-              <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></optgroup></select>
+              <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option><option value="power">Power output (Solar Elevation Angle)</option></optgroup></select>
             </label>
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
@@ -269,6 +269,14 @@
             <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
             <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
             <p class="muted" id="coverage-summary"></p>
+            <div id="power-details" hidden>
+              <div class="power-scale" role="group" aria-label="Estimated electrical power per square meter">
+                <div id="power-gradient" aria-hidden="true"></div>
+                <span>0 W/m²</span><span id="power-scale-mid"></span><span id="power-scale-max"></span>
+              </div>
+              <p class="power-site"><strong id="power-output"></strong><span id="power-site-angle"></span></p>
+              <p class="muted" id="power-notes">Estimated electrical output for a flat panel at 20% efficiency. Map colors use a smooth lunar horizon. Sites use the chosen horizon model. Total eclipses give zero output.</p>
+            </div>
             <p class="muted" id="coverage-overhead"></p>
             <div class="scrub coverage-scrub"><button type="button" class="subtle" id="coverage-play" aria-label="Play map timeline">▶</button><label class="sr-only" for="coverage-time">Visibility map mission time</label><input id="coverage-time" type="range" min="0" max="24" step=".25" value="0"></div>
           </div>

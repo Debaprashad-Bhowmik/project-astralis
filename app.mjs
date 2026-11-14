@@ -1,10 +1,10 @@
-import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, skyCrossings, solarExposure } from './planner.mjs'
+import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, siteSolarPower, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
-import { createCoverageMap, subPoint } from './coverage-map.mjs'
+import { createCoverageMap, solarPowerColor, solarPowerPalette, solarPowerScaleMax, subPoint } from './coverage-map.mjs'
 import { missionOverlapGrid, missionQuarters, overlapRgb, windowHours } from './mission-heat.mjs'
 
 const get = id => document.getElementById(id)
@@ -17,6 +17,7 @@ const dateLabel = epoch => utc.format(new Date(epoch)) + ' UTC'
 const controlDate = epoch => new Date(epoch).toISOString().slice(0, 16)
 const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hours.toFixed(1))) + ' h'
 const formatPercent = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 1 })
+const formatPower = watts => `${watts > 0 && watts < .1 ? '<0.1' : Number(watts.toFixed(1))} W/m²`
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 const skyLookahead = 30 * 24
 const chartColumns = ['sunEl', 'earthEl', 'sunHorizon', 'earthHorizon']
@@ -530,13 +531,16 @@ function showCoverage() {
   const mode = get('coverage-layer').value
   const visible = Boolean(active) && (flat || (onGlobe && mode !== 'off'))
   const mission = visible && mode === 'mission'
+  const power = visible && mode === 'power'
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
   get('coverage-details').hidden = !visible || mission
+  get('power-details').hidden = !power
+  for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = power
   get('coverage-clock').hidden = !visible || mission
   get('coverage-canvas').hidden = Boolean(mission && !heatGrid)
   if (!mission) heatDisplay = undefined
-  if (!mission || !heatGrid) globe?.setSiteScores()
+  if ((!mission || !heatGrid) && (!power || flat)) globe?.setSiteScores()
   if (!visible) {
     if (onGlobe) {
       globe?.setCoverage(null)
@@ -558,7 +562,17 @@ function showCoverage() {
     drawCoverage(coverageFrame, active.site, mode)
   } else {
     globe?.setCoverage(coverageFrame, mode)
-    get('globe-canvas').setAttribute('aria-describedby', 'globe-pole-note coverage-notes coverage-summary coverage-overhead')
+    if (power) {
+      const frameIndex = Math.round(elapsed * 4)
+      const scores = new Map(ranked.map(({ site, timeline }) => {
+        const siteSample = timeline?.[frameIndex] ?? siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
+        const watts = siteSolarPower(siteSample)
+        const number = formatPower(watts)
+        return [site.id, { number, label: `Sun ${signedDegrees(siteSample.sunEl)} · ${number} estimated electrical output`,
+          color: `rgb(${solarPowerColor(watts).join(',')})`, nearZero: watts === 0 }]
+      }))
+      globe?.setSiteScores(scores)
+    }
   }
   const time = dateLabel(epoch)
   const clock = get('coverage-clock')
@@ -569,13 +583,21 @@ function showCoverage() {
   slider.value = String(elapsed)
   slider.setAttribute('aria-valuetext', time)
   const sample = active.timeline[Math.round(elapsed * 4)]
-  const sun = sample.eclipse ? 'Sun eclipsed' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
-  const earth = sample.earthEl > sample.earthHorizon ? 'Earth in view' : 'Earth blocked by skyline'
-  get('coverage-summary').textContent = `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}`
-  const overhead = `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))} · Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`
+  const sun = sample.eclipse ? 'Total solar eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
+  if (power) {
+    get('power-output').textContent = `${siteName(active.site)} · ${formatPower(siteSolarPower(sample))}`
+    get('power-site-angle').textContent = `Sun elevation ${signedDegrees(sample.sunEl)} · ${sun} · ${terrainLabel(active.site, settings.horizon)}`
+  } else {
+    const earth = sample.earthEl > sample.earthHorizon ? 'Earth in view' : 'Earth blocked by skyline'
+    get('coverage-summary').textContent = `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}`
+  }
+  const sunOverhead = `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`
+  const overhead = power ? sunOverhead : `${sunOverhead} · Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`
   get('coverage-overhead').textContent = overhead
-  get('coverage-canvas').setAttribute('aria-label', `Whole-Moon visibility map. ${overhead}.`)
-  get('coverage-canvas').setAttribute('aria-describedby', 'coverage-notes coverage-summary')
+  const description = power ? 'power-notes power-output power-site-angle' : 'coverage-notes coverage-summary'
+  get('coverage-canvas').setAttribute('aria-label', `Whole-Moon ${power ? 'solar power' : 'visibility'} map. ${overhead}.`)
+  get('coverage-canvas').setAttribute('aria-describedby', description)
+  if (!flat) get('globe-canvas').setAttribute('aria-describedby', `globe-pole-note ${description} coverage-overhead`)
 }
 
 function showMissionHeat(flat) {
@@ -720,6 +742,10 @@ function showCoverageLegend() {
   }[get('coverage-layer').value] ?? []
   get('coverage-legend').replaceChildren(...entries.map(([color, name]) => element('li', `coverage-${color}`, name)))
 }
+
+get('power-gradient').style.background = `linear-gradient(90deg, ${solarPowerPalette.map(color => `rgb(${color.join(',')})`).join(', ')})`
+get('power-scale-mid').textContent = formatPower(solarPowerScaleMax / 2)
+get('power-scale-max').textContent = formatPower(solarPowerScaleMax)
 
 function installGlobe() {
   const canvas = get('globe-canvas')
@@ -1374,11 +1400,12 @@ function play() {
 }
 
 function exportCsv() {
-  const header = 'utc,site_id,latitude_deg,east_longitude_deg,horizon_model,sun_az_deg,sun_elev_deg,sun_horizon_deg,earth_az_deg,earth_elev_deg,earth_horizon_deg,total_solar_eclipse,sun_visible,earth_visible,terrain_source'
+  const header = 'utc,site_id,latitude_deg,east_longitude_deg,horizon_model,sun_az_deg,sun_elev_deg,sun_horizon_deg,earth_az_deg,earth_elev_deg,earth_horizon_deg,total_solar_eclipse,sun_visible,earth_visible,terrain_source,flat_panel_20pct_power_w_m2'
   const rows = active.timeline.map((entry, index) => [
     new Date(settings.start + index * hour / 4).toISOString(), active.site.id, active.site.lat, active.site.lon, settings.horizon,
     entry.sunAz, entry.sunEl, entry.sunHorizon, entry.earthAz, entry.earthEl, entry.earthHorizon, entry.eclipse,
     availableAt(active.sun, index / 4, settings.duration), availableAt(active.earth, index / 4, settings.duration), terrainLabel(active.site, settings.horizon),
+    siteSolarPower(entry).toFixed(3),
   ].join(','))
   const url = URL.createObjectURL(new Blob([[header, ...rows].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' }))
   const link = element('a')

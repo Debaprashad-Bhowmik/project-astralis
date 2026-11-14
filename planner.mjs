@@ -2,6 +2,9 @@ const radians = Math.PI / 180
 export const radius = 1737400
 export const sunRadius = 695700000
 export const earthRadius = 6378137
+export const astronomicalUnit = 149_597_870_700
+export const referencePanelEfficiency = .20
+export const referencePanelPower = 1361 * referencePanelEfficiency
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const interpolate = (a, b, t) => a + (b - a) * t
 
@@ -144,6 +147,15 @@ export function flatPanelFactor(elevation) {
   return Math.max(0, Math.sin(elevation * radians))
 }
 
+export function panelPowerFacingSun(distance) {
+  return referencePanelPower * (astronomicalUnit / distance) ** 2
+}
+
+export function siteSolarPower({ sunEl, sunHorizon, eclipse, sunDistance }) {
+  if (eclipse || sunEl <= sunHorizon) return 0
+  return flatPanelFactor(sunEl) * panelPowerFacingSun(sunDistance)
+}
+
 // Integrate the direct-beam projection between sampled elevations, clipped to actual sunlight windows.
 export function solarExposure(timeline, windows, duration) {
   const step = duration / (timeline.length - 1)
@@ -191,8 +203,9 @@ export function siteSkyModel(site, useTerrain) {
     const sunHorizon = horizonAt(profile, sunAz)
     const earthHorizon = horizonAt(profile, earthAz)
     const eclipse = eclipseMargin(sunVector, earthVector)
-    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0, eclipseMargin: eclipse,
-      sunRadius: Math.asin(sunRadius / Math.hypot(...sunVector)), earthRadius: Math.asin(earthRadius / Math.hypot(...earthVector)) }
+    const sunDistance = Math.hypot(...sunVector)
+    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0, eclipseMargin: eclipse, sunDistance,
+      sunRadius: Math.asin(sunRadius / sunDistance), earthRadius: Math.asin(earthRadius / Math.hypot(...earthVector)) }
   }
 }
 

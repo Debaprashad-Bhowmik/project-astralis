@@ -8,7 +8,8 @@ import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
-import { missionCrossings } from './planner.mjs'
+import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
+import { createSolarPowerModel } from './coverage-map.mjs'
 import { skyPathSegments } from './sky-view.mjs'
 
 test('a full mission year runs from the selected UTC time to its next anniversary', () => {
@@ -191,6 +192,33 @@ test('global coverage uses finite distance, both hemispheres, and local total ec
   assert.equal(mask(-.9999955, .003, 0), 0)
   assert.equal(createCoverageModel(sun, [384400000, 0, 0])(1, 0, 0), 2)
   assert.deepEqual(subPoint(earth), { lat: 0, lon: 90 })
+})
+
+test('solar power follows the sine of elevation and the inverse square of solar distance', () => {
+  const au = 149_597_870_700
+  const reference = { sunEl: 90, sunHorizon: 0, eclipse: false, sunDistance: au }
+  const overhead = siteSolarPower(reference)
+  assert.ok(Math.abs(overhead - 272.2) < 1e-9)
+  assert.ok(Math.abs(siteSolarPower({ ...reference, sunEl: 30 }) - overhead / 2) < 1e-9)
+  assert.equal(siteSolarPower({ ...reference, sunDistance: au * 2 }), overhead / 4)
+  assert.equal(siteSolarPower({ ...reference, sunEl: -10, sunHorizon: -20 }), 0)
+  assert.equal(siteSolarPower({ ...reference, sunEl: 5, sunHorizon: 6 }), 0)
+  assert.equal(siteSolarPower({ ...reference, eclipse: true }), 0)
+})
+
+test('the global power layer agrees with a flat-horizon site and updates when the Sun moves', () => {
+  const site = { lat: 0, lon: 60 }
+  const sun = [149_597_870_700, 0, 0]
+  const earth = [0, 384_400_000, 0]
+  const x = .5
+  const y = Math.sqrt(.75)
+  const model = createSolarPowerModel(sun, earth)
+  const local = siteSkyModel(site, false)([sun, earth])
+  assert.ok(Math.abs(model(x, y, 0) - siteSolarPower(local)) < 1e-9)
+  assert.ok(model(1, 0, 0) > model(x, y, 0))
+  assert.equal(model(-1, 0, 0), 0)
+  assert.equal(createSolarPowerModel(sun, [384_400_000, 0, 0])(1, 0, 0), 0)
+  assert.equal(createSolarPowerModel(sun.map(value => -value), earth)(1, 0, 0), 0)
 })
 
 test('global map coordinates round-trip and wrap the longitude seam', () => {
