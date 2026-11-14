@@ -23,7 +23,7 @@ KERNELS = ("naif0012.tls", "de440s.bsp", "moon_pa_de440_200625.bpc", "moon_de440
 SITES = [
     ("odysseus", "Odysseus", "Malapert A", "Historic landing · IM-1", -80.13, 1.44, "nssdc"),
     ("athena", "Athena", "Mons Mouton", "Historic landing · IM-2", -84.7906, 29.1957, "nssdc"),
-    ("mouton", "Mons Mouton", "Plateau center", "Named feature center", -84.60, 31.00, "16070"),
+    ("mouton", "Mons Mouton", "IM-4 / CP-22", "Future CLPS target · feature center", -84.60, 31.00, "16070"),
     ("ridge", "Connecting Ridge", "South polar ridge", "NASA study point", -89.4632, -137.49, "nasa-surface"),
     ("peak", "Peak near Shackleton", "South polar peak", "NASA study point", -88.811, 123.6901, "nasa-surface"),
     ("haworth", "Haworth", "Crater center", "Named feature center", -87.20, -7.49, "14502"),
@@ -60,9 +60,10 @@ HISTORIC_SITES = [
     ("Blue Ghost 1", "Mare Crisium", 18.562, 61.810),
 ]
 TARGETS = [
-    ("reiner-gamma", "Reiner Gamma", "IM-3 science region", "CLPS target region · feature center", 7.39, -58.96, "4987"),
-    ("schrodinger", "Schrödinger Basin", "CP-12 science region", "CLPS target region · feature center", -74.73, 132.93, "5381"),
-    ("gruithuisen", "Mons Gruithuisen Gamma", "Blue Ghost 3 science region", "CLPS target region · feature center", 36.56, -40.72, "3982"),
+    ("reiner-gamma", "Reiner Gamma", "IM-3 / CP-11", "Future CLPS target · feature center", 7.39, -58.96, "4987"),
+    ("schrodinger", "Schrödinger Basin", "CS-11", "Future CLPS target · feature center", -74.73, 132.93, "5381"),
+    ("gruithuisen", "Mons Gruithuisen Gamma", "Blue Ghost 3 / CP-21", "Future CLPS target · feature center", 36.56, -40.72, "3982"),
+    ("nassau", "Nassau Crater", "Blue Ghost 2 / CS-3/4", "Future CLPS target · feature center", -24.9137, 177.337, "4159"),
 ]
 HORIZON_RANGE = 350_000
 GLOBAL_STEP = 1900

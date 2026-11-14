@@ -37,6 +37,7 @@ const lessons = {
   },
 }
 const siteName = site => site.id === 'athena' ? 'Mons Mouton' : site.id === 'odysseus' ? 'Malapert A' : site.id === 'mouton' ? 'Mons Mouton Plateau' : site.name
+const futureClps = site => site.kind.startsWith('Future CLPS target')
 const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.location || site.kind
 const coordinate = (value, plus, minus) => Math.abs(value).toFixed(2) + '°' + (value < 0 ? minus : plus)
 const terrainLabel = (site, model) => model === 'terrain' ? site.terrain : '0° reference plane'
@@ -366,20 +367,24 @@ function showRanking() {
   const group = get('site-group').value
   const matches = ranked.filter(({ site }) => {
     const text = searchText([siteName(site), site.name, site.kind, site.location].join(' '))
-    const type = site.kind.includes('Historic') ? 'historic' : site.kind.includes('CLPS') ? 'clps' : site.kind === 'Custom coordinates' ? 'custom' : 'study'
+    const type = site.kind.includes('Historic') ? 'historic' : futureClps(site) ? 'clps' : site.kind === 'Custom coordinates' ? 'custom' : 'study'
     return (group === 'all' || group === type) && text.includes(query)
   })
   get('site-count').textContent = matches.length === ranked.length ? ranked.length + ' sites' : `${matches.length} of ${ranked.length}`
+  get('future-clps-note').hidden = group !== 'clps'
   get('rank-empty').hidden = !!matches.length
   get('rank-list').replaceChildren(...matches.map(row => {
     const item = element('li')
     const button = element('button', 'rank-row' + (row.unmet.length ? ' unmet' : ''))
     button.type = 'button'
     button.setAttribute('aria-pressed', String(row.site.id === selected))
-    button.setAttribute('aria-label', siteName(row.site) + ', ' + (row.place ? 'rank ' + row.place : 'misses ' + row.unmet.join(', ')) +
+    const mission = futureClps(row.site) ? 'Future CLPS · ' + row.site.location : ''
+    button.setAttribute('aria-label', siteName(row.site) + ', ' + (mission ? mission + ', ' : '') + (row.place ? 'rank ' + row.place : 'misses ' + row.unmet.join(', ')) +
       ', sunlight ' + formatHours(row.metrics.sun) + ', Earth in view ' + formatHours(row.metrics.earth) + ', both ' + formatHours(row.metrics.overlap))
     const name = element('span', 'site-name')
-    name.append(element('span', 'place', row.place ?? '–'), element('span', '', siteName(row.site)))
+    const title = element('span', '', siteName(row.site))
+    if (mission) title.append(element('small', 'rank-mission', mission))
+    name.append(element('span', 'place', row.place ?? '–'), title)
     button.append(name, ...['sun', 'earth', 'overlap'].map(key => element('span', 'value', formatHours(row.metrics[key]))))
     if (row.unmet.length) button.title = 'Misses: ' + row.unmet.join(', ')
     button.addEventListener('click', () => selectSite(row.site.id, true, true))
@@ -402,7 +407,9 @@ function selectSite(id, focus, center = false) {
 function showMap() {
   const { site } = active
   get('map-site-name').textContent = siteName(site)
-  get('map-site-detail').textContent = [siteCoordinates(site), site.kind, terrainLabel(site, settings.horizon)].join(' · ')
+  const details = [siteCoordinates(site), site.kind, terrainLabel(site, settings.horizon)]
+  if (futureClps(site)) details.splice(1, 0, site.location)
+  get('map-site-detail').textContent = details.join(' · ')
   const source = siteSource(site)
   get('map-site-source').hidden = !source
   if (source) get('map-site-source').href = source

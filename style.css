@@ -129,6 +129,7 @@ details p{margin:7px 0}
 #rank-list button:focus-visible{outline-offset:-2px}
 .site-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.75fr);gap:8px;margin-bottom:13px}
 #rank-empty{margin-block:10px}
+#future-clps-note{font-size:.78rem;margin:0 0 8px}
 .named-features{padding-block:6px;border-block:1px solid var(--line)}
 .feature-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;margin-top:7px}
 .feature-toggle{display:flex;align-items:center;min-height:35px}
@@ -144,6 +145,7 @@ details p{margin:7px 0}
 .rank-row:hover{background:#16161c}
 .rank-row[aria-pressed=true]{border-color:var(--sun);background:#201b19}
 .rank-row .site-name{display:flex;text-align:left;align-items:baseline;gap:7px;min-width:0;font-weight:700;font-size:.83rem}
+.rank-mission{display:block;margin-top:4px;color:var(--muted);font-size:.72rem;font-weight:500}
 .place{color:var(--sun);width:15px;flex:none;font-family:"Space Grotesk",sans-serif}
 .rank-row .value{font-size:.78rem;white-space:nowrap}
 .rank-row .value:nth-child(2){color:var(--sun)}
