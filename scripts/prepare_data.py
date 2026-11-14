@@ -17,6 +17,8 @@ STEP = 900
 START = datetime(2024, 1, 1, tzinfo=timezone.utc)
 END = datetime(2031, 1, 1, tzinfo=timezone.utc)
 FRAME = "MOON_ME_DE440_ME421"
+SPACE_FRAME = "ECLIPJ2000"
+SPACE_STEP = 3600
 KERNELS = ("naif0012.tls", "de440s.bsp", "moon_pa_de440_200625.bpc", "moon_de440_250416.tf")
 SITES = [
     ("odysseus", "Odysseus", "Malapert A", "Historic landing · IM-1", -80.13, 1.44, "nssdc"),
@@ -98,13 +100,15 @@ def compile_sites(source, output):
     return sites, extent
 
 
-def compile_ephemeris(source, output):
-    for name in KERNELS:
-        spice.furnsh(str(source / name))
+def epochs_for(step):
     start = START.strftime("%Y-%m-%dT%H:%M:%S")
     epoch = spice.str2et(start)
-    count = int((END - START).total_seconds() / STEP) + 1
-    epochs = epoch + STEP * np.arange(count, dtype=float)
+    count = int((END - START).total_seconds() / step) + 1
+    return epoch + step * np.arange(count, dtype=float)
+
+
+def compile_ephemeris(output):
+    epochs = epochs_for(STEP)
     vectors = []
     for target in ("SUN", "EARTH"):
         positions, _ = spice.spkpos(target, epochs, FRAME, "CN+S", "MOON")
@@ -113,16 +117,31 @@ def compile_ephemeris(source, output):
     coordinates = np.rint(np.column_stack(vectors) * 10).astype("<i4")
     delta = np.diff(coordinates, axis=0, prepend=np.zeros((1, 6), dtype="<i4"))
     delta.astype("<i4").tofile(output / "ephemeris.bin")
-    return count
+    return len(epochs)
+
+
+def compile_space_view(output):
+    epochs = epochs_for(SPACE_STEP)
+    positions = [spice.spkpos(target, epochs, SPACE_FRAME, "NONE", "EARTH")[0] for target in ("MOON", "SUN")]
+    rotations = np.array([spice.m2q(spice.pxform(FRAME, SPACE_FRAME, epoch)) for epoch in epochs])
+    np.column_stack((*positions, rotations)).astype("<f4").tofile(output / "space-positions.bin")
+    return len(epochs)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Directory with NASA kernels and TIFF files")
     parser.add_argument("--output", type=Path, default=Path("data"))
+    parser.add_argument("--space-only", action="store_true", help="Update only the Earth-centered overview dataset")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    count = compile_ephemeris(args.source, args.output)
+    for name in KERNELS:
+        spice.furnsh(str(args.source / name))
+    space_count = compile_space_view(args.output)
+    if args.space_only:
+        print("Earth-centered samples:", space_count)
+        raise SystemExit(0)
+    count = compile_ephemeris(args.output)
     sites, extent = compile_sites(args.source, args.output)
     manifest = dict(start=START.isoformat(), end=END.isoformat(), step=STEP, count=count, frame=FRAME,
                     kernels=KERNELS, catalog=sites, mapExtent=extent, terrainDistance=HORIZON_RANGE)

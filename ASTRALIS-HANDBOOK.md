@@ -4,7 +4,7 @@
 
 Astralis explores how a change in landing site or date affects sunlight and the view toward Earth from the Moon. This handbook gives the team one place to understand the challenge, reproduce the NASA data check, choose a direction, build a demo, and submit it for judging.
 
-**Current state.** The working app ranks eight sites using JPL and LOLA data. It includes a 3D Moon and a 2D polar map, independently dated comparisons, custom coordinates, activity timelines, visibility transitions, and CSV export. The team can use the checklist below to prepare its recording and finish the submission form. [Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/) · [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
+**Current state.** The Astralis built a navigator that ranks eight sites using JPL and LOLA data. The rotatable Sun–Earth–Moon view updates with the surface-operations timeline and shows how each body clears the selected site's skyline. The app also includes a 3D lunar globe, a 2D polar map, independently dated comparisons, custom coordinates, visibility transitions, and CSV export. [Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/) · [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
 ## Contents
 
@@ -109,7 +109,7 @@ These Cloud-Optimized GeoTIFFs use south polar stereographic coordinates in metr
 
 ### Files and downloads
 
-The browser reads `data/catalog.json` and `data/ephemeris.bin`. The preprocessing script `scripts/prepare_data.py` builds those files from the dated ephemeris, elevation rasters and published coordinates below. The 3D globe image is a separate visualization asset.
+The browser reads `data/catalog.json` and `data/ephemeris.bin` for surface operations and `data/space-positions.bin` for the solar system scene. The preprocessing script `scripts/prepare_data.py` builds those files from the dated ephemeris, elevation rasters and published coordinates below. The header is an illustration. The lunar globe uses LROC imagery.
 
 | Input | Exact source |
 | --- | --- |
@@ -130,9 +130,12 @@ python scripts/prepare_data.py /path/to/nasa-files
 node --test planner.test.mjs
 ```
 
+To regenerate the 3D positions alone, run `python scripts/prepare_data.py /path/to/nasa-files --space-only` with the four kernels.
+
 ### Calculation and limits
 
 - **Ephemeris.** SPICE computes apparent Sun and Earth vectors from the Moon center in the DE440 lunar Mean Earth frame aligned with DE421. The browser interpolates the 15-minute samples and subtracts each surface observer position. The data cover January 2024 through December 2030. The dated calculations reflect the SPICE orbit and lunar orientation model, including libration. Near a crossing, the app estimates the time between neighboring samples. Events shorter than the sampling interval may be missed. [JPL lunar frames](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/23_lunar-earth_pck-fk.pdf)
+- **3D scene.** SPICE supplies hourly geometric Sun and Moon vectors relative to Earth's center in the `ECLIPJ2000` inertial frame. The browser interpolates those vectors and the rotation from the lunar body frame to place the site's marker. Switch the reference point to the Sun to see Earth's path around it. Visual scales are compressed, with the physical center-to-center distances listed beside the scene. Surface visibility continues to use the apparent positions and the selected horizon model. [JPL SPICE kernels](https://naif.jpl.nasa.gov/naif/data_generic.html)
 - **Terrain.** The script traces bearings every 0.5° using a 350 km search, a 2 m observer height, and lunar curvature. It uses the 80 m grid within 25 km where available and the 240 m grid for wider coverage. Small terrain features below grid resolution and local slopes matter. Custom coordinates use the 0° reference plane, and the app applies that same model to all sites while a custom point is active. The 3D globe uses display lighting for orientation. [NASA LOLA terrain](https://pgda.gsfc.nasa.gov/products/90) · [Terrain-horizon research](https://ntrs.nasa.gov/citations/20205009660)
 - **Ranking.** Qualifying sites meet all user-entered minimum hours and the optional maximum dark gap. The score is the weighted share of the mission with sunlight, Earth visibility, or both, scaled to 100. Equal displayed scores share a rank. Figures use Sun-center and Earth-center geometry and exclude total solar eclipses from the Sun series. Solar array output, partial obscuration, ground-station availability, radio link budgets, and landing hazards require further analysis. [NASA polar illumination](https://pgda.gsfc.nasa.gov/products/69)
 - **Cross-check.** In the reference-plane case at Mons Mouton on November 14, 2026 at 00:00 UTC, the app returns the Sun at about +0.87828° elevation and Earth at −0.15391°. The separate Horizons check below gives +0.87828° and −0.15388°. At the same position and time using LOLA, the Sun's skyline is about +3.29°, which places the Sun's center behind terrain. [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/)

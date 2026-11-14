@@ -1,8 +1,8 @@
 # Project Astralis
 
-Team workspace for the 2026 NASA Space Apps Challenge, [Lunar Landing Site Navigator](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/). The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon.
+The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
-**[Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/).** Choose a landing date, mission length, and priority to rank eight lunar sites. Compare independently dated scenarios, rotate the 3D Moon, and inspect the computed local horizon, daylight, and Earth-visibility windows.
+**[Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/).** Choose a landing date, mission length, and priority to rank eight lunar sites. Explore the changing Sun, Earth, and Moon positions in 3D, compare independently dated scenarios, and inspect the terrain horizon, daylight, and Earth-visibility windows.
 
 **[Start with the Astralis handbook](ASTRALIS-HANDBOOK.md).** It covers the challenge, an example app screen, NASA data downloads, reproducible query settings, the build and testing workflow, team collaboration, the judging rubric, and submission.
 

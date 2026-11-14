@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate } from './planner.mjs'
 import { globeOrientation, projectSite } from './globe.mjs'
+import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -55,4 +56,33 @@ test('bundled ephemeris matches independent Horizons angles and terrain changes 
   const terrain = evaluate(site, frames, 24, true)
   assert.ok(terrain.timeline[0].sunHorizon > 3)
   assert.equal(terrain.metrics.sun, 0)
+})
+
+test('space view interpolates Earth-centered positions at the selected instant', () => {
+  const first = [0, 380000, 0, 150000000, 0, 0, 1, 0, 0, 0]
+  const second = [0, 400000, 0, 152000000, 0, 0, 0, 0, 0, 1]
+  const state = systemAt(Float32Array.from([...first, ...second]), .25)
+  assert.deepEqual(state.moon, [0, 385000, 0])
+  assert.deepEqual(state.sun, [150500000, 0, 0])
+  const pin = siteDirection({ lat: 0, lon: 0 }, state)
+  assert.ok(Math.abs(Math.atan2(pin[1], pin[0]) - 2 * Math.atan2(.25, .75)) < 1e-10)
+  assert.throws(() => systemAt(Float32Array.from(first), 1), RangeError)
+})
+
+test('bundled 3D positions cover the mission date range and move over time', () => {
+  const { start, end } = JSON.parse(readFileSync(new URL('./data/catalog.json', import.meta.url)))
+  const bytes = readFileSync(new URL('./data/space-positions.bin', import.meta.url))
+  const startMs = Date.parse(start)
+  const endMs = Date.parse(end)
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  const samples = readSpaceSamples(buffer, startMs, endMs)
+  const at = (Date.parse('2026-11-14T00:00:00Z') - startMs) / (spaceStep * 1000)
+  const first = systemAt(samples, at)
+  const later = systemAt(samples, at + 6)
+  assert.ok(Math.hypot(...first.moon) > 350000 && Math.hypot(...first.moon) < 410000)
+  assert.ok(Math.hypot(...first.sun) > 147000000 && Math.hypot(...first.sun) < 153000000)
+  assert.ok(Math.hypot(...later.moon.map((value, i) => value - first.moon[i])) > 18000)
+  assert.ok(Math.hypot(...later.sun.map((value, i) => value - first.sun[i])) > 500000)
+  assert.ok(systemAt(samples, (endMs - startMs) / (spaceStep * 1000)).rotation.every(Number.isFinite))
+  assert.throws(() => readSpaceSamples(buffer.slice(0, -4), startMs, endMs), /incomplete/)
 })

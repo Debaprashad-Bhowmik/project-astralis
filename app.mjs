@@ -1,5 +1,6 @@
 import { binaryFrames, evaluate, frameAt, radius, rank } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
+import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -34,6 +35,8 @@ let settings
 let playing = null
 let comparisonEdited = false
 let globe
+let updateSpace
+let inspectedSite = false
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -65,19 +68,22 @@ function framesFor(start, duration) {
   return Array.from({ length: duration * 4 + 1 }, (_, index) => frameAt(ephemeris, first + index))
 }
 
-function recalculate(chooseBest = true) {
+function recalculate() {
   if (!catalog) return
   stop()
-  try { settings = currentSettings() } catch (reason) {
+  let nextSettings
+  try { nextSettings = currentSettings() } catch (reason) {
     error('input-error', reason.message + ' Showing the last valid result.')
     return
   }
+  if (nextSettings.start !== settings?.start) elapsed = 0
+  settings = nextSettings
   error('input-error')
   const { start, duration, weights, limits, horizon } = settings
   const frames = framesFor(start, duration)
   const sites = custom ? [...catalog.catalog, custom] : catalog.catalog
   ranked = rank(sites.map(site => evaluate(site, frames, duration, horizon === 'terrain')), weights, limits, duration)
-  if (chooseBest || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
+  if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
   get('time-slider').max = duration
   get('export').disabled = false
@@ -141,6 +147,13 @@ function resultNarrative(best, second) {
 
 function showResult() {
   active = ranked.find(row => row.site.id === selected)
+  const siteControl = get('space-site')
+  siteControl.replaceChildren(...ranked.map(({ site }) => {
+    const option = element('option', '', siteName(site))
+    option.value = site.id
+    return option
+  }))
+  siteControl.value = selected
   const [best, second] = ranked
   const alternative = active.site.id === best.site.id ? second : active
   const tied = ranked.filter(row => row.place === 1)
@@ -191,6 +204,7 @@ function showResult() {
 
 function selectSite(id, focus) {
   selected = id
+  inspectedSite = true
   showResult()
   if (focus) [...get('rank-list').querySelectorAll('button')].find(button => button.getAttribute('aria-pressed') === 'true')?.focus()
 }
@@ -377,6 +391,24 @@ function showTime() {
   list.append(element('dt', '', 'Longest gaps'), element('dd', '', 'Darkness ' + formatHours(active.metrics.darkness) +
     ' · Earth out of view ' + formatHours(active.metrics.blackout)))
   snapshot.replaceChildren(element('p', 'muted', time), list)
+  if (updateSpace) {
+    const { lunarKm, solarKm } = updateSpace((start + elapsed * hour - catalog.startMs) / (spaceStep * 1000), active.site)
+    const slider = get('space-time')
+    slider.max = duration
+    slider.value = String(elapsed)
+    slider.setAttribute('aria-valuetext', time)
+    get('space-clock').value = time
+    const skyline = horizon === 'terrain' ? 'local skyline' : '0° reference horizon'
+    const clearance = difference => {
+      if (Math.abs(difference) < .005) return 'at the ' + skyline
+      return Math.abs(difference).toFixed(2) + '° ' + (difference > 0 ? 'above' : 'below') + ' the ' + skyline
+    }
+    get('space-caption').textContent = horizon === 'terrain' ? 'LOLA terrain horizon' : '0° reference horizon'
+    get('space-sun').textContent = clearance(window.sunEl - window.sunHorizon) + (window.eclipse ? ' · Total solar eclipse' : '')
+    get('space-earth').textContent = clearance(window.earthEl - window.earthHorizon)
+    get('space-lunar-km').textContent = lunarKm + ' km'
+    get('space-solar-km').textContent = solarKm + ' km'
+  }
   drawChart()
 }
 
@@ -462,10 +494,11 @@ function addCoordinate(event) {
   const lon = ((Number(longitude.value) + 180) % 360 + 360) % 360 - 180
   custom = { id: 'custom', name: 'Custom site', kind: 'Custom coordinates', lat: Number(latitude.value), lon, height: 0 }
   selected = custom.id
+  inspectedSite = true
   get('model').value = 'reference'
   get('model').disabled = true
   get('remove-custom').hidden = false
-  recalculate(false)
+  recalculate()
   globe?.center(custom)
 }
 
@@ -474,16 +507,20 @@ function stop() {
   playing = null
   get('play').textContent = '▶'
   get('play').setAttribute('aria-label', 'Play timeline')
+  get('space-play').textContent = '▶'
+  get('space-play').setAttribute('aria-label', 'Play 3D timeline')
 }
 
 function play() {
   if (!active) return
   if (playing !== null) { stop(); return }
-  if (elapsed >= settings.duration) elapsed = 0
+  if (elapsed >= settings.duration) { elapsed = 0; showTime() }
   const initial = elapsed
   const began = performance.now()
   get('play').textContent = 'Ⅱ'
   get('play').setAttribute('aria-label', 'Pause timeline')
+  get('space-play').textContent = 'Ⅱ'
+  get('space-play').setAttribute('aria-label', 'Pause 3D timeline')
   function update(now) {
     const next = Math.min(settings.duration, Math.round((initial + (now - began) * settings.duration / 20_000) * 4) / 4)
     if (next !== elapsed) {
@@ -524,10 +561,34 @@ async function start() {
     installGlobe()
     drawGrid()
     recalculate()
+    void startSpace()
   } catch (reason) {
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
     get('answer-title').textContent = 'Lunar data could not be loaded'
     get('rank-summary').textContent = 'Reload to try again.'
+  }
+}
+
+async function startSpace() {
+  try {
+    const response = await fetch('./data/space-positions.bin')
+    if (!response.ok) throw new Error('The 3D ephemeris could not be loaded.')
+    const samples = readSpaceSamples(await response.arrayBuffer(), catalog.startMs, catalog.endMs)
+    const controls = {
+      earthView: get('space-earth-view'), sunView: get('space-sun-view'), scale: get('space-scale'),
+      left: get('space-left'), right: get('space-right'), up: get('space-up'), down: get('space-down'), reset: get('space-reset'),
+    }
+    updateSpace = createSpaceView(get('space-canvas'), samples, controls)
+    get('space-content').hidden = false
+    for (const button of Object.values(controls)) if (button.tagName === 'BUTTON') button.disabled = false
+    for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
+    get('space-status').hidden = true
+    showTime()
+  } catch (reason) {
+    updateSpace = undefined
+    get('space-status').hidden = true
+    error('space-error', reason.message + ' Site rankings and surface operations are available below.')
+    get('space-content').hidden = true
   }
 }
 
@@ -549,6 +610,7 @@ for (const button of get('presets').children) button.addEventListener('click', (
 get('offset').addEventListener('click', () => settings && setMissionTime(settings.start + 3 * day))
 get('coordinates').addEventListener('submit', addCoordinate)
 get('remove-custom').addEventListener('click', () => {
+  if (selected === custom?.id) inspectedSite = false
   custom = null
   get('model').disabled = false
   get('model').value = horizonBeforeCustom
@@ -570,7 +632,8 @@ get('delay-b').addEventListener('click', () => {
   get('compare-time').value = controlDate(settings.start + 3 * day)
   compare()
 })
-get('time-slider').addEventListener('input', event => {
+get('space-site').addEventListener('change', event => selectSite(event.target.value, false))
+for (const slider of inputs('time-slider', 'space-time')) slider.addEventListener('input', event => {
   stop()
   elapsed = Number(event.target.value)
   showTime()
@@ -584,7 +647,7 @@ get('elevation-chart').addEventListener('pointerdown', event => {
   elapsed = Math.round(fraction * settings.duration * 4) / 4
   showTime()
 })
-get('play').addEventListener('click', play)
+for (const button of inputs('play', 'space-play')) button.addEventListener('click', play)
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))
 start()

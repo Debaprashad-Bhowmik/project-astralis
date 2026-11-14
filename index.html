@@ -13,20 +13,21 @@
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="Astralis home">
-      <svg viewBox="0 0 36 36" fill="none" aria-hidden="true"><ellipse cx="18" cy="18" rx="17" ry="6.5" transform="rotate(-32 18 18)" stroke="currentColor" stroke-width="1.8"/><circle cx="25" cy="10" r="3.5" fill="currentColor"/><circle cx="13" cy="20" r="1.5" fill="currentColor"/></svg>
-      <strong>ASTRALIS</strong><span>Lunar Site Navigator</span>
+    <a class="brand" href="./" aria-label="The Astralis home">
+      <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
+      <span>Lunar Site Navigator</span>
     </a>
-    <nav aria-label="App navigation"><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+    <nav aria-label="App navigation"><a href="#space">3D view</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
 
   <main>
     <div class="hero">
       <div class="hero-inner">
-        <h1>Where should we land?</h1>
-        <p>Compare sunlight and Earth visibility across lunar sites and dates.</p>
+        <h1>Lunar Site Navigator</h1>
+        <p>Find when a landing site has sunlight, a clear view of Earth, or both.</p>
+        <a class="hero-action" href="#mission">Plan a landing <span aria-hidden="true">↓</span></a>
       </div>
-      <a class="hero-credit" href="https://svs.gsfc.nasa.gov/3686/" target="_blank" rel="noreferrer">LRO / LOLA flyover · NASA SVS</a>
+      <span class="hero-credit">Illustration</span>
     </div>
 
     <div class="workspace">
@@ -74,6 +75,52 @@
             <p id="input-error" class="error" role="alert" hidden></p>
             <button id="offset" class="subtle delay" type="button">Shift landing by 3 days <span aria-hidden="true">↗</span></button>
           </form>
+        </section>
+
+        <section class="panel space-panel" id="space" aria-labelledby="space-heading">
+          <div class="panel-heading space-heading">
+            <h2 id="space-heading">Sun, Earth &amp; Moon</h2>
+            <div class="map-view" aria-label="Reference point">
+              <button type="button" id="space-earth-view" class="subtle" value="earth" aria-pressed="true" disabled>Around Earth</button>
+              <button type="button" id="space-sun-view" class="subtle" value="sun" aria-pressed="false" disabled>Around the Sun</button>
+            </div>
+          </div>
+          <p id="space-error" class="error" role="status" hidden></p>
+          <p id="space-status" class="muted" role="status">Loading 3D positions…</p>
+          <div id="space-content" hidden>
+            <div class="space-grid">
+              <div>
+                <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
+                <p id="space-scale" class="muted">The solid arc shows the Moon’s path around Earth. Sizes and the Sun’s distance are schematic.</p>
+                <div class="globe-controls" aria-label="Rotate the view">
+                  <button type="button" class="subtle" id="space-left" aria-label="Rotate view left" disabled>←</button>
+                  <button type="button" class="subtle" id="space-right" aria-label="Rotate view right" disabled>→</button>
+                  <button type="button" class="subtle" id="space-up" aria-label="Tilt view up" disabled>↑</button>
+                  <button type="button" class="subtle" id="space-down" aria-label="Tilt view down" disabled>↓</button>
+                  <button type="button" class="subtle" id="space-reset" disabled>Reset view</button>
+                </div>
+              </div>
+              <div class="space-readout">
+                <h3>At the landing site</h3>
+                <label for="space-site">Site</label>
+                <select id="space-site" disabled></select>
+                <p id="space-caption" class="muted"></p>
+                <p class="space-sun"><strong>Sun</strong> <span id="space-sun"></span></p>
+                <p class="space-earth"><strong>Earth</strong> <span id="space-earth"></span></p>
+                <dl class="space-distance muted">
+                  <dt>Earth to Moon</dt><dd id="space-lunar-km"></dd>
+                  <dt>Earth to Sun</dt><dd id="space-solar-km"></dd>
+                </dl>
+                <p class="muted space-marker">The mint dot marks the selected site. A hollow dot marks the far side of the view.</p>
+              </div>
+            </div>
+            <div class="scrub space-scrub">
+              <button type="button" class="subtle" id="space-play" aria-label="Play 3D timeline" disabled>▶</button>
+              <label class="sr-only" for="space-time">3D view mission time</label>
+              <input id="space-time" type="range" min="0" max="24" step=".25" value="0" disabled>
+              <output id="space-clock" for="space-time"></output>
+            </div>
+          </div>
         </section>
 
         <section class="panel public-answer" aria-labelledby="answer-title">
@@ -170,13 +217,13 @@
         <h2 id="methods-heading">Data &amp; methods</h2>
         <div class="method-grid">
           <div><h3>What the ranking means</h3><p>Astralis filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
-          <div><h3>How visibility is estimated</h3><p>Positions come from JPL’s DE440 and lunar orientation kernels at 15-minute intervals. The terrain model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. Support runs from January 2024 through December 2030.</p></div>
+          <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive both views. The 3D scene uses hourly geometric positions. Surface operations use 15-minute apparent positions. The terrain model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. Support runs from January 2024 through December 2030.</p></div>
           <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
         </div>
         <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">LOLA elevation</a></p>
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Astralis</span><span>NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by The Astralis</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>
