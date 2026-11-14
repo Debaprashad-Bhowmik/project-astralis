@@ -10,6 +10,72 @@ const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0)
 // Pixel bounds of Earth's limb in NASA's 540 × 540 Apollo 17 JPG.
 const earthPhotoCrop = [15, 15, 508, 508]
 const regolithSize = 256
+const impactSize = 512
+const impactPeriod = 128
+
+// Normalized profile for the illustrative material. It is never applied to the elevation mesh.
+export function craterRelief(distance, depth = .35, rimWidth = .22) {
+  const wall = Math.max(0, 1 - distance ** 2)
+  const rim = Math.max(0, 1 - Math.abs(distance - .98) / rimWidth)
+  const apron = Math.max(0, 1 - Math.abs(distance - 1) / .48)
+  return -.72 * depth * wall ** 1.5 + .078 * rim ** 1.6 + .019 * apron
+}
+
+function impactMaterial() {
+  const height = new Float32Array(impactSize * impactSize)
+  const cavity = new Float32Array(height.length)
+  const ejecta = new Float32Array(height.length)
+  const texels = new Uint8Array(height.length * 4)
+  const metersPerPixel = impactPeriod / impactSize
+  let seed = 872307
+  const random = () => {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  const index = (x, y) => (y & (impactSize - 1)) * impactSize + (x & (impactSize - 1))
+  for (let crater = 0; crater < 218; crater++) {
+    const close = crater < 16
+    const arc = crater * Math.PI * (3 - Math.sqrt(5)) + random() * .55
+    const range = 7 + random() * 4 + (crater % 3) * 5
+    const radius = close ? 1.3 + random() * 2.0 : crater < 38 ? 1.8 + random() ** 1.4 * 3.9 : .46 + random() ** 2 * 1.47
+    const cx = Math.floor(close ? Math.cos(arc) * range / metersPerPixel : random() * impactSize)
+    const cz = Math.floor(close ? Math.sin(arc) * range / metersPerPixel : random() * impactSize)
+    const rotation = random() * Math.PI * 2
+    const depth = .22 + random() * .25
+    const rimWidth = .17 + random() * .09
+    const flatten = .83 + random() * .17
+    const cos = Math.cos(rotation)
+    const sin = Math.sin(rotation)
+    const span = Math.ceil(radius * 1.65 / metersPerPixel)
+    for (let z = -span; z <= span; z++) {
+      for (let x = -span; x <= span; x++) {
+        const u = x * cos + z * sin
+        const v = (z * cos - x * sin) / flatten
+        const angle = Math.atan2(v, u)
+        const irregular = 1 + .07 * Math.cos(3 * angle) + .045 * Math.sin(5 * angle + 1)
+        const dist = Math.hypot(u, v) * metersPerPixel / (radius * irregular)
+        if (dist > 1.48) continue
+        const i = index(cx + x, cz + z)
+        height[i] += radius * craterRelief(dist, depth, rimWidth)
+        cavity[i] = Math.max(cavity[i], Math.max(0, 1 - dist ** 2) ** .7)
+        const apron = Math.max(0, 1 - Math.abs(dist - .93) / .39)
+        ejecta[i] = Math.max(ejecta[i], apron * (.64 + .19 * Math.cos(angle * 4) + .17 * Math.sin(angle * 11)))
+      }
+    }
+  }
+  for (let z = 0; z < impactSize; z++) {
+    for (let x = 0; x < impactSize; x++) {
+      const i = index(x, z)
+      const dx = (height[index(x + 1, z)] - height[index(x - 1, z)]) / (2 * metersPerPixel)
+      const dz = (height[index(x, z + 1)] - height[index(x, z - 1)]) / (2 * metersPerPixel)
+      texels[i * 4] = Math.round(255 * clamp(.5 - dx * .42, 0, 1))
+      texels[i * 4 + 1] = Math.round(255 * clamp(.5 - dz * .42, 0, 1))
+      texels[i * 4 + 2] = Math.round(cavity[i] * 255)
+      texels[i * 4 + 3] = Math.round(ejecta[i] * 255)
+    }
+  }
+  return texels
+}
 
 // An unlit material with periodic relief. Elevation and reflectance at map scale come from NASA.
 function regolithMaterial() {
@@ -195,11 +261,11 @@ const fragment = `
 #extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec3 sunDirection;
-uniform float daylight, inkStyle;
+uniform float daylight, inkStyle, showDetail, impactScale;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent;
-uniform sampler2D albedoMap, shadowMap, regolithMap;
+uniform sampler2D albedoMap, shadowMap, regolithMap, impactMap, dustMap;
 uniform float shadowPixel;
 varying vec3 terrain;
 varying vec3 groundNormal;
@@ -247,8 +313,8 @@ vec3 celColor(vec3 normal, float beam, float reflectance, float detail, vec2 loc
   night = mix(night, vec3(.295,.329,.434), celStep(plane,.70) * .69);
   vec3 color = mix(night, vec3(.40,.405,.50), celStep(beam,.14));
   color = mix(color, vec3(.59,.57,.565), celStep(beam,.27));
-  color = mix(color, vec3(.79,.722,.635), celStep(beam,.43));
-  color = mix(color, vec3(.916,.843,.745), celStep(beam,.67));
+  color = mix(color, vec3(.77,.732,.679), celStep(beam,.43));
+  color = mix(color, vec3(.88,.841,.784), celStep(beam,.67));
 
   // Derive the ink accents from the measured slopes and the small surface material.
   float slopeInk = smoothstep(.08, .65, length(dFdx(normal)) + length(dFdy(normal)));
@@ -275,9 +341,28 @@ void main() {
   vec3 textured = normalize(n + vec3(relief.x,0,relief.y));
   float direct = daylight > 0.0 ? shadow() : 0.0;
   float detail = (grit.r - .51) * .63 + (fragments.r - .51) * .75 + patches * .26;
+  vec3 displayNormal = n;
+  if (showDetail > .5) {
+    vec2 impactCoords = local / (${impactPeriod.toFixed(1)} * impactScale);
+    vec4 pits = texture2D(impactMap, impactCoords);
+    const mat2 rotation = mat2(.8,.6,-.6,.8);
+    vec4 largerPits = texture2D(impactMap, rotation * impactCoords * .34 + vec2(.26,.69));
+    float distant = smoothstep(8.0, 32.0, length(local)) * (1.0 - smoothstep(1.0, 10.0, footprint));
+    vec2 walls = (pits.rg - .5) * 2.35 + (largerPits.rg - .5) * rotation * 2.23 * distant;
+    float cavity = max(pits.b, largerPits.b * distant);
+    float rim = max(pits.a, largerPits.a * distant);
+    displayNormal = normalize(n + vec3(walls.x,0,walls.y));
+    textured = normalize(displayNormal + vec3(relief.x,0,relief.y)*.45);
+
+    float nearDust = texture2D(dustMap, local / 4.0).r;
+    float coarseDust = texture2D(dustMap, rotation * local / 19.0 + vec2(.35,.81)).r;
+    float dust = (nearDust - .36) * 1.75 + (coarseDust - .36) * .84;
+    float occlusion = cavity * .20 + cavity * cavity * .19;
+    detail = detail * .39 + dust + rim * .24 - occlusion;
+  }
   if (inkStyle > .5) {
-    float lit = sqrt(max(0.0, dot(normalize(mix(n, textured, .42)), sunDirection)) * direct);
-    gl_FragColor = vec4(celColor(n, lit, reflectance, detail, local, footprint), 1.0);
+    float lit = sqrt(max(0.0, dot(normalize(mix(displayNormal, textured, .42)), sunDirection)) * direct);
+    gl_FragColor = vec4(celColor(displayNormal, lit, reflectance, detail, local, footprint), 1.0);
     return;
   }
   float lit = max(0.0, dot(textured, sunDirection)) * direct;
@@ -328,7 +413,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   const shadowNames = ['shadowRight', 'shadowUp', 'shadowDepth', 'shadowExtent']
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
   const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'lens', 'sunDirection', 'daylight', 'inkStyle',
-    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'shadowPixel', ...shadowNames])
+    'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'impactMap', 'dustMap', 'showDetail', 'impactScale', 'shadowPixel', ...shadowNames])
   const shadowUniforms = locations(shadowProgram, shadowNames)
   const vertices = gl.createBuffer()
   const normals = gl.createBuffer()
@@ -367,17 +452,25 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, shadowBuffer)
   const hasShadows = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-  const regolith = gl.createTexture()
-  gl.activeTexture(gl.TEXTURE2)
-  gl.bindTexture(gl.TEXTURE_2D, regolith)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, regolithSize, regolithSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, regolithMaterial())
-  gl.generateMipmap(gl.TEXTURE_2D)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
   const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic')
-  if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)))
+  function uploadMaterial(unit, texture, size, data) {
+    gl.activeTexture(gl.TEXTURE0 + unit)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    if (size) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data)
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)))
+  }
+  const groundDust = gl.createTexture()
+  uploadMaterial(2, gl.createTexture(), regolithSize, regolithMaterial())
+  uploadMaterial(3, gl.createTexture(), impactSize, impactMaterial())
+  uploadMaterial(4, groundDust, 1, new Uint8Array([92, 92, 92, 255]))
   gl.uniform1i(uniforms.albedoMap, 0)
   gl.uniform1i(uniforms.shadowMap, 1)
   gl.uniform1i(uniforms.regolithMap, 2)
+  gl.uniform1i(uniforms.impactMap, 3)
+  gl.uniform1i(uniforms.dustMap, 4)
   gl.uniform1f(uniforms.shadowPixel, hasShadows ? 1 / shadowSize : 0)
 
   let sample
@@ -386,6 +479,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   let elevation = 1
   let zoom = 1
   let illustrated = true
+  let showDetail = true
   let drag
   let paths
   let shadowSample
@@ -393,6 +487,12 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   earthPhoto.addEventListener('load', draw)
   earthPhoto.src = new URL('./assets/earth-blue-marble.jpg', import.meta.url).href
   const moonPhoto = new Image()
+  const dustPhoto = new Image()
+  dustPhoto.addEventListener('load', () => {
+    uploadMaterial(4, groundDust, 0, dustPhoto)
+    draw()
+  })
+  dustPhoto.src = new URL('./assets/lunar-regolith.webp', import.meta.url).href
   moonPhoto.addEventListener('load', () => {
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, albedo)
@@ -451,6 +551,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform3fv(uniforms.sunDirection, direction(sample.sunAz, sample.sunEl))
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
     gl.uniform1f(uniforms.inkStyle, Number(illustrated))
+    gl.uniform1f(uniforms.showDetail, Number(showDetail))
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
 
     sky.setTransform(pixel, 0, 0, pixel, 0, 0)
@@ -601,7 +702,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   canvas.addEventListener('lostpointercapture', () => { drag = null })
   new ResizeObserver(draw).observe(canvas)
 
-  return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, setStyle(value) { illustrated = value === 'illustrated'; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
+  return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, setStyle(value) { illustrated = value === 'illustrated'; draw() },
+    setDetail(value) { showDetail = value; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
     const indices = indexTerrain(mesh.length / 3)
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices)
     gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
@@ -615,6 +717,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform3fv(uniforms.siteNorth, siteFrame.north)
     gl.uniform3fv(uniforms.siteUp, siteFrame.up)
     gl.uniform1f(uniforms.siteRadius, radius + site.height + 2)
+    gl.uniform1f(uniforms.impactScale, site.terrain === 'LOLA 5/80/240 m' ? .38 : 1)
     sample = null
     shadowSample = null
     aim(initialAzimuth, 2)

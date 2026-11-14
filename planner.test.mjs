@@ -6,13 +6,20 @@ import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
-import { nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
+import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {
+  assert.ok(craterRelief(0) < -.15)
+  assert.ok(craterRelief(.95) > .035)
+  assert.ok(craterRelief(1.37) > 0)
+  assert.equal(craterRelief(1.6), 0)
 })
 
 test('the polar surface mesh resolves the measured Shackleton basin', () => {

@@ -846,7 +846,7 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Both styles use the same measured elevations. Fine surface detail and glare are illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. The optional small craters and generated dust texture are illustrative.' +
     (settings.horizon === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
@@ -1199,6 +1199,7 @@ get('sky-paths').addEventListener('change', redrawLocalSky)
 get('surface-paths').addEventListener('change', redrawLocalSky)
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
+get('surface-detail').addEventListener('change', event => surfaceView?.setDetail(event.target.checked))
 get('surface-crater').addEventListener('change', event => {
   const crater = surfaceCraters.find(item => String(item.id) === event.target.value)
   const description = get('surface-landmark')
