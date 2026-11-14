@@ -2,13 +2,13 @@
 
 The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
-**[Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/).** Choose a landing date, mission length, and priority to rank 37 landing and study locations. Rotate the Moon to see sites on both hemispheres, search the 9,087 IAU-approved feature names, and click anywhere on the globe to evaluate the terrain horizon, daylight, and Earth visibility. Compare independently dated scenarios or scrub the Sun–Earth–Moon view in 3D.
+**[Open Astralis](https://debaprashad-bhowmik.github.io/project-astralis/).** Choose a landing date, mission length, and priority to rank 38 landing and study locations. Rotate the Moon to see sites on both hemispheres, search the 9,087 IAU-approved feature names, and click anywhere on the globe to evaluate the terrain horizon, daylight, and Earth visibility. Compare independently dated scenarios or scrub the Sun–Earth–Moon view in 3D.
 
 **[Start with the Astralis handbook](ASTRALIS-HANDBOOK.md).** It covers the challenge, an example app screen, NASA data downloads, reproducible query settings, the build and testing workflow, team collaboration, the judging rubric, and submission.
 
 **[Explore three guided examples](https://debaprashad-bhowmik.github.io/project-astralis/#explore).** Compare a three-day landing delay, near-side and far-side Earth visibility, or the solar power implications of a low Sun. Each example uses the mission planner’s data and can open as an editable comparison.
 
-**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Scrub the timeline to see the modeled NASA LOLA terrain light up or fall into shadow as the Sun moves. The surface uses NASA LROC reflectance with illustrative fine grain. The timeline also updates the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
+**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Choose Illustrated or Natural, or point toward a nearby named crater. Both styles use NASA LOLA terrain and LROC reflectance, with illustrative fine grain. The new Shackleton Rim study site includes NASA’s 5 m/pixel local elevation raster.
 
 **[Open the 3D orbit view](https://debaprashad-bhowmik.github.io/project-astralis/#space).** Switch between Earth-centered and Sun-centered views. Toggle the Moon’s orbit, the annual Sun or Earth path, and the dashed body links independently.
 

@@ -29,6 +29,7 @@ SITES = [
     ("haworth", "Haworth", "Crater center", "Named feature center", -87.20, -7.49, "14502"),
     ("shoemaker", "Shoemaker", "Crater center", "Named feature center", -88.14, 45.91, "5494"),
     ("shackleton", "Shackleton", "Crater center", "Named feature center", -89.67, 129.78, "5450"),
+    ("shackleton-rim", "Shackleton Rim", "LOLA Site 04", "NASA study point", -89.7668, -171.87, "nasa-surface"),
 ]
 HISTORIC_SITES = [
     ("Luna 9", "Oceanus Procellarum · reported vicinity", 7.13, -64.37),
@@ -121,47 +122,65 @@ def global_height(grid, latitude, longitude):
     return grid[row, col] * .5 - 10_000
 
 
+def polar_elevation(nearby, distant, detail, x, y, distance):
+    heights = np.where((distance < 25_000) & np.isfinite(nearby), nearby, distant)
+    if detail is not None:
+        fine = detail.interpolate(x, y)
+        # Both DEMs are in the same frame. Taper the handoff at the local raster boundary.
+        col, row = detail.transform * (x, y)
+        rows, cols = detail.grid.shape
+        edge = np.minimum(np.minimum(col, cols - col), np.minimum(row, rows - row))
+        blend = np.clip((edge - 2) / 50, 0, 1)
+        heights = np.where(np.isfinite(fine) & (blend > 0), heights + (fine - heights) * blend, heights)
+    return heights
+
+
 def compile_sites(source, output):
     global_grid = global_tiles(source, output)
     wide = Terrain(source / "LDEM_60S_240MPP_ADJ.TIF")
     local = Terrain(source / "LDEM_80S_80MPP_ADJ.TIF")
-    for grid in (wide, local):
+    rim = Terrain(source / "Site04_final_adj_5mpp_surf.tif")
+    for grid in (wide, local, rim):
         check = pyproj.Transformer.from_crs(grid.projection.geodetic_crs, grid.projection, always_xy=True)
         assert np.allclose(check.transform(29.2, -84.8), projected(*np.deg2rad([-84.8, 29.2])), atol=1)
 
     bearing = np.deg2rad(np.arange(0, 360, 0.5))[:, None]
-    distance = np.concatenate((np.arange(80, 25_000, 80), np.arange(25_000, HORIZON_RANGE + 1, 240)))
-    central = distance / RADIUS
-    cos_c, sin_c = np.cos(central), np.sin(central)
+    regional_ranges = np.concatenate((np.arange(80, 25_000, 80), np.arange(25_000, HORIZON_RANGE + 1, 240)))
+    rim_ranges = np.concatenate((np.arange(5, 1000, 5), np.arange(1000, 9000, 25), regional_ranges[regional_ranges >= 9000]))
     sites = []
     mesh_dir = output / "surface"
     mesh_dir.mkdir(exist_ok=True)
     for code, name, location, kind, latitude, longitude, provenance in SITES:
         phi, lon = np.deg2rad([latitude, longitude])
+        detail = rim if code == "shackleton-rim" else None
+        distance = rim_ranges if detail else regional_ranges
+        central = distance / RADIUS
+        cos_c, sin_c = np.cos(central), np.sin(central)
         dest_lat = np.arcsin(np.sin(phi) * cos_c + np.cos(phi) * sin_c * np.cos(bearing))
         dest_lon = lon + np.arctan2(np.sin(bearing) * sin_c * np.cos(phi), cos_c - np.sin(phi) * np.sin(dest_lat))
         x, y = projected(dest_lat, dest_lon)
-        nearby = local.sample(x, y)
-        distant = wide.sample(x, y)
-        heights = np.where((distance < 25_000) & np.isfinite(nearby), nearby, distant)
+        heights = polar_elevation(local.sample(x, y), wide.sample(x, y), detail, x, y, distance)
         assert np.isfinite(heights).all(), name
         site_x, site_y = projected(phi, lon)
-        height = float(local.sample(site_x, site_y))
+        height = float(detail.interpolate(site_x, site_y) if detail else local.sample(site_x, site_y))
         assert np.isfinite(height), name
         radii = RADIUS + heights
         angles = np.rad2deg(np.arctan2(radii * cos_c - (RADIUS + height + 2), radii * sin_c))
         profile = angles.max(axis=1).round(4).tolist()
         sites.append(dict(id=code, name=name, location=location, kind=kind, lat=latitude, lon=longitude,
-                          height=height, horizon=profile, source=provenance, terrain="LOLA 80/240 m"))
+                          height=height, horizon=profile, source=provenance, terrain="LOLA 5/80/240 m" if detail else "LOLA 80/240 m"))
         mesh_bearing = np.deg2rad(np.arange(0, 360, 2))[None, :]
         mesh_range = np.concatenate((np.arange(0, 5000, 80), np.arange(5000, 25000, 240), np.arange(25000, 350000, 1900), [350000]))[:, None]
+        if detail:
+            mesh_range = np.concatenate((np.arange(0, 250, 5), np.arange(250, 1500, 15), np.arange(1500, 7500, 100),
+                                         np.arange(7500, 25000, 300), np.arange(25000, 350000, 4000), [350000]))[:, None]
+        assert mesh_range.size * mesh_bearing.size <= 65_535
         sin_arc = np.sin(mesh_range / RADIUS)
         cos_arc = np.cos(mesh_range / RADIUS)
         mesh_lat = np.arcsin(np.sin(phi) * cos_arc + np.cos(phi) * sin_arc * np.cos(mesh_bearing))
         mesh_lon = lon + np.arctan2(np.sin(mesh_bearing) * sin_arc, np.cos(phi) * cos_arc - np.sin(phi) * sin_arc * np.cos(mesh_bearing))
         mesh_x, mesh_y = projected(mesh_lat, mesh_lon)
-        near_mesh = local.interpolate(mesh_x, mesh_y)
-        mesh_radii = RADIUS + np.where((mesh_range < 25000) & np.isfinite(near_mesh), near_mesh, wide.interpolate(mesh_x, mesh_y))
+        mesh_radii = RADIUS + polar_elevation(local.interpolate(mesh_x, mesh_y), wide.interpolate(mesh_x, mesh_y), detail, mesh_x, mesh_y, mesh_range)
         assert np.isfinite(mesh_radii).all(), name
         mesh = np.stack((mesh_radii * sin_arc * np.sin(mesh_bearing), mesh_radii * cos_arc - mesh_radii[0, 0] - 2,
                          mesh_radii * sin_arc * np.cos(mesh_bearing)), axis=-1)

@@ -347,9 +347,12 @@
                   <button type="button" class="subtle" id="surface-sun">Find Sun</button>
                   <button type="button" class="subtle" id="surface-earth">Find Earth</button>
                   <button type="button" class="subtle" id="surface-north">Face north</button>
+                  <label class="surface-crater" hidden>Look toward <select id="surface-crater"><option value="">Nearby crater</option></select></label>
+                  <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
                   <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
                   <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show arcs and labels</label>
                 </div>
+                <p class="muted" id="surface-landmark" hidden></p>
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>
                 <p class="muted" id="surface-light"></p>

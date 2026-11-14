@@ -3,7 +3,7 @@ import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, loadSurfaceMesh, surfacePaths } from './surface-view.mjs'
+import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
 import { createCoverageMap, subPoint } from './coverage-map.mjs'
 
 const get = id => document.getElementById(id)
@@ -130,6 +130,8 @@ let globe
 let updateSpace
 let inspectedSite = false
 let features = []
+let gazetteerRequest
+let surfaceCraters = []
 let labelsBySize = []
 let namedFeature
 let fetchingFeatures = false
@@ -557,15 +559,24 @@ function showFeatureMatches() {
   }))
 }
 
+function readGazetteer() {
+  gazetteerRequest ??= fetch('./data/gazetteer.json').then(response => {
+    if (!response.ok) throw new Error('Gazetteer download failed')
+    return response.json()
+  }).catch(reason => {
+    gazetteerRequest = undefined
+    throw reason
+  })
+  return gazetteerRequest
+}
+
 async function loadFeatures() {
   if (features.length || fetchingFeatures) return
   fetchingFeatures = true
   get('feature-status').textContent = 'Loading named lunar features…'
   get('feature-retry').hidden = true
   try {
-    const response = await fetch('./data/gazetteer.json')
-    if (!response.ok) throw new Error('Gazetteer download failed')
-    features = (await response.json()).map(item => ({ ...item, searchName: searchText(item.name) }))
+    features = (await readGazetteer()).map(item => ({ ...item, searchName: searchText(item.name) }))
     labelsBySize = [...features].sort((a, b) => b.diameter - a.diameter)
     get('feature-search').disabled = false
     showFeatureMatches()
@@ -812,12 +823,30 @@ function updateSurface(sample) {
   get('surface-light').textContent = `${condition} · Sun elevation ${signedDegrees(sample.sunEl)}`
 }
 
+async function showNearbyCraters(site) {
+  const control = get('surface-crater')
+  const description = get('surface-landmark')
+  control.parentElement.hidden = true
+  description.hidden = true
+  try {
+    const gazetteer = await readGazetteer()
+    if (surfaceSite !== site || active.site !== site) return
+    surfaceCraters = nearbyCraters(site, gazetteer)
+    control.replaceChildren(new Option('Nearby crater', ''), ...surfaceCraters.map(crater => new Option(crater.name, crater.id)))
+    control.parentElement.hidden = !surfaceCraters.length
+  } catch {
+    if (active.site !== site) return
+    description.textContent = 'Nearby crater names could not load.'
+    description.hidden = false
+  }
+}
+
 async function showSurface() {
   if (!active) return
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Fine surface detail and solar glare are illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Both styles use the same measured elevations. Fine surface detail and glare are illustrative.' +
     (settings.horizon === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
@@ -850,6 +879,7 @@ async function showSurface() {
     const current = active.timeline[Math.round(elapsed * 4)]
     surfaceView.setTerrain(mesh, site, current.sunAz)
     updateSurface(current)
+    void showNearbyCraters(site)
   } catch (reason) {
     if (request !== surfaceRequest) return
     get('surface-status').textContent = reason.message
@@ -1168,6 +1198,24 @@ get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
 get('sky-paths').addEventListener('change', redrawLocalSky)
 get('surface-paths').addEventListener('change', redrawLocalSky)
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
+get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
+get('surface-crater').addEventListener('change', event => {
+  const crater = surfaceCraters.find(item => String(item.id) === event.target.value)
+  const description = get('surface-landmark')
+  description.hidden = !crater
+  if (!crater) return
+  const azimuth = Math.round(crater.bearing) % 360
+  const width = Math.round(crater.diameter)
+  const distance = crater.distance < 10 ? crater.distance.toFixed(1) : Math.round(crater.distance)
+  const label = crater.inside
+    ? `Within ${crater.name}’s mapped diameter · ${width} km across`
+    : `${crater.name} · ${distance} km to center at ${azimuth}° · ${width} km across`
+  description.textContent = label
+  const zoom = get('surface-zoom')
+  zoom.value = '1'
+  surfaceView.setZoom(1)
+  surfaceView.aim(crater.bearing, crater.distance < 1 ? 9 : -5)
+})
 get('timeline-back').addEventListener('click', () => active && seekTime(elapsed - timelineStep(settings.duration)))
 get('timeline-forward').addEventListener('click', () => active && seekTime(elapsed + timelineStep(settings.duration)))
 get('timeline-speed').addEventListener('change', () => {

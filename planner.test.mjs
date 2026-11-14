@@ -6,13 +6,57 @@ import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
-import { surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
+import { nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('the polar surface mesh resolves the measured Shackleton basin', () => {
+  const mesh = new Float32Array(new Uint8Array(readFileSync(new URL('./data/surface/shackleton.bin', import.meta.url))).buffer)
+  const rim = []
+  for (let offset = 0; offset < 180 * 3; offset += 3) {
+    let highest = -Infinity
+    let distance = 0
+    for (let i = offset; i < mesh.length; i += 180 * 3) {
+      const range = Math.hypot(mesh[i], mesh[i + 2])
+      if (range < 7500 || range > 13_500 || mesh[i + 1] <= highest) continue
+      highest = mesh[i + 1]
+      distance = range
+    }
+    rim.push({ distance, relief: highest - mesh[offset + 1] })
+  }
+  const median = key => rim.map(point => point[key]).sort((a, b) => a - b)[90]
+  assert.ok(Math.abs(2 * median('distance') / 1000 - 21) < 1)
+  assert.ok(Math.abs(median('relief') / 1000 - 4.1) < .3)
+})
+
+test('the crater camera uses gazetteer coordinates and looks across the rim on the floor', () => {
+  const catalog = JSON.parse(readFileSync(new URL('./data/catalog.json', import.meta.url))).catalog
+  const gazetteer = JSON.parse(readFileSync(new URL('./data/gazetteer.json', import.meta.url)))
+  const ridge = catalog.find(site => site.id === 'ridge')
+  const nearby = nearbyCraters(ridge, gazetteer).find(crater => crater.name === 'Shackleton')
+  assert.ok(nearby)
+  assert.equal(nearby.inside, false)
+  assert.ok(Math.abs(nearby.bearing - 211) < 1)
+  const [inside] = nearbyCraters(catalog.find(site => site.id === 'shackleton'), gazetteer)
+  assert.equal(inside.name, 'Shackleton')
+  assert.equal(inside.bearing, 0)
+})
+
+test('Shackleton Rim uses the Site 04 elevation and has five-meter near-field samples', () => {
+  const catalog = JSON.parse(readFileSync(new URL('./data/catalog.json', import.meta.url))).catalog
+  const site = catalog.find(item => item.id === 'shackleton-rim')
+  const mesh = new Float32Array(new Uint8Array(readFileSync(new URL('./data/surface/shackleton-rim.bin', import.meta.url))).buffer)
+  assert.equal(site.terrain, 'LOLA 5/80/240 m')
+  assert.ok(Math.abs(site.height - 769.68) < .05)
+  assert.equal(site.horizon.length, 720)
+  assert.ok(Math.abs(mesh[1] + 2) < .001)
+  assert.ok(Math.abs(mesh[542] - 5) < .01)
+  assert.ok(mesh.length / 3 < 65_536)
 })
 
 test('shadow projection places a sunward ridge in front of the ground behind it', () => {

@@ -81,6 +81,21 @@ export function solarShadowFrame(azimuth, elevation) {
   return { right: camera.right, up: camera.up, depth: camera.forward.map(value => -value) }
 }
 
+export function nearbyCraters(site, features) {
+  const basis = observer(site.lat, site.lon, 0)
+  return features.filter(feature => feature.kind === 'Crater' && feature.diameter >= 5).map(feature => {
+    const { up } = observer(feature.lat, feature.lon, 0)
+    const east = dot(up, basis.east)
+    const north = dot(up, basis.north)
+    const separation = radius * Math.atan2(Math.hypot(east, north), dot(up, basis.up)) / 1000
+    const azimuth = separation < 1 ? 0 : bearing(Math.atan2(east, north) / radians)
+    const inside = separation <= feature.diameter / 2
+    return { ...feature, distance: separation, bearing: azimuth, inside }
+  }).filter(crater => crater.distance <= 200)
+    .sort((a, b) => Math.max(0, a.distance - a.diameter / 2) - Math.max(0, b.distance - b.diameter / 2) || a.distance - b.distance)
+    .slice(0, 6)
+}
+
 export function surfaceTarget(camera, az, el, angularRadius, width, height, scale) {
   const [x, y, z] = camera.project(az, el)
   const cx = width / 2 + x / z * scale
@@ -180,7 +195,7 @@ const fragment = `
 #extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec3 sunDirection;
-uniform float daylight;
+uniform float daylight, inkStyle;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent;
@@ -220,6 +235,32 @@ float shadow() {
   }
   return sum / 9.0;
 }
+
+float celStep(float value, float threshold) {
+  float width = clamp(fwidth(value) * .6, .007, .07);
+  return smoothstep(threshold - width, threshold + width, value);
+}
+
+vec3 celColor(vec3 normal, float beam, float reflectance, float detail, vec2 local, float footprint) {
+  float plane = clamp(.58 + dot(normal, vec3(-.7,.0,.72))*.68, 0.0, 1.0);
+  vec3 night = mix(vec3(.063,.078,.135), vec3(.17,.202,.31), celStep(plane,.49));
+  night = mix(night, vec3(.295,.329,.434), celStep(plane,.70) * .69);
+  vec3 color = mix(night, vec3(.40,.405,.50), celStep(beam,.14));
+  color = mix(color, vec3(.59,.57,.565), celStep(beam,.27));
+  color = mix(color, vec3(.79,.722,.635), celStep(beam,.43));
+  color = mix(color, vec3(.916,.843,.745), celStep(beam,.67));
+
+  // Derive the ink accents from the measured slopes and the small surface material.
+  float slopeInk = smoothstep(.08, .65, length(dFdx(normal)) + length(dFdy(normal)));
+  vec2 strokes = local * .24;
+  vec2 marks = vec2(strokes.x + strokes.y * .54, strokes.y * .125);
+  float drawn = 1.0 - smoothstep(.11, .22, abs(fract(marks.x + grain(marks*.6)*.46) - .5));
+  float broken = smoothstep(.43,.7,grain(marks*vec2(.44,2.4)));
+  float hatch = drawn * broken * (1.0-smoothstep(.35,2.0,footprint)) * (1.0-celStep(beam,.35));
+  color *= (1.0 - .49 * slopeInk - .33 * hatch) * (.75 + reflectance * .49 + detail * .75);
+  return color;
+}
+
 void main() {
   vec3 n = normalize(groundNormal);
   vec3 point = normalize(siteUp * (siteRadius + terrain.y) + siteEast * terrain.x + siteNorth * terrain.z);
@@ -232,10 +273,15 @@ void main() {
   float patches = (grain(local*.009)-.5) * (1.0-smoothstep(30.0,115.0,footprint));
   vec2 relief = (grit.gb - .5) * .52 + (fragments.gb - .5) * .85;
   vec3 textured = normalize(n + vec3(relief.x,0,relief.y));
-  float lit = 0.0;
-  if (daylight > 0.0) lit = max(0.0, dot(textured, sunDirection)) * shadow();
-  float material = 1.0 + (grit.r - .51) * .63 + (fragments.r - .51) * .75 + patches * .26;
-  float albedo = (.20 + reflectance*.83) * material;
+  float direct = daylight > 0.0 ? shadow() : 0.0;
+  float detail = (grit.r - .51) * .63 + (fragments.r - .51) * .75 + patches * .26;
+  if (inkStyle > .5) {
+    float lit = sqrt(max(0.0, dot(normalize(mix(n, textured, .42)), sunDirection)) * direct);
+    gl_FragColor = vec4(celColor(n, lit, reflectance, detail, local, footprint), 1.0);
+    return;
+  }
+  float lit = max(0.0, dot(textured, sunDirection)) * direct;
+  float albedo = (.20 + reflectance*.83) * (1.0 + detail);
   // Display exposure and a faint fill preserve shape in modeled shadow.
   vec3 shade = vec3(.056,.064,.077) + vec3(1.04,1.0,.935) * (1.28 * sqrt(lit));
   vec3 exposed = albedo * shade;
@@ -281,7 +327,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   const shadowProgram = terrainProgram(gl, shadowVertex, shadowFragment)
   const shadowNames = ['shadowRight', 'shadowUp', 'shadowDepth', 'shadowExtent']
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
-  const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'lens', 'sunDirection', 'daylight',
+  const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'lens', 'sunDirection', 'daylight', 'inkStyle',
     'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'regolithMap', 'shadowPixel', ...shadowNames])
   const shadowUniforms = locations(shadowProgram, shadowNames)
   const vertices = gl.createBuffer()
@@ -339,6 +385,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   let azimuth = 0
   let elevation = 1
   let zoom = 1
+  let illustrated = true
   let drag
   let paths
   let shadowSample
@@ -403,6 +450,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform2f(uniforms.lens, 2 * scale / width, 2 * scale / height)
     gl.uniform3fv(uniforms.sunDirection, direction(sample.sunAz, sample.sunEl))
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
+    gl.uniform1f(uniforms.inkStyle, Number(illustrated))
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
 
     sky.setTransform(pixel, 0, 0, pixel, 0, 0)
@@ -553,7 +601,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   canvas.addEventListener('lostpointercapture', () => { drag = null })
   new ResizeObserver(draw).observe(canvas)
 
-  return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
+  return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, setStyle(value) { illustrated = value === 'illustrated'; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
     const indices = indexTerrain(mesh.length / 3)
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices)
     gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
@@ -579,7 +627,7 @@ export function surfacePaths(samples) {
 }
 
 export async function loadSurfaceMesh(site) {
-  if (site.terrain === 'LOLA 80/240 m') {
+  if (site.terrain === 'LOLA 80/240 m' || site.terrain === 'LOLA 5/80/240 m') {
     const response = await fetch(new URL(`./data/surface/${site.id}.bin`, import.meta.url))
     if (!response.ok) throw new Error('This site’s terrain mesh could not load. Try again or use the skyline plot.')
     const bytes = await response.arrayBuffer()
