@@ -209,6 +209,7 @@
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
             </label>
+            <button type="button" class="subtle" id="mission-heat-south" aria-pressed="false" hidden>South Pole only</button>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
           <p class="muted" id="mission-heat-models" hidden></p>
@@ -257,13 +258,15 @@
                 <span>0 h · No overlap</span><span id="mission-heat-mid"></span><span id="mission-heat-max"></span>
               </div>
               <p class="muted mission-heat-key">× marks sites with zero overlap.</p>
-              <p class="muted mission-heat-key" id="mission-heat-scale-note">Uncolored areas have zero modeled overlap. Green is the highest estimate across the map and pins for this period. The label gives that value out of the full mission duration.</p>
+              <p class="muted mission-heat-key" id="mission-heat-scale-note"></p>
               <p id="mission-heat-best"></p>
               <p id="mission-heat-site"></p>
-              <p class="muted" id="mission-heat-reference" hidden></p>
-              <div id="mission-heat-track"></div>
-              <p class="muted mission-heat-key">The strip below the site values shows overlap in green and gaps with hatching.</p>
-              <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
+              <div id="mission-heat-site-details">
+                <p class="muted" id="mission-heat-reference" hidden></p>
+                <div id="mission-heat-track"></div>
+                <p class="muted mission-heat-key">The strip below the site values shows overlap in green and gaps with hatching.</p>
+                <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
+              </div>
             </div>
           </div>
           <div id="coverage-details" hidden>

@@ -72,6 +72,7 @@ export function createCoverageMap(canvas, onPoint) {
   let site
   let mode = 'all'
   let heatRaster
+  let northLatitude = 90
   let dirty = true
   const north = Array.from({ length: rasterHeight }, (_, row) => (90 - (row + .5) * 180 / rasterHeight) * radians)
   const east = Array.from({ length: rasterWidth }, (_, col) => ((col + .5) * 360 / rasterWidth - 180) * radians)
@@ -132,8 +133,12 @@ export function createCoverageMap(canvas, onPoint) {
     if (heatRaster) {
       ctx.fillStyle = '#111116'
       ctx.fillRect(0, 0, width, height)
-      if (basemap) ctx.drawImage(texture, 0, 0, width, height)
-      ctx.drawImage(heatRaster, 0, 0, width, height)
+      if (basemap) {
+        const northY = (90 - northLatitude) / 180 * texture.height
+        ctx.drawImage(texture, 0, northY, texture.width, texture.height - northY, 0, 0, width, height)
+      }
+      const rowHeight = height / (heatRaster.height - 1)
+      ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
     } else ctx.drawImage(raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
@@ -151,7 +156,7 @@ export function createCoverageMap(canvas, onPoint) {
     function mark(point, label, ink, shape, offset = -13) {
       const position = coverageProject(point)
       const x = clamp(position.x * width, 6, width - 6)
-      const y = clamp(position.y * height, 6, height - 6)
+      const y = clamp((northLatitude - point.lat) / (northLatitude + 90) * height, 6, height - 6)
       ctx.beginPath()
       if (shape === 'site') {
         ctx.moveTo(x, y - 6)
@@ -184,7 +189,7 @@ export function createCoverageMap(canvas, onPoint) {
       ctx.fillStyle = ink
       ctx.fillText(label, left, top)
     }
-    mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
+    if (site.lat <= northLatitude) mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
     if (!heatRaster) {
       mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
       if (mode !== 'power') mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
@@ -195,15 +200,18 @@ export function createCoverageMap(canvas, onPoint) {
   canvas.addEventListener('click', event => {
     if (!frame && !heatRaster) return
     const rect = canvas.getBoundingClientRect()
-    onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height))
+    const northY = (90 - northLatitude) / 180
+    const y = (event.clientY - rect.top) / rect.height
+    onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, northY + y * (1 - northY)))
   })
 
-  return (nextFrame, nextSite, nextMode, nextHeatRaster) => {
+  return (nextFrame, nextSite, nextMode, nextHeatRaster, nextNorthLatitude = 90) => {
     if (frame !== nextFrame || mode !== nextMode) dirty = true
     frame = nextFrame
     site = nextSite
     mode = nextMode
     heatRaster = nextHeatRaster
+    northLatitude = nextNorthLatitude
     draw()
   }
 }

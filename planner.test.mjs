@@ -41,7 +41,7 @@ test('space calendar years use exact UTC bounds and include leap day', () => {
   assert.equal(leap.months[2], 60 * 24)
   assert.equal(calendarSpaceWindow(2029).last - calendarSpaceWindow(2029).start, (365 * 24 - .25) * hour)
 })
-import { overlapStep, missionOverlapGrid, overlapColors, overlapRgb, windowHours } from './mission-heat.mjs'
+import { overlapStep, missionOverlapGrid, southPoleOverlapGrid, overlapColors, overlapRgb, windowHours } from './mission-heat.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -88,6 +88,25 @@ test('the south pole view centers 90°S and projects the NASA 84°S boundary at 
     assert.ok(Math.abs(Math.hypot(x, y) - Math.sin(Math.PI / 30)) < 1e-12)
     assert.ok(depth > 0)
   }
+})
+
+test('the south pole overlap grid uses only the 84–90°S cap for each period maximum', () => {
+  const sun = [149_597_870_700, 0, 0]
+  const earth = [384_400_000 * .98, 0, 384_400_000 * .2]
+  const frames = Array.from({ length: 5 }, () => [sun, earth])
+  const global = missionOverlapGrid(frames, .25)
+  const south = southPoleOverlapGrid(frames, .25)
+  assert.equal(global.periods[0].maxHours, 1)
+  assert.equal(south.northLatitude, artemisSouthLatitude)
+  assert.equal(south.height, 25)
+  assert.ok(south.periods.every(period => period.maxHours === 0))
+
+  const earthSouth = [earth[0], 0, -earth[2]]
+  const lit = southPoleOverlapGrid(frames.map(() => [sun, earthSouth]), .25)
+  assert.equal(lit.periods[0].maxHours, 1)
+  assert.ok(lit.periods[0].values.slice(0, lit.width).some(hours => hours === 1))
+  assert.ok(lit.periods[0].values.slice(-lit.width).every(hours => hours === 0))
+  assert.ok(lit.periods.slice(1).every(period => period.maxHours === .25))
 })
 
 test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {

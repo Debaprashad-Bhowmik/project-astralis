@@ -20,6 +20,8 @@ The **One lunar day** preset spans 29.5 Earth days. Use **Show paths over the mi
 
 **Compare mission overlap on the Moon.** In **Lunar sites**, use **Mission overlap heat map** to see the hours with both sunlight and a direct view of Earth for the full mission or one quarter. Uncolored areas have zero modeled overlap. Green marks the highest estimate for the selected period. The shading uses a smooth Moon, while site pins account for the local skyline when you select the LOLA horizon. Select a site to see both estimates for those coordinates and the UTC times of overlap and gaps.
 
+Turn on **South Pole only** to calculate overlap across 84°S–90°S and set the color scale using only that region. The 3D Moon centers on the pole, and the flat map zooms to those latitudes. The legend still shows actual hours out of the full mission duration.
+
 **Map solar power.** Select **Power output (Solar Elevation Angle)** under **Surface layer** and scrub the timeline on the 3D Moon or flat visibility map. The fixed scale shows estimated electrical output per square meter of a horizontal panel at 20% efficiency. Select any site to read its solar elevation and power at the current time. Surface Operations CSV exports these estimates for every 15-minute sample at the selected site.
 
 **[Check power and communications](https://debaprashad-bhowmik.github.io/project-astralis/#assessment).** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.

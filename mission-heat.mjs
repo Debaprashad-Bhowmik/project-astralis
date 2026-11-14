@@ -4,6 +4,7 @@ import { totalityPossible } from './coverage-map.mjs'
 export const overlapColors = [[198, 56, 70], [239, 177, 75], [57, 214, 148]]
 export const missionGridHeight = 91
 export const missionQuarters = 4
+export const artemisSouthLatitude = -84
 
 export function windowHours(windows, start, end) {
   return windows.reduce((hours, [from, to]) => hours + Math.max(0, Math.min(to, end) - Math.max(from, start)), 0)
@@ -20,7 +21,11 @@ export function overlapStep(sunBefore, sunAfter, earthBefore, earthAfter, from =
   return Math.max(0, end - start)
 }
 
-export function missionOverlapGrid(frames, stepHours, width = 180, height = missionGridHeight) {
+export function southPoleOverlapGrid(frames, stepHours) {
+  return missionOverlapGrid(frames, stepHours, 180, 25, artemisSouthLatitude)
+}
+
+export function missionOverlapGrid(frames, stepHours, width = 180, height = missionGridHeight, northLatitude = 90) {
   const radians = Math.PI / 180
   const longitude = Array.from({ length: width }, (_, col) => ((col + .5) * 360 / width - 180) * radians)
   const directions = longitude.map(angle => [Math.cos(angle), Math.sin(angle)])
@@ -30,7 +35,8 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
     return { sun, earth, sunDistance, earthDistance, eclipse: totalityPossible(sun, earth) }
   })
   const periods = Array.from({ length: missionQuarters + 1 }, () => ({ values: new Float32Array(width * height), maxHours: 0 }))
-  if (samples.length < 2) return { width, height, periods }
+  const grid = { width, height, northLatitude, periods }
+  if (samples.length < 2) return grid
   const quarterLength = (samples.length - 1) / missionQuarters
   const quarters = periods.slice(1).map((period, index) => {
     const start = index * quarterLength
@@ -40,8 +46,9 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
     return { values: period.values, first, last, from: start - first, to: end - (last - 1) }
   })
   for (let row = 0; row < height; row++) {
-    const lat = (90 - row * 180 / (height - 1)) * radians
-    const cosLat = row === 0 || row === height - 1 ? 0 : Math.cos(lat)
+    const latitude = northLatitude - row * (northLatitude + 90) / (height - 1)
+    const lat = latitude * radians
+    const cosLat = Math.abs(latitude) === 90 ? 0 : Math.cos(lat)
     const z = Math.sin(lat)
     for (let col = 0; col < width; col++) {
       const x = cosLat * directions[col][0]
@@ -76,7 +83,7 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
   for (const period of periods) {
     period.maxHours = period.values.reduce((max, value) => Math.max(max, value), 0)
   }
-  return { width, height, periods }
+  return grid
 }
 
 export function overlapRgb(hours, maxHours) {
