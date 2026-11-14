@@ -1,14 +1,49 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing } from './planner.mjs'
+import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
 import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
+import { surfaceCamera, terrainVertices } from './surface-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('first-person terrain curves below the eye, and a camera centered on a body projects it to the center', () => {
+  const mesh = terrainVertices({ lat: 0, lon: 0, height: 0 }, () => 0)
+  assert.deepEqual(Array.from(mesh.slice(0, 3)), [0, -2, 0])
+  const lastNorthVertex = mesh.length - 180 * 3
+  assert.ok(mesh[lastNorthVertex + 1] < -34000)
+  assert.ok(mesh[lastNorthVertex + 2] > 340000)
+  const camera = surfaceCamera(359, 7)
+  assert.ok(Math.abs(camera.project(359, 7)[0]) < 1e-12)
+  assert.ok(Math.abs(camera.project(359, 7)[1]) < 1e-12)
+  assert.ok(camera.project(179, 0)[2] < 0)
+})
+
+test('solar exposure integrates only illuminated time and projects light onto a flat panel', () => {
+  const timeline = [30, 30, 30].map(sunEl => ({ sunEl }))
+  const partial = solarExposure(timeline, [[.25, .75], [1, 2]], 2)
+  assert.ok(Math.abs(partial.beamHours - .75) < 1e-12)
+  assert.equal(partial.peak, 30)
+  assert.deepEqual(solarExposure(timeline, [], 2), { beamHours: 0, peak: null })
+  const rising = solarExposure([{ sunEl: -30 }, { sunEl: 30 }], [[0, 1]], 1)
+  assert.ok(Math.abs(rising.beamHours - (1 - Math.cos(Math.PI / 6)) / (Math.PI / 3)) < 1e-12)
+})
+
+test('outage limits use uninterrupted gaps including the mission boundaries', () => {
+  assert.deepEqual(longestGap([[1, 2], [4, 5]], 8), [5, 8])
+  assert.deepEqual(longestGap([], 8), [0, 8])
+  assert.equal(longestGap([[0, 8]], 8), null)
+  const metrics = summarize([[0, 8]], [[1, 2], [4, 5]], 8)
+  const weights = { sun: 0, earth: 100, overlap: 0 }
+  const limits = { sun: 0, earth: 0, overlap: 0, darkness: Infinity, blackout: 2 }
+  const rows = [{ site: { name: 'A' }, metrics }]
+  assert.deepEqual(rank(rows, weights, limits, 8)[0].unmet, ['Earth visibility gap'])
+  assert.equal(rank(rows, weights, { ...limits, blackout: 3 }, 8)[0].place, 1)
 })
 
 test('sky countdowns use actual terrain crossings even during a total eclipse', () => {

@@ -74,14 +74,30 @@ async function fetchTile(x, y) {
   return [key, await tiles.get(key)]
 }
 
-export async function terrainAt(lat, lon) {
+export async function loadTerrainSampler(lat, lon, interpolate = false) {
   const data = new Map(await Promise.all(nearestTiles(lat, lon).map(([x, y]) => fetchTile(x, y))))
-  function sample(phi, lambda) {
-    const col = Math.floor(wrap(lambda + 180, 360) * pixelsPerDegree) % columns
-    const row = clamp(Math.floor((90 - phi) * pixelsPerDegree), 0, rows - 1)
+  function pixel(x, y) {
+    const col = wrap(x, columns)
+    const row = clamp(y, 0, rows - 1)
     const tile = data.get(`${Math.floor(col / tileSize)}-${Math.floor(row / tileSize)}`)
     if (!tile) throw new Error('Lunar elevation data are missing for this point.')
     return tile[(row % tileSize) * tileSize + col % tileSize] * .5 - 10000
   }
+  return (phi, lambda) => {
+    const col = wrap(lambda + 180, 360) * pixelsPerDegree
+    const row = (90 - phi) * pixelsPerDegree
+    if (!interpolate) return pixel(Math.floor(col), Math.floor(row))
+    const left = Math.floor(col - .5)
+    const top = Math.floor(row - .5)
+    const x = col - .5 - left
+    const y = row - .5 - top
+    const north = pixel(left, top) * (1 - x) + pixel(left + 1, top) * x
+    const south = pixel(left, top + 1) * (1 - x) + pixel(left + 1, top + 1) * x
+    return north * (1 - y) + south * y
+  }
+}
+
+export async function terrainAt(lat, lon) {
+  const sample = await loadTerrainSampler(lat, lon)
   return { ...horizonProfile(lat, lon, sample), terrain: 'LOLA 16 px/°' }
 }

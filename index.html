@@ -17,7 +17,7 @@
       <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
       <span>Lunar Site Navigator</span>
     </a>
-    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#assessment">Power &amp; comms</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
 
   <main>
@@ -70,6 +70,7 @@
                 <label>Min Earth view (h)<input id="min-earth" type="number" min="0" max="720" step="any" value="0"></label>
                 <label>Min overlap (h)<input id="min-overlap" type="number" min="0" max="720" step="any" value="0"></label>
                 <label>Max darkness (h)<input id="max-dark" type="number" min="0" max="720" step="any" placeholder="Unlimited"></label>
+                <label>Max Earth visibility gap (h)<input id="max-earth-gap" type="number" min="0" max="720" step="any" placeholder="Unlimited"></label>
               </div>
             </details>
             <p id="input-error" class="error" role="alert" hidden></p>
@@ -126,7 +127,7 @@
         <section class="panel public-answer" aria-labelledby="answer-title">
           <div class="answer-copy" aria-live="polite"><h2 id="answer-title">Finding the best match…</h2><p id="answer-body" class="muted"></p></div>
           <div id="answer-tracks"></div>
-          <nav class="answer-nav" aria-label="Explore results"><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#local-sky">See sky positions</a></nav>
+          <nav class="answer-nav" aria-label="Explore results"><a href="#assessment">Check power and communications</a><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#local-sky">See sky positions</a></nav>
         </section>
 
         <section class="panel map-panel" aria-labelledby="map-heading">
@@ -212,6 +213,47 @@
         </section>
       </div>
 
+      <section class="panel assessment" id="assessment" aria-labelledby="assessment-heading" hidden>
+        <div class="panel-heading assessment-heading">
+          <div><h2 id="assessment-heading">Power &amp; communications</h2><p class="muted" id="assessment-context"></p></div>
+          <label for="assessment-site">Site <select id="assessment-site"></select></label>
+        </div>
+        <p id="assessment-status" class="assessment-status" role="status"></p>
+        <details class="assessment-limits" id="assessment-limits" hidden>
+          <summary>View requirement checks</summary>
+          <ul id="assessment-checks"></ul>
+        </details>
+        <div class="assessment-grid">
+          <section class="assessment-area solar-metrics" aria-labelledby="power-heading">
+            <h3 id="power-heading">Solar power</h3>
+            <p class="assessment-total" id="assessment-sun-total"></p>
+            <dl>
+              <dt>Sun elevation at landing</dt><dd id="assessment-sun-angle"></dd>
+              <dt>Highest Sun while in view</dt><dd id="assessment-peak"></dd>
+              <dt>Equivalent full-sun hours</dt><dd id="assessment-exposure"></dd>
+              <dt>Longest stretch without sunlight</dt><dd id="assessment-dark-gap"></dd>
+            </dl>
+            <p class="muted" id="assessment-dark-time"></p>
+          </section>
+          <section class="assessment-area relay-metrics" aria-labelledby="comms-heading">
+            <h3 id="comms-heading">Direct Earth visibility</h3>
+            <p class="assessment-total" id="assessment-earth-total"></p>
+            <dl>
+              <dt>Earth elevation at landing</dt><dd id="assessment-earth-angle"></dd>
+              <dt>Longest continuous Earth view</dt><dd id="assessment-earth-run"></dd>
+              <dt>Longest gap in Earth view</dt><dd id="assessment-earth-gap"></dd>
+              <dt>Sunlight and Earth view together</dt><dd id="assessment-overlap"></dd>
+            </dl>
+            <p class="muted" id="assessment-earth-time"></p>
+          </section>
+        </div>
+        <details class="windows assessment-windows">
+          <summary>Show sunlight and Earth visibility windows (UTC)</summary>
+          <div id="assessment-windows" class="window-grid"></div>
+        </details>
+        <p class="muted assessment-note">Full-sun hours estimate direct light on a flat horizontal panel. Actual power depends on panel orientation and hardware. Earth visibility checks line of sight to Earth’s center. A working link also depends on antennas, ground stations, and relays.</p>
+      </section>
+
       <section class="panel operations" aria-labelledby="ops-heading">
         <div class="panel-heading operations-title"><h2 id="ops-heading">Surface operations</h2><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
         <section class="local-sky" id="local-sky" aria-labelledby="local-sky-heading" hidden>
@@ -219,11 +261,36 @@
             <div><h3 id="local-sky-heading">Sky from the landing site</h3><p class="muted" id="ops-subtitle"></p></div>
             <time id="local-sky-time"></time>
           </div>
+          <div class="map-view sky-mode" role="group" aria-label="Local sky view">
+            <button type="button" class="subtle" id="show-skyline" aria-pressed="true">Skyline plot</button>
+            <button type="button" class="subtle" id="show-surface" aria-pressed="false">3D surface view</button>
+          </div>
           <div class="sky-grid">
-            <figure class="sky-panorama">
+            <figure class="sky-panorama" id="skyline-view">
               <canvas id="sky-canvas" role="img" aria-label="Sun and Earth above or below the skyline, plotted by compass direction and elevation" aria-describedby="sky-caption sky-sun-position sky-earth-position"></canvas>
               <figcaption id="sky-caption">The shaded area is below the modeled skyline. Hollow markers show a blocked or eclipsed body.</figcaption>
             </figure>
+            <div id="surface-view" hidden>
+              <p class="muted" id="surface-status" role="status"></p>
+              <button type="button" class="subtle" id="surface-retry" hidden>Reload terrain</button>
+              <div id="surface-scene" hidden>
+                <div class="surface-stage">
+                  <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption sky-sun-position sky-earth-position"></canvas>
+                  <canvas id="surface-labels" aria-hidden="true"></canvas>
+                  <output id="surface-heading" aria-label="Camera bearing"></output>
+                </div>
+                <div class="globe-controls" role="group" aria-label="Look around the landing site">
+                  <button type="button" class="subtle" id="surface-left" aria-label="Look left">←</button>
+                  <button type="button" class="subtle" id="surface-right" aria-label="Look right">→</button>
+                  <button type="button" class="subtle" id="surface-up" aria-label="Look up">↑</button>
+                  <button type="button" class="subtle" id="surface-down" aria-label="Look down">↓</button>
+                  <button type="button" class="subtle" id="surface-sun">Find Sun</button>
+                  <button type="button" class="subtle" id="surface-earth">Find Earth</button>
+                  <button type="button" class="subtle" id="surface-north">Face north</button>
+                </div>
+                <p class="muted" id="surface-caption"></p>
+              </div>
+            </div>
             <div class="sky-readings">
               <div class="sky-body sky-sun">
                 <h4><span aria-hidden="true"></span>Sun</h4>

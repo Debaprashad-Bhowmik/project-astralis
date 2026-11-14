@@ -6,7 +6,9 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 **[Start with the Astralis handbook](ASTRALIS-HANDBOOK.md).** It covers the challenge, an example app screen, NASA data downloads, reproducible query settings, the build and testing workflow, team collaboration, the judging rubric, and submission.
 
-**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** See the Sun and Earth against the selected site's terrain horizon. The timeline updates the view and the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
+**[Open the local sky view](https://debaprashad-bhowmik.github.io/project-astralis/#local-sky).** See the Sun and Earth against the selected site's terrain horizon, or switch to the first-person 3D surface view and look around. The timeline updates the view and the estimated time to the next sunrise, sunset, Earthrise, or Earthset.
+
+**[Check power and communications](https://debaprashad-bhowmik.github.io/project-astralis/#assessment).** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.
 
 ## Run locally
 

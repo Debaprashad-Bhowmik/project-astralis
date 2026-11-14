@@ -89,6 +89,18 @@ class Terrain:
         values = self.grid[np.clip(row, 0, self.grid.shape[0] - 1), np.clip(col, 0, self.grid.shape[1] - 1)]
         return np.where(valid & (values != self.nodata), values, np.nan)
 
+    def interpolate(self, x, y):
+        col, row = self.transform * (x, y)
+        left = np.floor(col - .5)
+        top = np.floor(row - .5)
+        dx, dy = col - .5 - left, row - .5 - top
+        position = ~self.transform
+        points = [self.sample(*(position * (left + i + .5, top + j + .5)))
+                  for j in (0, 1) for i in (0, 1)]
+        north = points[0] * (1 - dx) + points[1] * dx
+        south = points[2] * (1 - dx) + points[3] * dx
+        return north * (1 - dy) + south * dy
+
 
 def global_tiles(source, output):
     tiles = output / "terrain"
@@ -122,6 +134,8 @@ def compile_sites(source, output):
     central = distance / RADIUS
     cos_c, sin_c = np.cos(central), np.sin(central)
     sites = []
+    mesh_dir = output / "surface"
+    mesh_dir.mkdir(exist_ok=True)
     for code, name, location, kind, latitude, longitude, provenance in SITES:
         phi, lon = np.deg2rad([latitude, longitude])
         dest_lat = np.arcsin(np.sin(phi) * cos_c + np.cos(phi) * sin_c * np.cos(bearing))
@@ -139,6 +153,19 @@ def compile_sites(source, output):
         profile = angles.max(axis=1).round(4).tolist()
         sites.append(dict(id=code, name=name, location=location, kind=kind, lat=latitude, lon=longitude,
                           height=height, horizon=profile, source=provenance, terrain="LOLA 80/240 m"))
+        mesh_bearing = np.deg2rad(np.arange(0, 360, 2))[None, :]
+        mesh_range = np.concatenate((np.arange(0, 5000, 80), np.arange(5000, 25000, 240), np.arange(25000, 350000, 1900), [350000]))[:, None]
+        sin_arc = np.sin(mesh_range / RADIUS)
+        cos_arc = np.cos(mesh_range / RADIUS)
+        mesh_lat = np.arcsin(np.sin(phi) * cos_arc + np.cos(phi) * sin_arc * np.cos(mesh_bearing))
+        mesh_lon = lon + np.arctan2(np.sin(mesh_bearing) * sin_arc, np.cos(phi) * cos_arc - np.sin(phi) * sin_arc * np.cos(mesh_bearing))
+        mesh_x, mesh_y = projected(mesh_lat, mesh_lon)
+        near_mesh = local.interpolate(mesh_x, mesh_y)
+        mesh_radii = RADIUS + np.where((mesh_range < 25000) & np.isfinite(near_mesh), near_mesh, wide.interpolate(mesh_x, mesh_y))
+        assert np.isfinite(mesh_radii).all(), name
+        mesh = np.stack((mesh_radii * sin_arc * np.sin(mesh_bearing), mesh_radii * cos_arc - mesh_radii[0, 0] - 2,
+                         mesh_radii * sin_arc * np.cos(mesh_bearing)), axis=-1)
+        mesh.astype("<f4").tofile(mesh_dir / f"{code}.bin")
         print(name, f"height {height:.1f} m", f"horizon {min(profile):.2f} to {max(profile):.2f} deg")
 
     historic = [(name.lower().replace("'", "").replace(" ", "-"), name, location, "Historic landing", lat, lon, "nssdc")

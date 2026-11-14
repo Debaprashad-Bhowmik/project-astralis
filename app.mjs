@@ -1,8 +1,9 @@
-import { binaryFrames, evaluate, frameAt, nextSkyCrossing, radius, rank, skyCrossings } from './planner.mjs'
+import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, nextSkyCrossing, radius, rank, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyRange } from './sky-view.mjs'
+import { createSurfaceView, loadSurfaceMesh } from './surface-view.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -12,6 +13,7 @@ const utc = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: '
 const dateLabel = epoch => utc.format(new Date(epoch)) + ' UTC'
 const controlDate = epoch => new Date(epoch).toISOString().slice(0, 16)
 const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hours.toFixed(1))) + ' h'
+const formatPercent = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 1 })
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 const skyLookahead = 30 * 24
 const signedDegrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
@@ -54,6 +56,9 @@ let labelsBySize = []
 let namedFeature
 let fetchingFeatures = false
 let localSky
+let surfaceView
+let surfaceSite
+let surfaceRequest = 0
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -72,11 +77,12 @@ function currentSettings() {
     throw new Error('Choose a UTC landing time that keeps the mission between 1 Jan 2024 and 1 Jan 2031.')
   }
   if (!weightSum) throw new Error('Set at least one priority weight above zero.')
-  const requirements = inputs('min-sun', 'min-earth', 'min-overlap', 'max-dark')
+  const requirements = inputs('min-sun', 'min-earth', 'min-overlap', 'max-dark', 'max-earth-gap')
   if (requirements.some(input => !input.validity.valid)) throw new Error('Enter requirement values from 0 to 720 hours.')
-  const [minSun, minEarth, minOverlap, maxDark] = requirements.map(input => Number(input.value))
+  const [minSun, minEarth, minOverlap] = requirements.map(input => Number(input.value))
+  const maximum = id => get(id).value === '' ? Infinity : Number(get(id).value)
   return { start, duration, horizon: get('model').value, weights: { sun, earth, overlap },
-    limits: { sun: minSun, earth: minEarth, overlap: minOverlap, darkness: get('max-dark').value ? maxDark : Infinity } }
+    limits: { sun: minSun, earth: minEarth, overlap: minOverlap, darkness: maximum('max-dark'), blackout: maximum('max-earth-gap') } }
 }
 
 function framesFor(start, duration) {
@@ -167,13 +173,15 @@ function resultNarrative(best, second) {
 function showResult() {
   active = ranked.find(row => row.site.id === selected)
   if (localSky?.row !== active) prepareLocalSky()
-  const siteControl = get('space-site')
-  siteControl.replaceChildren(...ranked.map(({ site }) => {
-    const option = element('option', '', siteName(site))
-    option.value = site.id
-    return option
-  }))
-  siteControl.value = selected
+  for (const siteControl of inputs('space-site', 'assessment-site')) {
+    siteControl.replaceChildren(...ranked.map(({ site }) => {
+      const option = element('option', '', siteName(site))
+      option.value = site.id
+      return option
+    }))
+    siteControl.value = selected
+  }
+  showAssessment()
   const [best, second] = ranked
   const alternative = active.site.id === best.site.id ? second : active
   const tied = ranked.filter(row => row.place === 1)
@@ -204,6 +212,70 @@ function showResult() {
   }))
   showMap()
   showTime()
+}
+
+function windowList(windows, start) {
+  const list = element('ul')
+  for (const [first, last] of windows) {
+    list.append(element('li', '', `${dateLabel(start + first * hour)} → ${dateLabel(start + last * hour)} (${formatHours(last - first)})`))
+  }
+  if (!windows.length) list.append(element('li', '', 'None in this mission window'))
+  return list
+}
+
+function showAssessment() {
+  const { start, duration, horizon, limits } = settings
+  const { site, timeline: samples, sun, earth, metrics, unmet } = active
+  const landing = samples[0]
+  const { beamHours, peak } = solarExposure(samples, sun, duration)
+  const percentage = value => formatPercent.format(value)
+  const sunStatus = landing.eclipse ? 'total eclipse' : landing.sunEl > landing.sunHorizon ? 'in view' : 'blocked by skyline'
+  const earthVisible = landing.earthEl > landing.earthHorizon
+  const panelFactor = sunStatus === 'in view' ? flatPanelFactor(landing.sunEl) : 0
+  const longestView = Math.max(0, ...earth.map(([a, b]) => b - a))
+  const values = {
+    context: `${siteName(site)} · ${dateLabel(start)} · ${formatHours(duration)} · ${terrainLabel(site, horizon)}`,
+    'sun-total': `${formatHours(metrics.sun)} of sunlight · ${percentage(metrics.sun / duration)} of mission`,
+    'earth-total': `${formatHours(metrics.earth)} in view · ${percentage(metrics.earth / duration)} of mission`,
+    'sun-angle': `${signedDegrees(landing.sunEl)} · ${sunStatus} · ${percentage(panelFactor)} of direct beam on a flat panel`,
+    peak: peak === null ? 'No sunlight in this window' : signedDegrees(peak),
+    exposure: formatHours(beamHours),
+    'dark-gap': formatHours(metrics.darkness),
+    'earth-angle': `${signedDegrees(landing.earthEl)} · ${earthVisible ? 'in view' : 'blocked by skyline'}`,
+    'earth-run': formatHours(longestView),
+    'earth-gap': formatHours(metrics.blackout),
+    overlap: formatHours(metrics.overlap),
+  }
+  for (const [key, value] of Object.entries(values)) get(`assessment-${key}`).textContent = value
+
+  for (const [key, windows] of [['dark', sun], ['earth', earth]]) {
+    const gap = longestGap(windows, duration)
+    get(`assessment-${key}-time`).textContent = gap ? `Longest gap · ${dateLabel(start + gap[0] * hour)} → ${dateLabel(start + gap[1] * hour)}` : ''
+  }
+
+  const checks = [
+    ['Sunlight', 'sun', 'At least', 'Minimum sunlight'],
+    ['Earth visibility', 'earth', 'At least', 'Minimum Earth visibility'],
+    ['Overlap', 'overlap', 'At least', 'Minimum overlap'],
+    ['Dark gap', 'darkness', 'At most', 'Maximum dark gap'],
+    ['Earth visibility gap', 'blackout', 'At most', 'Maximum Earth visibility gap'],
+  ].filter(([, key, mode]) => Number.isFinite(limits[key]) && (mode === 'At most' || limits[key] > 0))
+  const status = get('assessment-status')
+  const total = checks.length
+  status.classList.toggle('failed', unmet.length > 0)
+  status.textContent = 'No mission limits set. Set them in Mission setup → Advanced settings.'
+  if (total === 1 && !unmet.length) status.textContent = 'Meets the mission limit'
+  else if (total) status.textContent = unmet.length ? `Meets ${total - unmet.length} of ${total} mission limits` : `Meets all ${total} mission limits`
+  get('assessment-limits').hidden = !total
+  get('assessment-checks').replaceChildren(...checks.map(([failure, key, mode, label]) =>
+    element('li', '', `${unmet.includes(failure) ? 'Misses' : 'Meets'} · ${label} · ${mode.toLowerCase()} ${formatHours(limits[key])} · modeled ${formatHours(metrics[key])}`)))
+
+  get('assessment-windows').replaceChildren(...[['Sunlight', sun], ['Direct Earth visibility', earth], ['Both together', metrics.both]].map(([label, windows]) => {
+    const column = element('div')
+    column.append(element('h4', '', label), windowList(windows, start))
+    return column
+  }))
+  get('assessment').hidden = false
 }
 
 function showRanking() {
@@ -520,6 +592,7 @@ function prepareLocalSky() {
     element('dd', '', 'Earth out of view ' + formatHours(active.metrics.blackout)))
   get('snapshot').replaceChildren(gaps)
   get('local-sky').hidden = false
+  if (!get('surface-view').hidden) void showSurface()
 }
 
 function skyClearance(elevation, skyline) {
@@ -569,7 +642,57 @@ function showLocalSky(sample, epoch) {
 
 function redrawLocalSky() {
   if (!localSky) return
-  drawLocalSky(get('sky-canvas'), active.timeline[Math.round(elapsed * 4)], localSky.profile, localSky.range)
+  const sample = active.timeline[Math.round(elapsed * 4)]
+  if (get('surface-view').hidden) drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range)
+  else if (surfaceSite === active.site) surfaceView?.update(sample)
+}
+
+async function showSurface() {
+  if (!active) return
+  const { site } = active
+  const request = ++surfaceRequest
+  const sample = active.timeline[Math.round(elapsed * 4)]
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Drag to look around. Terrain shading and sky markers are illustrative.' +
+    (settings.horizon === 'terrain' ? '' : ' Marker visibility uses your 0° reference setting.')
+  if (surfaceSite === site) {
+    get('surface-scene').hidden = false
+    get('surface-retry').hidden = true
+    get('surface-status').textContent = ''
+    surfaceView.update(sample)
+    return
+  }
+  get('surface-retry').hidden = true
+  get('surface-scene').hidden = true
+  get('surface-status').textContent = 'Loading NASA terrain…'
+  try {
+    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-labels'), angle => {
+      get('surface-heading').value = `${angle}° ${compass[Math.round(angle / 45) % compass.length]}`
+    })
+    const mesh = await loadSurfaceMesh(site)
+    if (request !== surfaceRequest) return
+    surfaceSite = site
+    get('surface-scene').hidden = false
+    get('surface-status').textContent = ''
+    const current = active.timeline[Math.round(elapsed * 4)]
+    surfaceView.setTerrain(mesh, current.sunAz)
+    surfaceView.update(current)
+  } catch (reason) {
+    if (request !== surfaceRequest) return
+    get('surface-status').textContent = reason.message
+    get('surface-retry').hidden = false
+  }
+}
+
+function useSkyView(surface) {
+  get('skyline-view').hidden = surface
+  get('surface-view').hidden = !surface
+  get('show-skyline').setAttribute('aria-pressed', String(!surface))
+  get('show-surface').setAttribute('aria-pressed', String(surface))
+  if (surface) void showSurface()
+  else {
+    surfaceRequest++
+    redrawLocalSky()
+  }
 }
 
 function updateComparisonOptions() {
@@ -613,19 +736,18 @@ function compare() {
     const card = element('article', 'compare-scenario')
     const time = element('time', '', dateLabel(epoch))
     time.dateTime = new Date(epoch).toISOString()
+    const power = solarExposure(row.timeline, row.sun, duration)
     card.append(element('h3', '', title), time, element('p', 'muted', terrainLabel(row.site, horizon)), element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
       row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
     axis(duration), ...timeline(row, duration), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
-      ' · Longest Earth gap ' + formatHours(row.metrics.blackout)))
+      ' · Longest Earth gap ' + formatHours(row.metrics.blackout)),
+    element('p', 'muted stats', `${formatHours(power.beamHours)} equivalent full sun · ${power.peak === null ? 'No direct sunlight' : `Peak Sun ${signedDegrees(power.peak)}`}`))
     grid.append(card)
     const detail = element('article')
     detail.append(element('h3', '', title))
     for (const [key, windows] of [['sun', row.sun], ['earth', row.earth], ['overlap', row.metrics.both]]) {
       detail.append(element('p', '', metricNames[key]))
-      const list = element('ul')
-      const texts = windows.map(([a, b]) => dateLabel(epoch + a * hour) + ' → ' + dateLabel(epoch + b * hour))
-      list.append(...(texts.length ? texts : ['No visible interval']).map(text => element('li', '', text)))
-      detail.append(list)
+      detail.append(windowList(windows, epoch))
     }
     details.append(detail)
   })
@@ -739,7 +861,7 @@ async function start() {
     installGlobe()
     drawGrid()
     recalculate()
-    if (location.hash === '#local-sky') requestAnimationFrame(() => get('local-sky').scrollIntoView({ behavior: 'instant' }))
+    if (['#local-sky', '#assessment'].includes(location.hash)) requestAnimationFrame(() => get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' }))
     void startSpace()
   } catch (reason) {
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
@@ -827,7 +949,17 @@ get('delay-b').addEventListener('click', () => {
   get('compare-time').value = controlDate(settings.start + 3 * day)
   compare()
 })
-get('space-site').addEventListener('change', event => selectSite(event.target.value, false))
+for (const select of inputs('space-site', 'assessment-site')) select.addEventListener('change', event => selectSite(event.target.value, false))
+get('show-skyline').addEventListener('click', () => useSkyView(false))
+get('show-surface').addEventListener('click', () => useSkyView(true))
+get('surface-retry').addEventListener('click', showSurface)
+const surfaceTurns = { left: [-15, 0], right: [15, 0], up: [0, 10], down: [0, -10] }
+for (const [id, angles] of Object.entries(surfaceTurns)) get(`surface-${id}`).addEventListener('click', () => surfaceView?.turn(...angles))
+for (const body of ['sun', 'earth']) get(`surface-${body}`).addEventListener('click', () => {
+  const sample = active.timeline[Math.round(elapsed * 4)]
+  surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
+})
+get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
 for (const slider of inputs('time-slider', 'space-time')) slider.addEventListener('input', event => {
   stop()
   elapsed = Number(event.target.value)

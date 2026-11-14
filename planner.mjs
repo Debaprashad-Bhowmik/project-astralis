@@ -68,6 +68,17 @@ export function visibility(values, step) {
   return windows
 }
 
+export function longestGap(windows, duration) {
+  let longest = null
+  let cursor = 0
+  for (const [start, end] of [...windows, [duration, duration]]) {
+    const gap = start - cursor
+    if (gap > (longest ? longest[1] - longest[0] : 0)) longest = [cursor, start]
+    cursor = end
+  }
+  return longest
+}
+
 export function summarize(sun, earth, duration) {
   const both = []
   let left = 0
@@ -82,16 +93,10 @@ export function summarize(sun, earth, duration) {
     else right++
   }
   const total = windows => windows.reduce((hours, [start, end]) => hours + end - start, 0)
-  function longestGap(windows) {
-    let longest = 0
-    let cursor = 0
-    for (const [start, end] of windows) {
-      longest = Math.max(longest, start - cursor)
-      cursor = end
-    }
-    return Math.max(longest, duration - cursor)
-  }
-  return { sun: total(sun), earth: total(earth), overlap: total(both), darkness: longestGap(sun), blackout: longestGap(earth), both }
+  const darkGap = longestGap(sun, duration)
+  const earthGap = longestGap(earth, duration)
+  return { sun: total(sun), earth: total(earth), overlap: total(both),
+    darkness: darkGap ? darkGap[1] - darkGap[0] : 0, blackout: earthGap ? earthGap[1] - earthGap[0] : 0, both }
 }
 
 export function rank(rows, weights, limits, duration) {
@@ -103,6 +108,7 @@ export function rank(rows, weights, limits, duration) {
     if (metrics.earth + 1e-8 < limits.earth) unmet.push('Earth visibility')
     if (metrics.overlap + 1e-8 < limits.overlap) unmet.push('Overlap')
     if (metrics.darkness - 1e-8 > limits.darkness) unmet.push('Dark gap')
+    if (metrics.blackout - 1e-8 > (limits.blackout ?? Infinity)) unmet.push('Earth visibility gap')
     const score = Math.round(1000 * (weights.sun * metrics.sun + weights.earth * metrics.earth + weights.overlap * metrics.overlap) / (totalWeight * duration)) / 10
     return { ...row, unmet, score }
   })
@@ -112,6 +118,41 @@ export function rank(rows, weights, limits, duration) {
     place: row.unmet.length ? null : 1 + ranked.findIndex(candidate => candidate.score === row.score),
     tied: !row.unmet.length && ranked.some((other, id) => id !== index && !other.unmet.length && other.score === row.score),
   }))
+}
+
+export function flatPanelFactor(elevation) {
+  return Math.max(0, Math.sin(elevation * radians))
+}
+
+// Integrate the direct-beam projection between sampled elevations, clipped to actual sunlight windows.
+export function solarExposure(timeline, windows, duration) {
+  const step = duration / (timeline.length - 1)
+  let beamHours = 0
+  let peak = null
+  for (const [start, end] of windows) {
+    for (let i = Math.floor(start / step); i < timeline.length - 1 && i * step < end; i++) {
+      const segmentStart = i * step
+      const from = Math.max(start, segmentStart)
+      const to = Math.min(end, segmentStart + step)
+      if (to <= from) continue
+      const first = timeline[i].sunEl
+      const next = timeline[i + 1].sunEl
+      const a = interpolate(first, next, (from - segmentStart) / step)
+      const b = interpolate(first, next, (to - segmentStart) / step)
+      peak = Math.max(peak ?? -90, a, b)
+      const high = Math.max(a, b) * radians
+      if (high <= 0) continue
+      const low = Math.min(a, b) * radians
+      const litLow = Math.max(0, low)
+      const delta = high - low
+      if (delta < 1e-10) beamHours += (to - from) * flatPanelFactor((a + b) / 2)
+      else {
+        const projected = 2 * Math.sin((litLow + high) / 2) * Math.sin((high - litLow) / 2)
+        beamHours += (to - from) * projected / delta
+      }
+    }
+  }
+  return { beamHours, peak }
 }
 
 function eclipseMargin(sun, earth) {
