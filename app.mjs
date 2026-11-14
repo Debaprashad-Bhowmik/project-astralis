@@ -5,6 +5,7 @@ import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
 import { createCoverageMap, subPoint } from './coverage-map.mjs'
+import { missionOverlapGrid, overlapRgb, overlapScore } from './mission-heat.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -143,6 +144,15 @@ let surfaceRequest = 0
 let drawCoverage
 let coverageFrame
 let coverageEpoch
+let missionFrames
+let heatJob
+let heatWorker
+let heatScores
+let heatBest
+let heatGrid
+let heatScorePeak
+let heatColors
+let heatDisplay
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -189,9 +199,20 @@ function recalculate(reuseSettings = false) {
     error('input-error')
   }
   const { start, duration, weights, limits, horizon } = settings
-  const frames = framesFor(start, duration)
+  if (missionFrames?.start !== start || missionFrames?.duration !== duration) {
+    heatWorker?.terminate()
+    heatWorker = undefined
+    heatJob = undefined
+    heatGrid = undefined
+    heatColors = undefined
+    heatDisplay = undefined
+    missionFrames = { start, duration, frames: framesFor(start, duration) }
+  }
+  const { frames } = missionFrames
   const sites = [...catalog.catalog, ...customSites]
   ranked = rank(sites.map(site => evaluate(site, frames, duration, horizon === 'terrain')), weights, limits, duration)
+  heatBest = ranked.reduce((highest, row) => row.metrics.overlap > highest.metrics.overlap ? row : highest)
+  heatScores = undefined
   if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
   get('time-slider').max = duration
@@ -467,13 +488,22 @@ function showCoverage() {
   const onGlobe = !get('globe-view').hidden
   const mode = get('coverage-layer').value
   const visible = Boolean(active) && (flat || (onGlobe && mode !== 'off'))
-  get('coverage-details').hidden = !visible
-  get('coverage-clock').hidden = !visible
+  const mission = visible && mode === 'mission'
+  get('mission-heat-details').hidden = !mission
+  get('coverage-details').hidden = !visible || mission
+  get('coverage-clock').hidden = !visible || mission
+  get('coverage-canvas').hidden = Boolean(mission && !heatGrid)
+  if (!mission) heatDisplay = undefined
+  if (!mission || !heatGrid) globe?.setSiteScores()
   if (!visible) {
     if (onGlobe) {
       globe?.setCoverage(null)
       get('globe-canvas').setAttribute('aria-describedby', 'globe-pole-note')
     }
+    return
+  }
+  if (mission) {
+    showMissionHeat(flat)
     return
   }
   const epoch = settings.start + elapsed * hour
@@ -503,6 +533,88 @@ function showCoverage() {
   const overhead = `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))} · Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`
   get('coverage-overhead').textContent = overhead
   get('coverage-canvas').setAttribute('aria-label', `Whole-Moon visibility map. ${overhead}.`)
+  get('coverage-canvas').setAttribute('aria-describedby', 'coverage-notes coverage-summary')
+}
+
+function showMissionHeat(flat) {
+  const status = get('mission-heat-status')
+  const results = get('mission-heat-results')
+  const globeCanvas = get('globe-canvas')
+  globeCanvas.setAttribute('aria-describedby', 'globe-pole-note mission-heat-status mission-heat-best mission-heat-site mission-heat-notes')
+  if (!heatGrid) {
+    results.hidden = true
+    if (!flat) globe?.setCoverage(null)
+    if (heatJob === missionFrames) return
+    status.textContent = 'Calculating mission overlap…'
+    const job = missionFrames
+    heatJob = job
+    const publish = grid => {
+      if (missionFrames !== job) return
+      heatGrid = grid
+      showCoverage()
+    }
+    const fallback = () => setTimeout(() => {
+      if (missionFrames !== job) return
+      try { publish(missionOverlapGrid(job.frames)) }
+      catch { status.textContent = 'The overlap heat map could not be calculated. Change the mission window to try again.' }
+    }, 0)
+    try {
+      heatWorker = new Worker(new URL('./mission-heat-worker.mjs', import.meta.url), { type: 'module' })
+      const worker = heatWorker
+      worker.onmessage = ({ data }) => {
+        worker.terminate()
+        if (heatWorker === worker) heatWorker = undefined
+        publish(data)
+      }
+      worker.onerror = () => {
+        worker.terminate()
+        if (heatWorker === worker) heatWorker = undefined
+        fallback()
+      }
+      worker.postMessage(job.frames)
+    } catch { fallback() }
+    return
+  }
+
+  const { start, duration, horizon } = settings
+  const best = heatBest
+  const peak = Math.max(best.metrics.overlap / duration, heatGrid.peak)
+  if (!heatColors || heatScorePeak !== peak) {
+    heatScorePeak = peak
+    heatColors = document.createElement('canvas')
+    heatColors.width = heatGrid.width
+    heatColors.height = heatGrid.height
+    const ctx = heatColors.getContext('2d')
+    const image = ctx.createImageData(heatGrid.width, heatGrid.height)
+    heatGrid.values.forEach((value, index) => image.data.set([...overlapRgb(overlapScore(value, peak)), 255], index * 4))
+    ctx.putImageData(image, 0, 0)
+    heatDisplay = undefined
+  }
+  if (!heatScores) heatScores = new Map(ranked.map(({ site, metrics }) => {
+    const score = overlapScore(metrics.overlap / duration, peak)
+    const number = score > 0 && score < .01 ? '<0.01' : score < 1 && score >= .995 ? '>0.99' : score.toFixed(2)
+    return [site.id, { number, label: `Overlap score ${number}, ${formatHours(metrics.overlap)} together`,
+      color: 'rgb(' + overlapRgb(score).join(',') + ')', nearZero: score <= .01 }]
+  }))
+  const key = { flat, active, peak }
+  if (heatDisplay?.flat === flat && heatDisplay.active === active && heatDisplay.peak === peak) return
+  heatDisplay = key
+  if (flat) {
+    drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
+    drawCoverage(null, active.site, 'mission', heatColors)
+    get('coverage-canvas').setAttribute('aria-label', 'Whole-Moon mission overlap heat map')
+    get('coverage-canvas').setAttribute('aria-describedby', 'mission-heat-notes mission-heat-site')
+  } else {
+    globe?.setMissionHeat(heatColors)
+    globe?.setSiteScores(heatScores)
+  }
+  const { site, metrics } = active
+  status.textContent = `${dateLabel(start)} · ${formatHours(duration)} mission`
+  get('mission-heat-best').textContent = best.metrics.overlap > 0
+    ? `Best listed overlap · ${siteName(best.site)} · ${heatScores.get(best.site.id).number} · ${formatHours(best.metrics.overlap)} together`
+    : 'No listed site has Sun and Earth in view together during this mission.'
+  get('mission-heat-site').textContent = `${siteName(site)} · ${heatScores.get(site.id).number} · Sun ${formatHours(metrics.sun)} · Earth ${formatHours(metrics.earth)} · Both ${formatHours(metrics.overlap)} · ${terrainLabel(site, horizon)}`
+  results.hidden = false
 }
 
 function showCoverageLegend() {

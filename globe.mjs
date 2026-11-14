@@ -1,5 +1,6 @@
 import { earthRadius, radius, sunRadius } from './planner.mjs'
 import { coverageLayers, coveragePalette, totalityPossible } from './coverage-map.mjs'
+import { missionGridHeight } from './mission-heat.mjs'
 
 const rad = Math.PI / 180
 export const artemisSouthLatitude = -84
@@ -44,6 +45,7 @@ const fragment = `
 precision highp float;
 uniform sampler2D lunarMap;
 uniform sampler2D polarRelief;
+uniform sampler2D missionHeat;
 uniform float polarExtent;
 uniform float reliefMix;
 uniform vec2 viewport;
@@ -93,7 +95,10 @@ void main() {
   }
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
-  if (layer > 0) {
+  if (layer == ${coverageLayers.mission}) {
+    float heatLat = (uv.y * ${(missionGridHeight - 1).toFixed(1)} + .5) / ${missionGridHeight.toFixed(1)};
+    surface = texture2D(missionHeat, vec2(uv.x, heatLat)).rgb * (.81 + reflectance.r * .25);
+  } else if (layer > 0) {
     float shade = .56 + reflectance.r * (255.0 / 360.0);
     surface = coverageColor(normal) * shade;
   }
@@ -132,7 +137,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.enableVertexAttribArray(point)
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
-    'sun', 'earth', 'layer', 'possibleEclipse', 'lunarMap', 'polarRelief', 'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
+    'sun', 'earth', 'layer', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -146,6 +151,14 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.activeTexture(gl.TEXTURE0)
   gl.uniform1i(uniforms.lunarMap, 0)
   gl.uniform1i(uniforms.polarRelief, 1)
+  gl.uniform1i(uniforms.missionHeat, 2)
+  const heatTexture = gl.createTexture()
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, heatTexture)
+  for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
+  for (const parameter of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.LINEAR)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]))
+  gl.activeTexture(gl.TEXTURE0)
   gl.uniform1f(uniforms.polarExtent, polarExtent / radius)
 
   let latitude = -12
@@ -156,6 +169,9 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let feature
   let featureHits = []
   let overlayFrame
+  let heatImage
+  let appliedScores
+  let scoresDirty = false
   let overlayLayer = 'off'
   let selected
   let drag
@@ -230,7 +246,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       marker.classList.toggle('selected', selected === site.id)
       const nearPoleMarker = !poleMarker.hidden && top > poleTop - 18 && top < poleTop + 37 && Math.abs(left - poleLeft) < 55
       marker.classList.toggle('secondary', selected !== site.id && (zoom < 2.4 || nearPoleMarker))
-      marker.classList.toggle('flip', left > width - Math.min(width * .48, site.displayName.length * 6.6 + 24))
+      const label = marker.firstChild.textContent
+      marker.classList.toggle('flip', left > width - Math.min(width * .62, label.length * 6.6 + 24))
       marker.setAttribute('aria-pressed', String(selected === site.id))
     }
     drawFeatures(width, height, size, ratio, orientation)
@@ -357,11 +374,37 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       }
       draw()
     },
+    setMissionHeat(image) {
+      if (overlayLayer === 'mission' && heatImage === image) return
+      if (heatImage !== image) {
+        gl.activeTexture(gl.TEXTURE2)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+        gl.activeTexture(gl.TEXTURE0)
+        heatImage = image
+      }
+      overlayLayer = 'mission'
+      gl.uniform1i(uniforms.layer, coverageLayers.mission)
+      draw()
+    },
     reset() { latitude = -12; longitude = 17; zoom = 1; draw() },
     showFeatures(index, selectedFeature) {
       labels = index
       feature = selectedFeature
       featureCanvas.hidden = !labels.length && !feature
+      draw()
+    },
+    setSiteScores(scores) {
+      if (scores === appliedScores && !scoresDirty) return
+      appliedScores = scores
+      scoresDirty = false
+      for (const [id, marker] of markers) {
+        const score = scores?.get(id)
+        marker.classList.toggle('mission-pin', Boolean(score))
+        marker.classList.toggle('mission-zero', Boolean(score?.nearZero))
+        marker.style.setProperty('--mission-color', score?.color ?? '')
+        marker.setAttribute('aria-label', score ? marker.title + ' on the Moon · ' + score.label : marker.title + ' on the Moon')
+        marker.firstChild.textContent = score ? marker.title + ' · ' + score.number : marker.title
+      }
       draw()
     },
     setSites(newSites, active) {
@@ -384,10 +427,13 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
           markerLayer.append(marker)
         }
         const marker = markers.get(site.id)
-        marker.setAttribute('aria-label', site.displayName + ' on the Moon')
-        marker.title = site.displayName
-        marker.firstChild.textContent = site.displayName
+        if (marker.title !== site.displayName) {
+          marker.setAttribute('aria-label', site.displayName + ' on the Moon')
+          marker.title = site.displayName
+          marker.firstChild.textContent = site.displayName
+        }
       }
+      scoresDirty = true
       draw()
     },
   }

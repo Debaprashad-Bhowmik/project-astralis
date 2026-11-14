@@ -10,9 +10,31 @@ import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowF
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
+import { overlapStep, missionOverlapGrid, overlapScore } from './mission-heat.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('mission overlap counts the intersection of the two visible parts of each interval', () => {
+  assert.equal(overlapStep(3, -1, -1, 3), .5)
+  assert.equal(overlapStep(1, -1, -3, 1), 0)
+  assert.equal(overlapStep(1, 1, 1, 1), 1)
+  assert.equal(overlapStep(0, 0, 1, 1), 0)
+})
+
+test('mission heat scores share the maximum and preserve an absolute zero', () => {
+  assert.equal(overlapScore(0, 0), 0)
+  assert.equal(overlapScore(.3, .6), .5)
+  assert.equal(overlapScore(.6, .6), 1)
+  const sun = [149600000000, 0, 0]
+  const earth = [300000000, 200000000, 0]
+  const grid = missionOverlapGrid([[sun, earth], [sun, earth]], 8, 4)
+  assert.equal(grid.peak, 1)
+  assert.ok(grid.values.some(value => value === 1))
+  assert.ok(grid.values.some(value => value === 0))
+  const eclipse = missionOverlapGrid([[sun, [384400000, 0, 0]], [sun, [384400000, 0, 0]]], 8, 4)
+  assert.equal(eclipse.peak, 0)
 })
 
 test('the south pole view centers 90°S and projects the NASA 84°S boundary at its true angular distance', () => {

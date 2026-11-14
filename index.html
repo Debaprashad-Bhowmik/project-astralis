@@ -189,7 +189,7 @@
           <p class="error" id="globe-error" hidden></p>
           <div class="coverage-toolbar" id="coverage-toolbar">
             <label for="coverage-layer">Surface layer
-              <select id="coverage-layer"><option value="off">Terrain only</option><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></select>
+              <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></optgroup></select>
             </label>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
@@ -230,6 +230,19 @@
               <div class="coverage-axis" aria-hidden="true"><span>180°W</span><span>90°W</span><span>0°</span><span>90°E</span><span>180°E</span></div>
             </figure>
           </section>
+          <div id="mission-heat-details" hidden>
+            <p id="mission-heat-status" class="muted" role="status"></p>
+            <div id="mission-heat-results" hidden>
+              <div class="mission-heat-scale" aria-label="Mission overlap scale from zero in red to one in green">
+                <div aria-hidden="true"></div>
+                <span>0 · No overlap</span><span>0.5</span><span>1 · Best overlap</span>
+              </div>
+              <p class="muted mission-heat-key">× marks sites scoring 0.01 or below.</p>
+              <p id="mission-heat-best"></p>
+              <p id="mission-heat-site"></p>
+              <p id="mission-heat-notes" class="muted">Score = overlap hours ÷ the highest overlap in this mission. Map colors use a smooth lunar horizon. Site pins use the selected local horizon model.</p>
+            </div>
+          </div>
           <div id="coverage-details" hidden>
             <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
             <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>

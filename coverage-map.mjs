@@ -16,7 +16,7 @@ export function subPoint([x, y, z]) {
   return { lat: Math.atan2(z, Math.hypot(x, y)) / radians, lon: wrapLongitude(Math.atan2(y, x) / radians) }
 }
 
-export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4 }
+export const coverageLayers = { off: 0, all: 1, sun: 2, earth: 3, both: 4, mission: 5 }
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
 // The observer offset across the surface cannot produce totality outside this margin.
 export const totalityPossible = (sun, earth) => eclipseMargin(sun, earth) <= .4
@@ -49,6 +49,7 @@ export function createCoverageMap(canvas, onPoint) {
   let frame
   let site
   let mode = 'all'
+  let heatRaster
   let dirty = true
   const north = Array.from({ length: rasterHeight }, (_, row) => (90 - (row + .5) * 180 / rasterHeight) * radians)
   const east = Array.from({ length: rasterWidth }, (_, col) => ((col + .5) * 360 / rasterWidth - 180) * radians)
@@ -85,8 +86,8 @@ export function createCoverageMap(canvas, onPoint) {
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
-    if (!width || !height || !frame) return
-    if (dirty) tint()
+    if (!width || !height || (!frame && !heatRaster)) return
+    if (!heatRaster && dirty) tint()
     const pixel = Math.min(2, devicePixelRatio || 1)
     const pw = Math.round(width * pixel)
     const ph = Math.round(height * pixel)
@@ -95,7 +96,7 @@ export function createCoverageMap(canvas, onPoint) {
       canvas.height = ph
     }
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
-    ctx.drawImage(raster, 0, 0, width, height)
+    ctx.drawImage(heatRaster ?? raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
     ctx.lineWidth = 1
@@ -146,22 +147,25 @@ export function createCoverageMap(canvas, onPoint) {
       ctx.fillText(label, left, top)
     }
     mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
-    mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
-    mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
+    if (!heatRaster) {
+      mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
+      mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
+    }
   }
 
   new ResizeObserver(draw).observe(canvas)
   canvas.addEventListener('click', event => {
-    if (!frame) return
+    if (!frame && !heatRaster) return
     const rect = canvas.getBoundingClientRect()
     onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height))
   })
 
-  return (nextFrame, nextSite, nextMode) => {
+  return (nextFrame, nextSite, nextMode, nextHeatRaster) => {
     if (frame !== nextFrame || mode !== nextMode) dirty = true
     frame = nextFrame
     site = nextSite
     mode = nextMode
+    heatRaster = nextHeatRaster
     draw()
   }
 }
