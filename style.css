@@ -290,6 +290,12 @@ canvas{display:block;width:100%;height:190px}
 .mission-heat-scale span:last-child{text-align:right}
 .mission-heat-key,#mission-heat-notes{font-size:.75rem;margin-top:4px}
 #mission-heat-best,#mission-heat-site{font-size:.84rem;margin-top:5px;font-variant-numeric:tabular-nums}
+.mission-heat-track{position:relative;height:10px;margin-top:8px;overflow:hidden;border:1px solid #844850;border-radius:3px;background:repeating-linear-gradient(135deg,#552833 0 4px,#6b303d 4px 7px)}
+.mission-heat-track span{position:absolute;inset-block:0;background:#39d694}
+.mission-heat-track-labels{display:flex;justify-content:space-between;margin-top:3px;color:var(--muted);font-size:.72rem}
+#mission-heat-windows{margin-top:6px;font-size:.78rem}
+#mission-heat-window-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:6px 14px;margin:6px 0;color:var(--muted)}
+#mission-heat-window-list li{margin-top:3px}
 .globe-pin.mission-pin{color:var(--mission-color)}
 .globe-pin.mission-pin .pin-text{color:#fff;border-color:var(--mission-color)}
 .globe-pin.mission-pin::before{background:var(--mission-color);box-shadow:0 0 0 1px #161217;border-color:#fff}

@@ -16,7 +16,7 @@ The **One lunar day** operating window plays 29.5 Earth days from landing. Use *
 
 **[Explore the South Pole on the 3D Moon](https://debaprashad-bhowmik.github.io/project-astralis/#south-pole).** The 90°S marker and 84°S ring show the pole and the edge of NASA’s six-degree Artemis exploration zone. Select a **Surface layer** to see sunlight, direct Earth visibility, or their overlap on the rotatable globe or flat visibility map. Global coverage uses a smooth reference horizon. Individual sites use the selected horizon model.
 
-**[Compare mission overlap on the Moon](https://debaprashad-bhowmik.github.io/project-astralis/#map-heading).** The default **Mission overlap heat map** totals the hours when the Sun and Earth are both in view for the selected start time and duration. Red means zero overlap, and green marks the highest overlap. The selected site also lists actual sunlight, Earth visibility, and overlap hours.
+**Compare mission overlap on the Moon.** In **Lunar sites**, use **Mission overlap heat map** to see the fraction of the full mission, or one quarter, with both sunlight and a direct view of Earth. Red means zero overlap. Green at 1.00 means overlap for the entire selected period. Select a site to see the overlap track and the UTC times of overlap and gaps.
 
 **[Check power and communications](https://debaprashad-bhowmik.github.io/project-astralis/#assessment).** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.
 

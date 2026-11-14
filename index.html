@@ -204,6 +204,9 @@
             <label for="coverage-layer">Surface layer
               <select id="coverage-layer"><option value="off">Terrain only</option><option value="mission" selected>Mission overlap heat map</option><optgroup label="At the selected time"><option value="all">Sun and Earth</option><option value="sun">Sunlight</option><option value="earth">Earth visibility</option><option value="both">Sunlight and Earth together</option></optgroup></select>
             </label>
+            <label id="mission-heat-period-label" hidden>Heat map period
+              <select id="mission-heat-period"></select>
+            </label>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
           <div id="globe-view">
@@ -248,12 +251,15 @@
             <div id="mission-heat-results" hidden>
               <div class="mission-heat-scale" aria-label="Mission overlap scale from zero in red to one in green">
                 <div aria-hidden="true"></div>
-                <span>0 · No overlap</span><span>0.5</span><span>1 · Best overlap</span>
+                <span>0 · Never</span><span>0.5 · Half the time</span><span>1 · Entire period</span>
               </div>
               <p class="muted mission-heat-key">× marks sites scoring 0.01 or below.</p>
               <p id="mission-heat-best"></p>
               <p id="mission-heat-site"></p>
-              <p id="mission-heat-notes" class="muted">Score = overlap hours ÷ the highest overlap in this mission. Map colors use a smooth lunar horizon. Site pins use the selected local horizon model.</p>
+              <div id="mission-heat-track"></div>
+              <p class="muted mission-heat-key">Green shows overlap. Hatched sections show gaps.</p>
+              <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
+              <p id="mission-heat-notes" class="muted">Score = overlap hours ÷ hours in the selected period. Map colors use a smooth lunar horizon. Site pins use the selected local horizon model.</p>
             </div>
           </div>
           <div id="coverage-details" hidden>
