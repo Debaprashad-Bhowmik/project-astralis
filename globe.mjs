@@ -1,6 +1,6 @@
 import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
 import { coveragePalette, powerContourLevels, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
-import { artemisSouthLatitude } from './mission-heat.mjs'
+import { artemisSouthLatitude, overlapColors } from './mission-heat.mjs'
 export { artemisSouthLatitude } from './mission-heat.mjs'
 
 const rad = Math.PI / 180
@@ -46,6 +46,11 @@ precision highp float;
 uniform sampler2D lunarMap;
 uniform sampler2D polarRelief;
 uniform sampler2D missionHeat;
+uniform sampler2D detailHeat;
+uniform vec3 detailEast, detailNorth, detailFront;
+uniform vec3 detailSize;
+uniform bool showDetail;
+uniform vec2 heatContrast;
 uniform float northLatitude, heatHeight, powerMax;
 uniform float polarExtent;
 uniform float reliefMix;
@@ -89,6 +94,18 @@ vec3 powerInk(float fraction) {
   if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
   return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
 }
+vec3 overlapInk(vec4 sampleValue) {
+  // Decode after filtering, so the interpolation is in hours rather than color space.
+  float value = dot(sampleValue.rg, vec2(65280.0, 255.0)) / 65535.0;
+  float lo = heatContrast.x;
+  float hi = heatContrast.y;
+  float start = lo > 0.0 ? .15 : 0.0;
+  float end = hi < 1.0 ? .85 : 1.0;
+  float fraction = value < lo ? value / lo * start : value > hi ? end + (value - hi) / (1.0 - hi) * (1.0 - end) :
+    mix(start, end, (value - lo) / (hi - lo));
+  float band = clamp(fraction, 0.0, 1.0) * ${(overlapColors.length - 1).toFixed(1)};
+  ${overlapColors.slice(0, -1).map((color, i) => `${i < overlapColors.length - 2 ? `if (band < ${(i + 1).toFixed(1)}) ` : ''}return mix(${glslColor(color)}, ${glslColor(overlapColors[i + 1])}, band - ${i.toFixed(1)});`).join('\n  ')}
+}
 void main() {
   vec2 p = (gl_FragCoord.xy - viewport / 2.0) / sphereRadius;
   float distanceSquared = dot(p, p);
@@ -114,8 +131,16 @@ void main() {
       float fraction = (northLatitude - latitude) / (northLatitude + pi * .5);
       float heatLat = (fraction * (heatHeight - 1.0) + .5) / heatHeight;
       vec4 heat = texture2D(missionHeat, vec2(uv.x, heatLat));
-      // Interpolate toward the terrain across the edge of a colored cell.
-      surface = surface * (1.0 - heat.a) + heat.rgb * (.81 + reflectance.r * .25);
+      if (showDetail && dot(normal, detailFront) > 0.0) {
+        vec2 local = vec2(dot(normal, detailEast), -dot(normal, detailNorth)) / detailSize.xy;
+        float distanceFromEdge = max(abs(local.x), abs(local.y));
+        if (distanceFromEdge <= 1.0) {
+          vec2 sampleUv = ((local * .5 + .5) * (detailSize.z - 1.0) + .5) / detailSize.z;
+          vec4 detail = texture2D(detailHeat, sampleUv);
+          if (detail.a > .99) heat = detail;
+        }
+      }
+      surface = mix(surface, overlapInk(heat), .83 * heat.a);
     }
     if (showPower || any(greaterThan(visibility, vec3(0.0)))) {
       vec3 ink;
@@ -151,7 +176,7 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true } = {}) {
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
@@ -173,7 +198,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
     'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
-    'polarExtent', 'reliefMix'].map(name => [name, gl.getUniformLocation(program, name)]))
+    'polarExtent', 'reliefMix', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast'].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -188,12 +213,18 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.uniform1i(uniforms.lunarMap, 0)
   gl.uniform1i(uniforms.polarRelief, 1)
   gl.uniform1i(uniforms.missionHeat, 2)
+  gl.uniform1i(uniforms.detailHeat, 3)
   const heatTexture = gl.createTexture()
   gl.activeTexture(gl.TEXTURE2)
   gl.bindTexture(gl.TEXTURE_2D, heatTexture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
   for (const parameter of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.LINEAR)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]))
+  gl.activeTexture(gl.TEXTURE3)
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture())
+  for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
+  for (const parameter of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.LINEAR)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
   gl.activeTexture(gl.TEXTURE0)
   gl.uniform1f(uniforms.polarExtent, polarExtent / radius)
 
@@ -206,6 +237,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let featureHits = []
   let overlayFrame
   let heatImage
+  let detailImageData
+  let viewKey
   let northLatitude = 90
   let powerMax = solarPowerScaleMax
   let appliedScores
@@ -255,6 +288,13 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     const ratio = Math.min(devicePixelRatio || 1, 2)
     const size = Math.min(width, height) * .46 * zoom
     const orientation = globeOrientation(latitude, longitude)
+    if (onViewChange) {
+      const key = `${latitude}/${longitude}/${zoom}/${width}/${height}`
+      if (viewKey !== key) {
+        viewKey = key
+        onViewChange()
+      }
+    }
     if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
       canvas.width = Math.round(width * ratio)
       canvas.height = Math.round(height * ratio)
@@ -401,10 +441,34 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
 
   return {
     draw, rotate,
+    heatViewport() {
+      const { clientWidth: width, clientHeight: height } = canvas
+      if (!width || !height || zoom < 2.5) return null
+      const diameter = Math.min(width, height) * .92 * zoom
+      return { lat: latitude, lon: longitude, zoom, x: Math.min(.95, 1.12 * width / diameter), y: Math.min(.95, 1.12 * height / diameter) }
+    },
+    setHeatDetail(patch) {
+      if (patch === detailImageData) return
+      detailImageData = patch
+      gl.uniform1i(uniforms.showDetail, Number(Boolean(patch)))
+      if (patch) {
+        const { image, view, orientation } = patch
+        gl.activeTexture(gl.TEXTURE3)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+        gl.activeTexture(gl.TEXTURE0)
+        gl.uniform3fv(uniforms.detailEast, orientation.east)
+        gl.uniform3fv(uniforms.detailNorth, orientation.north)
+        gl.uniform3fv(uniforms.detailFront, orientation.front)
+        gl.uniform3f(uniforms.detailSize, view.x, view.y, image.width)
+      }
+      draw()
+    },
     zoom: changeZoom,
     center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
-    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) {
+    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1], northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) {
       if (overlayFrame === frame && visibility === nextVisibility && power === nextPower && heatVisible === Boolean(heatRaster) &&
           (!heatRaster || heatImage === heatRaster) && northLatitude === nextNorth && powerMax === nextPowerMax) return
       overlayFrame = frame
@@ -416,6 +480,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       gl.uniform3f(uniforms.visibility, visibility & 1, visibility & 2, visibility & 4)
       gl.uniform1i(uniforms.showPower, Number(power))
       gl.uniform1i(uniforms.showHeat, Number(heatVisible))
+      gl.uniform2fv(uniforms.heatContrast, heatContrast)
       gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
       gl.uniform1f(uniforms.powerMax, powerMax)
       if (frame) {
@@ -448,7 +513,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       scoresDirty = false
       for (const [id, marker] of markers) {
         const score = scores?.get(id)
-        marker.classList.toggle('mission-pin', Boolean(score))
+        marker.classList.toggle('mission-pin', Boolean(score?.color))
+        marker.classList.toggle('overlap-pin', Boolean(score?.overlap))
         marker.classList.toggle('mission-zero', Boolean(score?.nearZero))
         marker.style.setProperty('--mission-color', score?.color ?? '')
         marker.setAttribute('aria-label', score ? marker.title + ' on the Moon · ' + score.label : marker.title + ' on the Moon')

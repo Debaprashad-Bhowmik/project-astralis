@@ -27,7 +27,7 @@ export function nearestTiles(lat, lon) {
   return result
 }
 
-export function horizonProfile(lat, lon, sample, step = globalStep) {
+export function horizonProfile(lat, lon, sample, step = globalStep, bearingStep = .5) {
   const phi = lat * radians
   const lambda = lon * radians
   const height = sample(lat, lon)
@@ -38,20 +38,20 @@ export function horizonProfile(lat, lon, sample, step = globalStep) {
     const angle = (index + 1) * step / radius
     return [Math.sin(angle), Math.cos(angle)]
   })
-  const horizon = Array.from({ length: 720 }, (_, index) => {
-    const direction = index * .5 * radians
+  const horizon = Array.from({ length: 360 / bearingStep }, (_, index) => {
+    const direction = index * bearingStep * radians
     const sinBearing = Math.sin(direction)
     const cosBearing = Math.cos(direction)
-    let max = -90
+    let slope = -Infinity
     for (const [sinArc, cosArc] of shell) {
       const nextLat = Math.asin(clamp(sinPhi * cosArc + cosPhi * sinArc * cosBearing, -1, 1))
       const x = cosPhi * cosArc - sinPhi * sinArc * cosBearing
       const y = sinBearing * sinArc
       const nextLon = lambda + Math.atan2(y, x)
       const groundRadius = radius + sample(nextLat / radians, nextLon / radians)
-      max = Math.max(max, Math.atan2(groundRadius * cosArc - observerRadius, groundRadius * sinArc) / radians)
+      slope = Math.max(slope, (groundRadius * cosArc - observerRadius) / (groundRadius * sinArc))
     }
-    return max
+    return Math.atan(slope) / radians
   })
   return { height, horizon }
 }
@@ -71,15 +71,20 @@ async function fetchTile(x, y) {
     tiles.set(key, promise)
     if (tiles.size > 30) tiles.delete(tiles.keys().next().value)
   }
-  return [key, await tiles.get(key)]
+  return tiles.get(key)
 }
 
-export async function loadTerrainSampler(lat, lon, interpolate = false) {
-  const data = new Map(await Promise.all(nearestTiles(lat, lon).map(([x, y]) => fetchTile(x, y))))
+export async function loadTerrainForPoints(points, interpolate = false) {
+  const needed = new Map()
+  for (const { lat, lon } of points) {
+    for (const [x, y] of nearestTiles(lat, lon)) needed.set(y * 12 + x, [x, y])
+  }
+  const data = new Array(72)
+  await Promise.all(Array.from(needed, async ([index, [x, y]]) => { data[index] = await fetchTile(x, y) }))
   function pixel(x, y) {
     const col = wrap(x, columns)
     const row = clamp(y, 0, rows - 1)
-    const tile = data.get(`${Math.floor(col / tileSize)}-${Math.floor(row / tileSize)}`)
+    const tile = data[Math.floor(row / tileSize) * 12 + Math.floor(col / tileSize)]
     if (!tile) throw new Error('Lunar elevation data are missing for this point.')
     return tile[(row % tileSize) * tileSize + col % tileSize] * .5 - 10000
   }
@@ -95,6 +100,10 @@ export async function loadTerrainSampler(lat, lon, interpolate = false) {
     const south = pixel(left, top + 1) * (1 - x) + pixel(left + 1, top + 1) * x
     return north * (1 - y) + south * y
   }
+}
+
+export function loadTerrainSampler(lat, lon, interpolate = false) {
+  return loadTerrainForPoints([{ lat, lon }], interpolate)
 }
 
 export async function terrainAt(lat, lon) {

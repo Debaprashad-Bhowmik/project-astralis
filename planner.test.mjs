@@ -41,7 +41,8 @@ test('space calendar years use exact UTC bounds and include leap day', () => {
   assert.equal(leap.months[2], 60 * 24)
   assert.equal(calendarSpaceWindow(2029).last - calendarSpaceWindow(2029).start, (365 * 24 - .25) * hour)
 })
-import { overlapStep, missionOverlapGrid, southPoleOverlapGrid, overlapColors, overlapRgb, windowHours } from './mission-heat.mjs'
+import { overlapStep, missionOverlapGrid, southPoleOverlapGrid, overlapColors, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
+import { detailOverlapGrid, detailHoursAt } from './mission-heat-detail.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
@@ -60,8 +61,8 @@ test('mission heat keeps overlap in hours and colors it from zero through the hi
   const overlap = windowHours([[0, 3], [5, 10]], 0, 10)
   assert.equal(overlap, 8)
   assert.deepEqual(overlapRgb(0, 8), overlapColors[0])
-  assert.deepEqual(overlapRgb(4, 8), overlapColors[1])
-  assert.deepEqual(overlapRgb(overlap, 8), overlapColors[2])
+  assert.deepEqual(overlapRgb(4, 8), [204, 75, 96])
+  assert.deepEqual(overlapRgb(overlap, 8), overlapColors.at(-1))
   assert.deepEqual(overlapRgb(0, 0), overlapColors[0])
   assert.equal(windowHours([[0, 3], [7, 15], [18, 24]], 6, 12), 5)
   const sun = [149600000000, 0, 0]
@@ -107,6 +108,22 @@ test('the south pole overlap grid uses only the 84–90°S cap for each period m
   assert.ok(lit.periods[0].values.slice(0, lit.width).some(hours => hours === 1))
   assert.ok(lit.periods[0].values.slice(-lit.width).every(hours => hours === 0))
   assert.ok(lit.periods.slice(1).every(period => period.maxHours === .25))
+})
+
+test('a zoomed terrain grid captures a blocked point and leaves the rest of the region visible', async () => {
+  const frames = Array.from({ length: 5 }, () => [[149_597_870_700, 0, 0], [384_400_000, 0, 0]])
+  // Put Earth away from the Sun so that the example tests terrain blocking.
+  for (const frame of frames) frame[1][1] = 85_000_000
+  const viewport = { lat: 0, lon: 0, x: .2, y: .2, zoom: 9 }
+  const grid = await detailOverlapGrid(frames, .25, viewport, 90, false, null)
+  const blocked = { lat: 0, lon: 0, height: 0, horizon: [90] }
+  const detailed = await detailOverlapGrid(frames, .25, viewport, 90, true, blocked, async () => () => 0)
+  assert.equal(detailHoursAt({ lat: 0, lon: 0 }, grid, 0), 1)
+  assert.equal(detailHoursAt({ lat: 0, lon: 0 }, detailed, 0), 0)
+  assert.equal(detailHoursAt({ lat: 0, lon: 8 }, detailed, 0), 1)
+  assert.equal(detailHoursAt({ lat: 0, lon: 8 }, detailed, 4), .25)
+  assert.equal(detailHoursAt({ lat: 0, lon: 180 }, detailed, 0), null)
+  assert.equal(overviewOverlapGrid(frames, .25, false).width, 360)
 })
 
 test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {

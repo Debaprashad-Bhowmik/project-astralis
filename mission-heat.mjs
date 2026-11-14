@@ -1,7 +1,8 @@
 import { eclipseMargin, radius } from './planner.mjs'
 import { totalityPossible } from './coverage-map.mjs'
 
-export const overlapColors = [[198, 56, 70], [239, 177, 75], [57, 214, 148]]
+export const overlapColors = [[24, 26, 78], [73, 30, 119], [130, 39, 126], [184, 58, 109],
+  [224, 92, 83], [248, 141, 62], [255, 198, 89], [252, 250, 186]]
 export const missionGridHeight = 91
 export const missionQuarters = 4
 export const artemisSouthLatitude = -84
@@ -23,6 +24,12 @@ export function overlapStep(sunBefore, sunAfter, earthBefore, earthAfter, from =
 
 export function southPoleOverlapGrid(frames, stepHours) {
   return missionOverlapGrid(frames, stepHours, 180, 25, artemisSouthLatitude)
+}
+
+export function overviewOverlapGrid(frames, stepHours, southOnly) {
+  const fine = (frames.length - 1) * stepHours <= 31 * 24
+  if (southOnly) return fine ? missionOverlapGrid(frames, stepHours, 360, 49, artemisSouthLatitude) : southPoleOverlapGrid(frames, stepHours)
+  return fine ? missionOverlapGrid(frames, stepHours, 360, 181) : missionOverlapGrid(frames, stepHours)
 }
 
 export function missionOverlapGrid(frames, stepHours, width = 180, height = missionGridHeight, northLatitude = 90) {
@@ -86,9 +93,30 @@ export function missionOverlapGrid(frames, stepHours, width = 180, height = miss
   return grid
 }
 
-export function overlapRgb(hours, maxHours) {
+export function overlapRgb(hours, maxHours, contrast) {
   const position = maxHours > 0 ? Math.min(1, Math.max(0, hours / maxHours)) : 0
-  const segment = position < .5 ? 0 : 1
-  const amount = position * 2 - segment
+  const [low, high] = contrast ?? [0, 1]
+  const start = low > 0 ? .15 : 0
+  const end = high < 1 ? .85 : 1
+  const fraction = position < low ? position / low * start : position > high ? end + (position - high) / (1 - high) * (1 - end) :
+    start + (position - low) / (high - low) * (end - start)
+  const scaled = fraction * (overlapColors.length - 1)
+  const segment = Math.min(Math.floor(scaled), overlapColors.length - 2)
+  const amount = scaled - segment
   return overlapColors[segment].map((start, channel) => Math.round(start + (overlapColors[segment + 1][channel] - start) * amount))
+}
+
+export function overlapRamp(maxHours, contrast) {
+  const [low, high] = contrast ?? [0, 1]
+  const start = low > 0 ? .15 : 0
+  const end = high < 1 ? .85 : 1
+  const stops = overlapColors.map((color, index) => {
+    const fraction = index / (overlapColors.length - 1)
+    const position = fraction < start ? fraction / start * low : fraction > end ? high + (fraction - end) / (1 - end) * (1 - high) :
+      low + (fraction - start) / (end - start) * (high - low)
+    return `rgb(${color.join(',')}) ${position * 100}%`
+  })
+  // Include the two slope changes so the legend's axis remains linear in hours.
+  for (const position of [low, high]) stops.push(`rgb(${overlapRgb(position * maxHours, maxHours, contrast).join(',')}) ${position * 100}%`)
+  return `linear-gradient(90deg, ${stops.sort((a, b) => Number.parseFloat(a.split(' ').at(-1)) - Number.parseFloat(b.split(' ').at(-1))).join(', ')})`
 }

@@ -193,7 +193,9 @@ export function createCoverageMap(canvas, onPoint) {
       if (texture.naturalWidth) drawTerrain(ctx, width, height)
       if (heatRaster) {
         const rowHeight = height / (heatRaster.height - 1)
+        ctx.globalAlpha = .83
         ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
+        ctx.globalAlpha = 1
       }
     }
     if (live) ctx.drawImage(raster, 0, 0, width, height)

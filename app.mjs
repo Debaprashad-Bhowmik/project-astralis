@@ -5,7 +5,8 @@ import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
 import { createCoverageMap, powerContourLevels, solarPowerColor, solarPowerPalette, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers } from './coverage-map.mjs'
-import { artemisSouthLatitude, missionOverlapGrid, missionQuarters, overlapRgb, southPoleOverlapGrid, windowHours } from './mission-heat.mjs'
+import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
+import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -161,7 +162,8 @@ let southOnly = false
 const inMapRegion = site => !southOnly || site.lat <= artemisSouthLatitude
 const heatMaps = new Map()
 let heatDisplay
-let heatReference
+let detailTimer
+let detailJob
 let comparisonViews
 let comparisonScenarios
 const getVisibilityFilters = () => Object.entries(visibilityLayers).reduce((mask, [key, value]) => mask | (get(`layer-${key}`).checked ? value : 0), 0)
@@ -548,6 +550,7 @@ function showCoverage() {
   get('power-details').hidden = !power
   for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = !visibility
   get('coverage-clock').hidden = !live
+  queueHeatDetail()
   if (!available) return
   const heat = mission ? showMissionHeat() : null
   const epoch = settings.start + elapsed * hour
@@ -583,13 +586,14 @@ function showCoverage() {
     const regional = southOnly ? powerMax > 0 ? 'Scale follows the South Pole maximum at this time.' : 'Zero modeled solar power in this region at this time.' : ''
     scaleNote.textContent = [contours, regional].filter(Boolean).join(' ')
   }
-  const options = { northLatitude, powerMax, visibility, power, heatRaster: heat?.colors }
+  const options = { northLatitude, powerMax, visibility, power, heatRaster: flat ? heat?.colors : heat?.globeRaster, heatContrast: heat?.contrast }
   const frame = live ? coverageFrame : null
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
     drawCoverage(frame, active.site, options)
   } else {
     globe?.setLayers(frame, options)
+    globe?.setHeatDetail(heat?.patch ?? null)
     const scores = heat?.overlaps ?? (powerScores ? new Map(powerScores.map(({ site, sample, watts }) => {
         const number = formatPower(watts)
         return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)} · ${number} estimated electrical output`,
@@ -643,8 +647,7 @@ function requestHeatMap(regional) {
   const fallback = () => setTimeout(() => {
     if (heatMaps.get(regional) !== heat) return
     try {
-      const calculate = regional ? southPoleOverlapGrid : missionOverlapGrid
-      publish(calculate(frames, stepHours))
+      publish(overviewOverlapGrid(frames, stepHours, regional))
     } catch {
       heat.failed = true
       if (southOnly === regional) showCoverage()
@@ -657,11 +660,79 @@ function requestHeatMap(regional) {
       worker.terminate()
       heat.worker = undefined
     }
-    worker.onmessage = ({ data }) => { stopWorker(); publish(data) }
+    worker.onmessage = ({ data }) => { stopWorker(); if (data.error) fallback(); else publish(data) }
     worker.onerror = () => { stopWorker(); fallback() }
     worker.postMessage({ frames, stepHours, southOnly: regional })
   } catch { heat.worker?.terminate(); fallback() }
   return heat
+}
+
+function queueHeatDetail() {
+  const view = !get('globe-view').hidden && get('layer-overlap').checked ? globe?.heatViewport() : null
+  const status = get('mission-heat-detail-status')
+  if (!view || !missionFrames) {
+    const hadDetail = Boolean(detailJob?.grid)
+    clearTimeout(detailTimer)
+    detailJob?.worker?.terminate()
+    detailJob = undefined
+    status.hidden = true
+    if (hadDetail) requestAnimationFrame(showCoverage)
+    return
+  }
+  const terrain = settings.horizon === 'terrain'
+  const anchor = terrain ? ranked.find(({ site }) => Math.abs(site.lat - view.lat) < 1e-7 &&
+    Math.abs(((site.lon - view.lon + 540) % 360) - 180) < 1e-7)?.site : null
+  const northLatitude = southOnly ? artemisSouthLatitude : 90
+  const key = `${view.lat}/${view.lon}/${view.zoom}/${view.x}/${view.y}/${northLatitude}/${terrain}/${anchor?.id ?? ''}`
+  if (detailJob?.mission === missionFrames && detailJob.key === key) return
+  const hadDetail = Boolean(detailJob?.grid)
+  clearTimeout(detailTimer)
+  detailJob?.worker?.terminate()
+  const job = { key, mission: missionFrames }
+  detailJob = job
+  status.hidden = false
+  status.textContent = terrain ? 'Calculating the close-up using LOLA terrain…' : 'Calculating the finer close-up…'
+  if (hadDetail) requestAnimationFrame(showCoverage)
+  detailTimer = setTimeout(() => {
+    if (detailJob !== job) return
+    const onFailure = () => {
+      job.worker?.terminate()
+      if (detailJob === job) status.textContent = 'Close-up unavailable. Showing the overview.'
+    }
+    try {
+      const worker = new Worker(new URL('./mission-heat-worker.mjs', import.meta.url), { type: 'module' })
+      job.worker = worker
+      worker.onmessage = ({ data }) => {
+        if (data.error) { onFailure(); return }
+        worker.terminate()
+        if (detailJob !== job) return
+        job.worker = undefined
+        job.grid = data
+        showCoverage()
+      }
+      worker.onerror = onFailure
+      worker.postMessage({ frames: job.mission.frames, stepHours: catalog.step / 3600, detail: { view, northLatitude, terrain, anchor } })
+    } catch { onFailure() }
+  }, 220)
+}
+
+function paintOverlap(values, width, height, maxHours, contrast, encodeHours = false) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  const image = ctx.createImageData(width, height)
+  values.forEach((value, index) => {
+    if (value < 0) return
+    if (encodeHours) {
+      const scaled = maxHours > 0 ? Math.round(Math.min(1, value / maxHours) * 65535) : 0
+      image.data[index * 4] = scaled >> 8
+      image.data[index * 4 + 1] = scaled & 255
+      image.data[index * 4 + 3] = 255
+    } else image.data.set([...overlapRgb(value, maxHours, contrast), 255], index * 4)
+  })
+  ctx.putImageData(image, 0, 0)
+  return canvas
 }
 
 function showMissionHeat() {
@@ -670,9 +741,8 @@ function showMissionHeat() {
   const { start, duration, horizon } = settings
   const models = get('mission-heat-models')
   const scope = southOnly ? 'South Pole · 84°S to 90°S' : 'Whole Moon'
-  const modelNote = horizon === 'terrain'
-    ? 'Shading assumes a smooth lunar horizon. Pins use the local LOLA skyline, where ridges and crater walls can block the Sun or Earth.'
-    : 'Both the shading and the pins use a smooth horizon.'
+  const modelNote = horizon === 'terrain' ? 'The overview uses a smooth horizon. Zoom in on the 3D Moon to calculate a close-up with LOLA terrain.' :
+    'Map and sites use a smooth horizon. Zoom in on the 3D Moon for a finer grid.'
   const notice = `${scope}. ${modelNote}`
   if (models.textContent !== notice) models.textContent = notice
   const heat = heatMaps.get(southOnly) ?? requestHeatMap(southOnly)
@@ -686,11 +756,12 @@ function showMissionHeat() {
   const { grid: heatGrid, layers: heatLayers } = heat
 
   const period = Number(get('mission-heat-period').value)
-  if (heatDisplay?.active === active && heatDisplay.period === period && heatDisplay.heat === heat) {
+  const detail = detailJob?.grid
+  if (heatDisplay?.active === active && heatDisplay.period === period && heatDisplay.heat === heat && heatDisplay.detail === detail) {
     results.hidden = false
     return heatLayers.get(period)
   }
-  heatDisplay = { active, period, heat }
+  heatDisplay = { active, period, heat, detail }
   const hours = period ? duration / missionQuarters : duration
   const from = period ? (period - 1) * hours : 0
   const to = from + hours
@@ -703,37 +774,40 @@ function showMissionHeat() {
     const listed = ranked.filter(row => row.site.lat <= heatGrid.northLatitude)
       .map(({ site, metrics }) => ({ site, hours: windowHours(metrics.both, from, to) }))
     layer.best = listed.reduce((best, entry) => !best || entry.hours > best.hours ? entry : best, null)
-    layer.maxHours = Math.max(gridPeriod.maxHours, layer.best?.hours ?? 0)
     const model = horizon === 'terrain' ? 'local LOLA skyline' : 'smooth horizon'
     layer.overlaps = new Map(listed.map(({ site, hours }) => {
       const number = formatHours(hours)
-      return [site.id, { number, hours, label: `${number} of simultaneous sunlight and Earth visibility using the ${model}`,
-        color: hours > 0 ? 'rgb(' + overlapRgb(hours, layer.maxHours).join(',') + ')' : '#c6c3cc', nearZero: hours === 0 }]
+      return [site.id, { number, hours, overlap: true, label: `${number} of simultaneous sunlight and Earth visibility using the ${model}` }]
     }))
   }
-  const { maxHours, overlaps, best } = layer
-  if (!layer.colors || layer.colorMax !== maxHours) {
-    const colors = document.createElement('canvas')
-    colors.width = heatGrid.width
-    colors.height = heatGrid.height
-    const ctx = colors.getContext('2d')
-    const image = ctx.createImageData(heatGrid.width, heatGrid.height)
-    gridPeriod.values.forEach((value, index) => {
-      if (value > 0) image.data.set([...overlapRgb(value, maxHours), 255], index * 4)
-    })
-    ctx.putImageData(image, 0, 0)
-    layer.colors = colors
+  const { overlaps, best } = layer
+  const local = detail?.periods[period]
+  const maxHours = Math.max(gridPeriod.maxHours, local?.maxHours ?? 0, best?.hours ?? 0)
+  if (!layer.colors || layer.colorMax !== maxHours || layer.detail !== detail) {
+    const values = local?.values.filter(value => value > 0).sort()
+    const low = values?.[Math.floor(values.length * .1)] / maxHours
+    const high = values?.[Math.floor(values.length * .9)] / maxHours
+    layer.contrast = high > low && high - low < .7 ? [low, high] : undefined
+    layer.colors = paintOverlap(gridPeriod.values, heatGrid.width, heatGrid.height, maxHours, layer.contrast)
+    layer.globeRaster = paintOverlap(gridPeriod.values, heatGrid.width, heatGrid.height, maxHours, layer.contrast, true)
+    layer.patch = local ? { ...detail, image: paintOverlap(local.values, detail.size, detail.size, maxHours, layer.contrast, true) } : null
     layer.colorMax = maxHours
+    layer.detail = detail
+  }
+  if (detail) {
+    const status = get('mission-heat-detail-status')
+    const typicalKm = Math.max(detail.view.x, detail.view.y) * 2 * radius / (detail.size - 1) / 1000
+    status.textContent = `${detail.terrain ? 'LOLA terrain close-up' : 'Smooth-horizon close-up'} · ~${typicalKm.toFixed(0)} km between samples near center.` +
+      (layer.contrast ? ` Contrast boosted from ${formatHours(layer.contrast[0] * maxHours)} to ${formatHours(layer.contrast[1] * maxHours)}.` : '')
   }
   const scale = get('mission-heat-scale')
   scale.classList.toggle('no-overlap', maxHours === 0)
+  scale.style.setProperty('--heat-ramp', overlapRamp(maxHours, layer.contrast))
   const maxLabel = `${formatHours(maxHours)} out of ${formatHours(duration)}`
   scale.setAttribute('aria-label', `Overlap from zero to a maximum of ${maxLabel} in the full mission`)
   get('mission-heat-mid').textContent = maxHours > 0 ? formatHours(maxHours / 2) : ''
   get('mission-heat-max').textContent = maxLabel
-  get('mission-heat-scale-note').textContent = southOnly
-    ? 'Green marks the highest overlap in the South Pole region. Uncolored areas inside the boundary have zero modeled overlap.'
-    : 'Green marks the highest overlap across the map and pins. Uncolored areas have zero modeled overlap.'
+  get('mission-heat-scale-note').textContent = 'Deep blue shows zero overlap. Pale gold marks the highest estimate for this period. Pins show site estimates.'
   status.textContent = `${period ? 'Quarter ' + period : 'Entire mission'} · ${dateLabel(start + from * hour)} → ${dateLabel(start + to * hour)} · ${formatHours(hours)}`
   get('mission-heat-best').textContent = best?.hours > 0
     ? `${southOnly ? 'Best evaluated South Pole site' : 'Best evaluated site'} · ${siteName(best.site)} · ${formatHours(best.hours)} of ${formatHours(hours)}`
@@ -746,15 +820,9 @@ function showMissionHeat() {
   }
   const siteOverlap = overlaps.get(site.id).hours
   get('mission-heat-site').textContent = `${siteName(site)} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteOverlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizon)}`
-  const reference = get('mission-heat-reference')
-  reference.hidden = horizon !== 'terrain'
-  if (horizon === 'terrain') {
-    if (heatReference?.mission !== missionFrames || heatReference.site !== site) {
-      const smooth = evaluate(site, missionFrames.frames, duration, false, { includeTimeline: false })
-      heatReference = { mission: missionFrames, site, windows: smooth.metrics.both }
-    }
-    reference.textContent = `Same coordinates with a smooth horizon · ${formatHours(windowHours(heatReference.windows, from, to))} of ${formatHours(hours)}`
-  }
+  const detailHours = detail ? detailHoursAt(site, detail, period) : null
+  const mapHours = detailHours ?? overviewHoursAt(site, heatGrid, period)
+  get('mission-heat-reference').textContent = `Map estimate at these coordinates · ${formatHours(mapHours)} of ${formatHours(hours)} · ${detailHours !== null && detail.terrain ? 'LOLA close-up' : 'Smooth horizon'}`
   showHeatWindows(metrics.both, from, to)
   return layer
 }
@@ -813,7 +881,7 @@ function installGlobe() {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
-  }) }
+  }, { onViewChange: queueHeatDetail }) }
   catch (reason) { fallback(reason.message); return }
   canvas.addEventListener('textureerror', () => fallback('The 3D texture could not load. The polar map is available.'))
   canvas.addEventListener('webglcontextlost', () => fallback('3D rendering became unavailable. The polar map is available.'))
