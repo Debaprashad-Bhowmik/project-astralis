@@ -812,7 +812,7 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Arcs trace the selected mission window. Disk colors and terrain shading are illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Arcs trace the selected mission window. Terrain shading is illustrative.' +
     (settings.horizon === 'terrain' ? '' : ' Marker visibility uses your 0° reference setting.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
@@ -1161,6 +1161,7 @@ for (const body of ['sun', 'earth']) {
 get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
 get('sky-paths').addEventListener('change', redrawLocalSky)
 get('surface-paths').addEventListener('change', redrawLocalSky)
+get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('timeline-back').addEventListener('click', () => active && seekTime(elapsed - timelineStep(settings.duration)))
 get('timeline-forward').addEventListener('click', () => active && seekTime(elapsed + timelineStep(settings.duration)))
 get('timeline-speed').addEventListener('change', () => {

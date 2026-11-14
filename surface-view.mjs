@@ -7,6 +7,8 @@ const distance = [0, ...Array.from({ length: 184 }, (_, i) => (i + 1) * 1900), 3
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value))
 const bearing = value => (value % 360 + 360) % 360
 const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0)
+// Pixel bounds of Earth's limb in NASA's 540 × 540 Apollo 17 JPG.
+const earthPhotoCrop = [15, 15, 508, 508]
 
 function direction(az, el) {
   const a = az * radians
@@ -129,8 +131,12 @@ export function createSurfaceView(canvas, overlay, showHeading) {
   let count = 0
   let azimuth = 0
   let elevation = 1
+  let zoom = 1
   let drag
   let paths
+  const earthPhoto = new Image()
+  earthPhoto.addEventListener('load', draw)
+  earthPhoto.src = new URL('./assets/earth-blue-marble.jpg', import.meta.url).href
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
@@ -143,7 +149,7 @@ export function createSurfaceView(canvas, overlay, showHeading) {
       canvas.height = overlay.height = pixelHeight
     }
     const camera = surfaceCamera(azimuth, elevation)
-    const scale = Math.min(width, height) * .83
+    const scale = Math.min(width, height) * .83 * zoom
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     gl.uniform3fv(uniforms.cameraRight, camera.right)
@@ -200,20 +206,31 @@ export function createSurfaceView(canvas, overlay, showHeading) {
       const sin = Math.sin(angle)
       const cos = Math.cos(angle)
       const color = colors[body]
-      ctx.beginPath()
+      const limb = []
       for (let i = 0; i < 32; i++) {
         const roll = i * Math.PI / 16
         const position = project(axis.map((v, j) => cos * v + sin * (Math.cos(roll) * horizontal[j] + Math.sin(roll) * vertical[j])))
-        if (!position) continue
-        if (i) ctx.lineTo(...position)
-        else ctx.moveTo(...position)
+        if (position) limb.push(position)
       }
+      if (!limb.length) continue
+      ctx.beginPath()
+      ctx.moveTo(...limb[0])
+      for (const point of limb.slice(1)) ctx.lineTo(...point)
       ctx.closePath()
       ctx.fillStyle = color
       ctx.strokeStyle = color
       ctx.lineWidth = 1
-      if (visible) ctx.fill()
-      else ctx.stroke()
+      if (!visible) ctx.stroke()
+      else if (body === 'earth' && earthPhoto.naturalWidth) {
+        const xs = limb.map(([x]) => x)
+        const ys = limb.map(([, y]) => y)
+        const left = Math.min(...xs)
+        const top = Math.min(...ys)
+        ctx.save()
+        ctx.clip()
+        ctx.drawImage(earthPhoto, ...earthPhotoCrop, left, top, Math.max(...xs) - left, Math.max(...ys) - top)
+        ctx.restore()
+      } else ctx.fill()
       const text = visible ? name : `${name} (${body === 'sun' && sample.eclipse ? 'eclipsed' : 'blocked'})`
       const labelX = clamp(cx + 11, 5, width - ctx.measureText(text).width - 8)
       const labelY = cy < 21 ? cy + 21 : cy - 13
@@ -248,7 +265,7 @@ export function createSurfaceView(canvas, overlay, showHeading) {
   canvas.addEventListener('lostpointercapture', () => { drag = null })
   new ResizeObserver(draw).observe(canvas)
 
-  return { draw, turn, aim, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, initialAzimuth) {
+  return { draw, turn, aim, setZoom(value) { zoom = value; draw() }, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, initialAzimuth) {
     const indices = indexTerrain(mesh.length / 3)
     gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)

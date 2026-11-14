@@ -378,7 +378,9 @@ canvas{display:block;width:100%;height:190px}
 #surface-guide-sun{color:var(--sun)}
 #surface-guide-earth{color:var(--earth)}
 #surface-caption{margin-top:5px;font-size:.82rem}
-#surface-angles{font-size:.82rem;font-variant-numeric:tabular-nums}
+#surface-angles,.surface-credit{font-size:.82rem;font-variant-numeric:tabular-nums}
+.surface-zoom{display:flex;align-items:center;gap:5px;color:var(--muted)}
+.surface-zoom select{width:auto;min-height:29px;padding:3px 5px;font-size:.8rem}
 #surface-status:empty{display:none}
 #surface-retry{margin-top:7px}
 .assessment{scroll-margin-top:12px}
