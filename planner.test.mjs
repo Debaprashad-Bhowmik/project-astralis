@@ -8,9 +8,30 @@ import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { surfaceCamera, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
+import { missionCrossings } from './planner.mjs'
+import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('mission events are ordered, scoped to the mission and jump to an available sample', () => {
+  const events = missionCrossings({
+    sun: [{ at: 1.12, rising: true }, { at: 8.6, rising: false }],
+    earth: [{ at: .1, rising: false }, { at: 4, rising: true }],
+  }, 4)
+  assert.deepEqual(events, [
+    { body: 'earth', label: 'Earthset', at: .1, sample: 0 },
+    { body: 'sun', label: 'Sunrise', at: 1.12, sample: 1 },
+    { body: 'earth', label: 'Earthrise', at: 4, sample: 4 },
+  ])
+})
+
+test('sky paths join across north without drawing across the entire map', () => {
+  assert.deepEqual(skyPathSegments([{ sunAz: 350, sunEl: 2 }, { sunAz: 10, sunEl: 6 }], 'sun'),
+    [[[350, 2], [360, 4]], [[0, 4], [10, 6]]])
+  assert.deepEqual(skyPathSegments([{ earthAz: 5, earthEl: 0 }, { earthAz: 355, earthEl: 4 }], 'earth'),
+    [[[5, 0], [0, 2]], [[360, 2], [355, 4]]])
 })
 
 test('global coverage uses finite distance, both hemispheres, and local total eclipses', () => {

@@ -5,6 +5,30 @@ const elevationStep = 15
 const ink = '#e6e4ec'
 const grid = '#34343b'
 const skyline = '#aaa4ba'
+const sunColor = '#ffc975'
+const earthColor = '#acc4ff'
+
+export function skyPathSegments(samples, body) {
+  if (!samples.length) return []
+  const bearing = `${body}Az`
+  const elevation = `${body}El`
+  const segments = [[[samples[0][bearing], samples[0][elevation]]]]
+  for (let i = 1; i < samples.length; i++) {
+    const before = samples[i - 1]
+    const current = samples[i]
+    const delta = current[bearing] - before[bearing]
+    if (Math.abs(delta) > 180) {
+      const end = delta < 0 ? 360 : 0
+      const start = 360 - end
+      const weight = (end - before[bearing]) / (delta + end - start)
+      const at = before[elevation] + (current[elevation] - before[elevation]) * weight
+      segments.at(-1).push([end, at])
+      segments.push([[start, at]])
+    }
+    segments.at(-1).push([current[bearing], current[elevation]])
+  }
+  return segments
+}
 
 export function skyRange(timeline, profile) {
   let minimum = -elevationStep
@@ -20,7 +44,7 @@ export function skyRange(timeline, profile) {
   return [Math.floor(minimum / elevationStep) * elevationStep, Math.ceil(maximum / elevationStep) * elevationStep]
 }
 
-export function drawLocalSky(canvas, sample, profile, [minimum, maximum]) {
+export function drawLocalSky(canvas, sample, profile, [minimum, maximum], tracks) {
   const { clientWidth: width, clientHeight: height } = canvas
   if (width < 100 || height < 100) return
   const ctx = canvas.getContext('2d')
@@ -86,9 +110,24 @@ export function drawLocalSky(canvas, sample, profile, [minimum, maximum]) {
   ctx.stroke()
   ctx.lineWidth = 1
 
+  if (tracks) {
+    ctx.lineWidth = 1.5
+    ctx.globalAlpha = .7
+    ctx.setLineDash([4, 4])
+    for (const [color, segments] of [[sunColor, tracks.sun], [earthColor, tracks.earth]]) {
+      ctx.strokeStyle = color
+      for (const segment of segments) {
+        path(segment.map(([az, el]) => [x(az), y(el)]))
+        ctx.stroke()
+      }
+    }
+    ctx.globalAlpha = 1
+    ctx.setLineDash([])
+  }
+
   const bodies = [
-    { name: 'Sun', az: sample.sunAz, el: sample.sunEl, horizon: sample.sunHorizon, color: '#ffc975', eclipse: sample.eclipse },
-    { name: 'Earth', az: sample.earthAz, el: sample.earthEl, horizon: sample.earthHorizon, color: '#acc4ff' },
+    { name: 'Sun', az: sample.sunAz, el: sample.sunEl, horizon: sample.sunHorizon, color: sunColor, eclipse: sample.eclipse },
+    { name: 'Earth', az: sample.earthAz, el: sample.earthEl, horizon: sample.earthHorizon, color: earthColor },
   ]
   const placed = []
   ctx.textAlign = 'left'

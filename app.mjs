@@ -1,8 +1,8 @@
-import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, nextSkyCrossing, radius, rank, skyCrossings, solarExposure } from './planner.mjs'
+import { binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
-import { drawLocalSky, skyRange } from './sky-view.mjs'
+import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh } from './surface-view.mjs'
 import { createCoverageMap, subPoint } from './coverage-map.mjs'
 
@@ -17,6 +17,7 @@ const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hour
 const formatPercent = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 1 })
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 const skyLookahead = 30 * 24
+const timelineStep = duration => duration > 24 ? 24 : 1
 const signedDegrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
 const presets = { sun: [100, 0, 0], earth: [0, 100, 0], overlap: [0, 0, 100], balanced: [40, 40, 20] }
 const weightInputs = inputs('sun-weight', 'earth-weight', 'overlap-weight')
@@ -598,7 +599,9 @@ function showTime() {
   get('selected-time').value = time
   get('time-slider').value = String(elapsed)
   get('time-slider').setAttribute('aria-valuetext', time)
-  get('tracks').replaceChildren(...timeline(active, duration, elapsed))
+  get('timeline-back').disabled = elapsed === 0
+  get('timeline-forward').disabled = elapsed >= duration
+  for (const marker of get('tracks').querySelectorAll('.now')) marker.style.left = Math.min(99.8, elapsed / duration * 100) + '%'
   showLocalSky(window, start + elapsed * hour)
   showCoverage()
   if (updateSpace) {
@@ -629,7 +632,9 @@ function prepareLocalSky() {
   const extension = Math.floor((reach - duration) * 4 + 1e-8) / 4
   const ahead = extension > 0 ? evaluate(active.site, framesFor(start + duration * hour, extension), extension, Boolean(profile)).timeline.slice(1) : []
   localSky = { row: active, profile, range: skyRange(active.timeline, profile),
-    endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25) }
+    endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25), paths: null }
+  get('tracks').replaceChildren(...timeline(active, duration, elapsed))
+  showMissionEvents()
   get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
   const gaps = element('dl')
   gaps.append(element('dt', '', 'Longest gaps in this mission'),
@@ -638,6 +643,29 @@ function prepareLocalSky() {
   get('snapshot').replaceChildren(gaps)
   get('local-sky').hidden = false
   if (!get('surface-view').hidden) void showSurface()
+}
+
+function showMissionEvents() {
+  const { start, duration } = settings
+  const events = missionCrossings(localSky.crossings, duration)
+  const step = timelineStep(duration) === 24 ? '1 day' : '1 h'
+  get('timeline-back').textContent = '−' + step
+  get('timeline-back').setAttribute('aria-label', 'Go back ' + step)
+  get('timeline-forward').textContent = '+' + step
+  get('timeline-forward').setAttribute('aria-label', 'Go forward ' + step)
+  get('event-count').textContent = events.length ? 'Select an estimated crossing to jump to the nearest 15-minute sample.' : 'No horizon crossings in this mission window.'
+  get('event-list').replaceChildren(...events.map(event => {
+    const item = element('li')
+    const button = element('button', `subtle crossing-${event.body}`)
+    button.type = 'button'
+    const estimate = start + event.at * hour
+    const time = element('time', '', '≈ ' + dateLabel(Math.round(estimate / 60_000) * 60_000))
+    time.dateTime = new Date(estimate).toISOString()
+    button.append(element('strong', '', event.label), time)
+    button.addEventListener('click', () => seekTime(event.sample))
+    item.append(button)
+    return item
+  }))
 }
 
 function skyClearance(elevation, skyline) {
@@ -688,8 +716,11 @@ function showLocalSky(sample, epoch) {
 function redrawLocalSky() {
   if (!localSky) return
   const sample = active.timeline[Math.round(elapsed * 4)]
-  if (get('surface-view').hidden) drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range)
-  else if (surfaceSite === active.site) surfaceView?.update(sample)
+  if (get('surface-view').hidden) {
+    const showPaths = get('sky-paths').checked
+    if (showPaths && !localSky.paths) localSky.paths = { sun: skyPathSegments(active.timeline, 'sun'), earth: skyPathSegments(active.timeline, 'earth') }
+    drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range, showPaths ? localSky.paths : null)
+  } else if (surfaceSite === active.site) surfaceView?.update(sample)
 }
 
 async function showSurface() {
@@ -733,6 +764,7 @@ function useSkyView(surface) {
   get('surface-view').hidden = !surface
   get('show-skyline').setAttribute('aria-pressed', String(!surface))
   get('show-surface').setAttribute('aria-pressed', String(surface))
+  get('sky-paths').parentElement.hidden = surface
   if (surface) void showSurface()
   else {
     surfaceRequest++
@@ -858,12 +890,20 @@ function stop() {
   get('coverage-play').setAttribute('aria-label', 'Play map timeline')
 }
 
+function seekTime(hours) {
+  if (!active) return
+  stop()
+  elapsed = Math.max(0, Math.min(settings.duration, hours))
+  showTime()
+}
+
 function play() {
   if (!active) return
   if (playing !== null) { stop(); return }
   if (elapsed >= settings.duration) { elapsed = 0; showTime() }
   const initial = elapsed
   const began = performance.now()
+  const speed = Number(get('timeline-speed').value)
   get('play').textContent = 'Ⅱ'
   get('play').setAttribute('aria-label', 'Pause timeline')
   get('space-play').textContent = 'Ⅱ'
@@ -871,7 +911,7 @@ function play() {
   get('coverage-play').textContent = 'Ⅱ'
   get('coverage-play').setAttribute('aria-label', 'Pause map timeline')
   function update(now) {
-    const next = Math.min(settings.duration, Math.round((initial + (now - began) * settings.duration / 20_000) * 4) / 4)
+    const next = Math.min(settings.duration, Math.round((initial + (now - began) * settings.duration * speed / 20_000) * 4) / 4)
     if (next !== elapsed) {
       elapsed = next
       showTime()
@@ -1014,10 +1054,16 @@ for (const body of ['sun', 'earth']) get(`surface-${body}`).addEventListener('cl
   surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
 })
 get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
-for (const slider of inputs('time-slider', 'space-time', 'coverage-time')) slider.addEventListener('input', event => {
+get('sky-paths').addEventListener('change', redrawLocalSky)
+get('timeline-back').addEventListener('click', () => active && seekTime(elapsed - timelineStep(settings.duration)))
+get('timeline-forward').addEventListener('click', () => active && seekTime(elapsed + timelineStep(settings.duration)))
+get('timeline-speed').addEventListener('change', () => {
+  if (playing === null) return
   stop()
-  elapsed = Number(event.target.value)
-  showTime()
+  play()
+})
+for (const slider of inputs('time-slider', 'space-time', 'coverage-time')) slider.addEventListener('input', event => {
+  seekTime(Number(event.target.value))
 })
 get('show-map').addEventListener('click', () => useMap('polar'))
 get('show-globe').addEventListener('click', () => useMap('globe'))
@@ -1031,10 +1077,8 @@ get('coverage-layer').addEventListener('change', () => {
 })
 get('elevation-chart').addEventListener('pointerdown', event => {
   if (!active) return
-  stop()
   const fraction = Math.max(0, Math.min(1, (event.offsetX - 45) / (event.currentTarget.clientWidth - 58)))
-  elapsed = Math.round(fraction * settings.duration * 4) / 4
-  showTime()
+  seekTime(Math.round(fraction * settings.duration * 4) / 4)
 })
 for (const button of inputs('play', 'space-play', 'coverage-play')) button.addEventListener('click', play)
 get('export').addEventListener('click', exportCsv)

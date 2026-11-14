@@ -44,7 +44,7 @@
               <select id="duration">
                 <option value="24" selected>First 24 hours</option><option value="72">First 3 days</option>
                 <option value="168">First 7 days</option><option value="336">First 14 days</option>
-                <option value="720">First 30 days</option>
+                <option value="708">One lunar day (~29.5 Earth days)</option><option value="720">First 30 days</option>
               </select>
             </label>
             <fieldset class="priorities">
@@ -281,6 +281,7 @@
           <div class="map-view sky-mode" role="group" aria-label="Local sky view">
             <button type="button" class="subtle" id="show-skyline" aria-pressed="true">Skyline plot</button>
             <button type="button" class="subtle" id="show-surface" aria-pressed="false">3D surface view</button>
+            <label class="sky-path-toggle"><input type="checkbox" id="sky-paths"> Show paths over the mission</label>
           </div>
           <div class="sky-grid">
             <figure class="sky-panorama" id="skyline-view">
@@ -323,7 +324,19 @@
               </div>
             </div>
           </div>
-          <div class="scrub sky-scrub"><button type="button" class="subtle" id="play" aria-label="Play timeline">▶</button><label class="sr-only" for="time-slider">Elapsed mission time</label><input id="time-slider" type="range" min="0" max="72" step=".25" value="0"><output id="selected-time" for="time-slider"></output></div>
+          <div class="motion-controls" role="group" aria-label="Timeline playback">
+            <div class="scrub sky-scrub"><button type="button" class="subtle" id="play" aria-label="Play timeline">▶</button><label class="sr-only" for="time-slider">Elapsed mission time</label><input id="time-slider" type="range" min="0" max="24" step=".25" value="0"><output id="selected-time" for="time-slider"></output></div>
+            <div class="timeline-tools">
+              <button type="button" class="subtle" id="timeline-back">−1 h</button>
+              <button type="button" class="subtle" id="timeline-forward">+1 h</button>
+              <label for="timeline-speed">Playback speed <select id="timeline-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+            </div>
+          </div>
+          <details class="timeline-events" id="timeline-events">
+            <summary>Jump to a rise or set</summary>
+            <p class="muted" id="event-count"></p>
+            <ul id="event-list" aria-label="Horizon crossings during the mission"></ul>
+          </details>
           <p class="muted sky-footnote">Rise and set estimates use the center of each body and look up to 30 days ahead.</p>
         </section>
         <div class="ops-grid">

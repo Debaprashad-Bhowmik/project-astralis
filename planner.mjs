@@ -50,6 +50,17 @@ export function nextSkyCrossing(events, elapsedHours) {
   return events.find(event => event.at > elapsedHours)
 }
 
+export function missionCrossings(crossings, duration, step = .25) {
+  const events = []
+  for (const [body, label] of [['sun', 'Sun'], ['earth', 'Earth']]) {
+    for (const { at, rising } of crossings[body]) {
+      if (at > duration) break
+      events.push({ body, label: label + (rising ? 'rise' : 'set'), at, sample: Math.min(duration, Math.round(at / step) * step) })
+    }
+  }
+  return events.sort((a, b) => a.at - b.at)
+}
+
 export function visibility(values, step) {
   const windows = []
   let start = values[0] > 0 ? 0 : null
