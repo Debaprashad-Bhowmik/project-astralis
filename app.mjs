@@ -3,7 +3,7 @@ import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, loadSurfaceMesh } from './surface-view.mjs'
+import { createSurfaceView, loadSurfaceMesh, surfacePaths } from './surface-view.mjs'
 import { createCoverageMap, subPoint } from './coverage-map.mjs'
 
 const get = id => document.getElementById(id)
@@ -22,6 +22,20 @@ const signedDegrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
 const presets = { sun: [100, 0, 0], earth: [0, 100, 0], overlap: [0, 0, 100], balanced: [40, 40, 20] }
 const weightInputs = inputs('sun-weight', 'earth-weight', 'overlap-weight')
 const metricNames = { sun: 'Sunlight', earth: 'Earth in view', overlap: 'Both together' }
+const lessons = {
+  delay: {
+    sites: ['athena', 'athena'], dates: ['2026-11-14', '2026-11-17'],
+    answer: (a, b) => `At Mons Mouton, the time with sunlight and a view of Earth together grows from ${formatHours(a.metrics.overlap)} to ${formatHours(b.metrics.overlap)}. A schedule change can make the same spot much more useful.`,
+  },
+  far: {
+    sites: ['apollo-11', 'change-4'], dates: ['2026-12-01', '2026-12-01'],
+    answer: (a, b) => `Apollo 11’s site has ${formatHours(a.metrics.earth)} with Earth in view. Chang’e 4’s far-side site has ${formatHours(b.metrics.earth)}. A relay satellite can carry messages when Earth is out of direct view.`,
+  },
+  power: {
+    sites: ['peak', 'apollo-12'], dates: ['2026-12-01', '2026-12-01'],
+    answer: (a, b) => `Both sites get ${formatHours(a.metrics.sun)} of sunlight, but a flat panel receives about ${formatHours(a.power.beamHours)} of full-strength sunlight near Shackleton and ${formatHours(b.power.beamHours)} at Apollo 12. Low sunlight hits the panel at a shallow angle.`,
+  },
+}
 const siteName = site => site.id === 'athena' ? 'Mons Mouton' : site.id === 'odysseus' ? 'Malapert A' : site.id === 'mouton' ? 'Mons Mouton Plateau' : site.name
 const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.location || site.kind
 const coordinate = (value, plus, minus) => Math.abs(value).toFixed(2) + '°' + (value < 0 ? minus : plus)
@@ -36,6 +50,68 @@ const element = (tag, className, value) => {
   if (className) node.className = className
   if (value !== undefined) node.textContent = value
   return node
+}
+
+function syncExperience() {
+  const exploring = location.hash === '#explore'
+  const wasExploring = get('workspace').dataset.mode === 'explore'
+  get('workspace').dataset.mode = exploring ? 'explore' : 'planner'
+  get('explore').hidden = !exploring
+  for (const [mode, current] of [['explore', exploring], ['planner', !exploring]]) {
+    if (current) get(`mode-${mode}`).setAttribute('aria-current', 'page')
+    else get(`mode-${mode}`).removeAttribute('aria-current')
+  }
+  if (exploring) {
+    stop()
+    renderLesson()
+    requestAnimationFrame(() => get('explore').scrollIntoView({ behavior: 'instant' }))
+  } else if (active) requestAnimationFrame(() => {
+    showTime()
+    if (wasExploring) get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' })
+  })
+}
+
+function renderLesson() {
+  if (!catalog || !ephemeris) return
+  const key = get('explore-case').value
+  const lesson = lessons[key]
+  const scenarios = lesson.sites.map((id, index) => {
+    const site = catalog.catalog.find(entry => entry.id === id)
+    const start = Date.parse(lesson.dates[index] + 'T00:00:00Z')
+    const result = evaluate(site, framesFor(start, 24), 24, true)
+    return { ...result, start, power: solarExposure(result.timeline, result.sun, 24) }
+  })
+  get('explore-conclusion').textContent = lesson.answer(...scenarios)
+  get('explore-results').replaceChildren(...scenarios.map(result => {
+    const card = element('article', 'explore-scenario')
+    const time = element('time', '', dateLabel(result.start))
+    time.dateTime = new Date(result.start).toISOString()
+    card.append(element('h3', '', siteName(result.site)), time, axis(24), ...timeline(result, 24))
+    if (key === 'power') card.append(element('p', 'muted', `${formatHours(result.power.beamHours)} equivalent full-sun hours for a flat panel`))
+    return card
+  }))
+}
+
+function openLessonInPlanner() {
+  if (!settings) return
+  const lesson = lessons[get('explore-case').value]
+  get('landing-date').value = lesson.dates[0]
+  get('landing-time').value = '00:00'
+  get('duration').value = '24'
+  get('model').value = 'terrain'
+  selected = lesson.sites[0]
+  inspectedSite = true
+  elapsed = 0
+  recalculate()
+  get('compare-a').value = lesson.sites[0]
+  get('compare-b').value = lesson.sites[1]
+  get('compare-time').value = `${lesson.dates[1]}T00:00`
+  comparisonEdited = true
+  compare()
+  location.hash = 'compare'
+  syncExperience()
+  get('compare-heading').focus({ preventScroll: true })
+  get('compare').scrollIntoView({ behavior: 'instant' })
 }
 
 let catalog
@@ -720,7 +796,15 @@ function redrawLocalSky() {
     const showPaths = get('sky-paths').checked
     if (showPaths && !localSky.paths) localSky.paths = { sun: skyPathSegments(active.timeline, 'sun'), earth: skyPathSegments(active.timeline, 'earth') }
     drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range, showPaths ? localSky.paths : null)
-  } else if (surfaceSite === active.site) surfaceView?.update(sample)
+  } else if (surfaceSite === active.site) updateSurface(sample)
+}
+
+function updateSurface(sample) {
+  const showPaths = get('surface-paths').checked
+  if (showPaths && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
+  surfaceView?.update(sample, showPaths ? localSky.surfacePaths : null)
+  const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
+  get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)}`
 }
 
 async function showSurface() {
@@ -728,21 +812,30 @@ async function showSurface() {
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Drag to look around. Terrain shading and sky markers are illustrative.' +
+  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Arcs trace the selected mission window. Disk colors and terrain shading are illustrative.' +
     (settings.horizon === 'terrain' ? '' : ' Marker visibility uses your 0° reference setting.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
     get('surface-retry').hidden = true
     get('surface-status').textContent = ''
-    surfaceView.update(sample)
+    updateSurface(sample)
     return
   }
   get('surface-retry').hidden = true
   get('surface-scene').hidden = true
   get('surface-status').textContent = 'Loading NASA terrain…'
   try {
-    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-labels'), angle => {
-      get('surface-heading').value = `${angle}° ${compass[Math.round(angle / 45) % compass.length]}`
+    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-labels'), (angle, targets) => {
+      get('surface-heading').textContent = `${angle}° ${compass[Math.round(angle / 45) % compass.length]}`
+      for (const [key, target] of Object.entries(targets)) {
+        const button = get(`surface-guide-${key}`)
+        const name = key === 'sun' ? 'Sun' : 'Earth'
+        const arrow = { left: '←', right: '→', up: '↑', down: '↓' }[target.edge]
+        button.textContent = `${arrow} ${name} off screen`
+        button.dataset.direction = target.edge
+        button.setAttribute('aria-label', `Find ${name}, off screen ${target.edge}`)
+        button.hidden = target.inView
+      }
     })
     const mesh = await loadSurfaceMesh(site)
     if (request !== surfaceRequest) return
@@ -751,7 +844,7 @@ async function showSurface() {
     get('surface-status').textContent = ''
     const current = active.timeline[Math.round(elapsed * 4)]
     surfaceView.setTerrain(mesh, current.sunAz)
-    surfaceView.update(current)
+    updateSurface(current)
   } catch (reason) {
     if (request !== surfaceRequest) return
     get('surface-status').textContent = reason.message
@@ -950,6 +1043,9 @@ async function start() {
     installGlobe()
     drawGrid()
     recalculate()
+    get('explore-case').disabled = false
+    get('explore-open').disabled = false
+    if (location.hash === '#explore') renderLesson()
     if (location.hash === '#coverage-view') {
       showCoverageLegend()
       useMap('coverage')
@@ -961,6 +1057,7 @@ async function start() {
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
     get('answer-title').textContent = 'Lunar data could not be loaded'
     get('rank-summary').textContent = 'Reload to try again.'
+    get('explore-conclusion').textContent = 'Lunar data could not load. Reload to try again.'
   }
 }
 
@@ -988,6 +1085,9 @@ async function startSpace() {
 }
 
 get('mission-form').addEventListener('submit', event => event.preventDefault())
+get('explore-case').addEventListener('change', renderLesson)
+get('explore-open').addEventListener('click', openLessonInPlanner)
+window.addEventListener('hashchange', syncExperience)
 get('mission-form').addEventListener('change', event => {
   if (weightInputs.includes(event.target)) for (const button of get('presets').children) button.setAttribute('aria-pressed', 'false')
   recalculate()
@@ -1049,12 +1149,18 @@ get('show-surface').addEventListener('click', () => useSkyView(true))
 get('surface-retry').addEventListener('click', showSurface)
 const surfaceTurns = { left: [-15, 0], right: [15, 0], up: [0, 10], down: [0, -10] }
 for (const [id, angles] of Object.entries(surfaceTurns)) get(`surface-${id}`).addEventListener('click', () => surfaceView?.turn(...angles))
-for (const body of ['sun', 'earth']) get(`surface-${body}`).addEventListener('click', () => {
-  const sample = active.timeline[Math.round(elapsed * 4)]
-  surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
-})
+for (const body of ['sun', 'earth']) {
+  function findBody(event) {
+    if (!active) return
+    const sample = active.timeline[Math.round(elapsed * 4)]
+    if (event.currentTarget.id.includes('guide')) get(`surface-${body}`).focus({ preventScroll: true })
+    surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
+  }
+  for (const button of inputs(`surface-${body}`, `surface-guide-${body}`)) button.addEventListener('click', findBody)
+}
 get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
 get('sky-paths').addEventListener('change', redrawLocalSky)
+get('surface-paths').addEventListener('change', redrawLocalSky)
 get('timeline-back').addEventListener('click', () => active && seekTime(elapsed - timelineStep(settings.duration)))
 get('timeline-forward').addEventListener('click', () => active && seekTime(elapsed + timelineStep(settings.duration)))
 get('timeline-speed').addEventListener('change', () => {
@@ -1084,4 +1190,5 @@ for (const button of inputs('play', 'space-play', 'coverage-play')) button.addEv
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))
 new ResizeObserver(redrawLocalSky).observe(get('sky-canvas'))
+syncExperience()
 start()

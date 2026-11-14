@@ -18,10 +18,19 @@ export function surfaceCamera(azimuth, elevation) {
   const forward = direction(azimuth, elevation)
   const right = direction(azimuth + 90, 0)
   const up = direction(azimuth + 180, 90 - elevation)
-  return { forward, right, up, project(az, el) {
-    const point = direction(az, el)
-    return [dot(point, right), dot(point, up), dot(point, forward)]
-  } }
+  const projectVector = point => [dot(point, right), dot(point, up), dot(point, forward)]
+  return { forward, right, up, azimuth, elevation, projectVector, project: (az, el) => projectVector(direction(az, el)) }
+}
+
+export function surfaceTarget(camera, az, el, angularRadius, width, height, scale) {
+  const [x, y, z] = camera.project(az, el)
+  const cx = width / 2 + x / z * scale
+  const cy = height / 2 - y / z * scale
+  const radius = scale * Math.tan(angularRadius) / Math.max(.1, z)
+  const inView = z > 0 && cx >= 0 && cx <= width && cy >= 0 && cy <= height
+  const turn = bearing(az - camera.azimuth + 180) - 180
+  const edge = z <= 0 || Math.abs(x / width) >= Math.abs(y / height) ? (turn < 0 ? 'left' : 'right') : (y > 0 ? 'up' : 'down')
+  return { x: cx, y: cy, radius, inView, edge }
 }
 
 export function terrainVertices(site, sample, ranges = distance) {
@@ -121,6 +130,7 @@ export function createSurfaceView(canvas, overlay, showHeading) {
   let azimuth = 0
   let elevation = 1
   let drag
+  let paths
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
@@ -148,30 +158,76 @@ export function createSurfaceView(canvas, overlay, showHeading) {
     ctx.clearRect(0, 0, width, height)
     ctx.font = '700 13px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
-    for (const [name, az, el, visible, color] of [
-      ['Sun', sample.sunAz, sample.sunEl, sample.sunEl > sample.sunHorizon && !sample.eclipse, '#ffc975'],
-      ['Earth', sample.earthAz, sample.earthEl, sample.earthEl > sample.earthHorizon, '#acc4ff'],
+    const colors = { sun: '#ffc975', earth: '#acc4ff' }
+    function project(point) {
+      const [x, y, depth] = camera.projectVector(point)
+      if (depth <= .12) return null
+      return [width / 2 + x / depth * scale, height / 2 - y / depth * scale]
+    }
+    if (paths) {
+      ctx.setLineDash([4, 5])
+      ctx.lineWidth = 1.3
+      ctx.globalAlpha = .67
+      for (const [body, points] of Object.entries(paths)) {
+        ctx.beginPath()
+        let connected = false
+        for (const direction of points) {
+          const position = project(direction)
+          if (position) {
+            if (connected) ctx.lineTo(...position)
+            else ctx.moveTo(...position)
+          }
+          connected = Boolean(position)
+        }
+        ctx.strokeStyle = colors[body]
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+      ctx.setLineDash([])
+    }
+    const status = {}
+    for (const [body, name, az, el, angle, visible] of [
+      ['sun', 'Sun', sample.sunAz, sample.sunEl, sample.sunRadius, sample.sunEl > sample.sunHorizon && !sample.eclipse],
+      ['earth', 'Earth', sample.earthAz, sample.earthEl, sample.earthRadius, sample.earthEl > sample.earthHorizon],
     ]) {
-      const [x, y, z] = camera.project(az, el)
-      if (z <= 0) continue
-      const cx = width / 2 + x / z * scale
-      const cy = height / 2 - y / z * scale
-      if (cx < 9 || cx > width - 9 || cy < 9 || cy > height - 9) continue
+      const target = surfaceTarget(camera, az, el, angle, width, height, scale)
+      status[body] = target
+      if (!target.inView) continue
+      const { x: cx, y: cy } = target
+      const axis = direction(az, el)
+      const horizontal = direction(az + 90, 0)
+      const vertical = direction(az + 180, 90 - el)
+      const sin = Math.sin(angle)
+      const cos = Math.cos(angle)
+      const color = colors[body]
       ctx.beginPath()
-      ctx.arc(cx, cy, name === 'Earth' ? 6 : 4, 0, 2 * Math.PI)
+      for (let i = 0; i < 32; i++) {
+        const roll = i * Math.PI / 16
+        const position = project(axis.map((v, j) => cos * v + sin * (Math.cos(roll) * horizontal[j] + Math.sin(roll) * vertical[j])))
+        if (!position) continue
+        if (i) ctx.lineTo(...position)
+        else ctx.moveTo(...position)
+      }
+      ctx.closePath()
       ctx.fillStyle = color
       ctx.strokeStyle = color
-      ctx.lineWidth = 1.5
+      ctx.lineWidth = 1
       if (visible) ctx.fill()
+      else ctx.stroke()
+      const text = visible ? name : `${name} (${body === 'sun' && sample.eclipse ? 'eclipsed' : 'blocked'})`
+      const labelX = clamp(cx + 11, 5, width - ctx.measureText(text).width - 8)
+      const labelY = cy < 21 ? cy + 21 : cy - 13
+      ctx.beginPath()
+      ctx.moveTo(cx + 3, cy - 2)
+      ctx.lineTo(labelX, labelY + 5)
+      ctx.lineWidth = .8
       ctx.stroke()
-      const text = visible ? name : `${name} (${name === 'Sun' && sample.eclipse ? 'eclipsed' : 'blocked'})`
-      const labelX = Math.min(cx + 11, width - ctx.measureText(text).width - 8)
       ctx.lineWidth = 3
       ctx.strokeStyle = '#09090e'
-      ctx.strokeText(text, labelX, cy - 11)
-      ctx.fillText(text, labelX, cy - 11)
+      ctx.strokeText(text, labelX, labelY)
+      ctx.fillText(text, labelX, labelY)
     }
-    showHeading(bearing(Math.round(azimuth)))
+    showHeading(bearing(Math.round(azimuth)), status)
   }
 
   function aim(az, el) {
@@ -192,13 +248,18 @@ export function createSurfaceView(canvas, overlay, showHeading) {
   canvas.addEventListener('lostpointercapture', () => { drag = null })
   new ResizeObserver(draw).observe(canvas)
 
-  return { draw, turn, aim, update(value) { sample = value; draw() }, setTerrain(mesh, initialAzimuth) {
+  return { draw, turn, aim, update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, initialAzimuth) {
     const indices = indexTerrain(mesh.length / 3)
     gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
     count = indices.length
     aim(initialAzimuth, 2)
   } }
+}
+
+export function surfacePaths(samples) {
+  return Object.fromEntries(['sun', 'earth'].map(body => [body, samples.filter((_, i) => i % 4 === 0 || i === samples.length - 1)
+    .map(item => direction(item[`${body}Az`], item[`${body}El`]))]))
 }
 
 export async function loadSurfaceMesh(site) {

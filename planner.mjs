@@ -1,5 +1,7 @@
 const radians = Math.PI / 180
 export const radius = 1737400
+const sunRadius = 695700000
+const earthRadius = 6378137
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const interpolate = (a, b, t) => a + (b - a) * t
 
@@ -170,7 +172,7 @@ export function eclipseMargin(sun, earth) {
   const sunDistance = Math.hypot(...sun)
   const earthDistance = Math.hypot(...earth)
   const separation = Math.acos(Math.min(1, Math.max(-1, dot(sun, earth) / (sunDistance * earthDistance))))
-  return (separation + Math.asin(695700000 / sunDistance) - Math.asin(6378137 / earthDistance)) / radians
+  return (separation + Math.asin(sunRadius / sunDistance) - Math.asin(earthRadius / earthDistance)) / radians
 }
 
 export function evaluate(site, frames, hours, useTerrain) {
@@ -186,7 +188,8 @@ export function evaluate(site, frames, hours, useTerrain) {
     const eclipse = eclipseMargin(sunVector, earthVector)
     sunClearance.push(Math.min(sunEl - sunHorizon, eclipse))
     earthClearance.push(earthEl - earthHorizon)
-    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0 }
+    return { sunAz, sunEl, earthAz, earthEl, sunHorizon, earthHorizon, eclipse: eclipse <= 0,
+      sunRadius: Math.asin(sunRadius / Math.hypot(...sunVector)), earthRadius: Math.asin(earthRadius / Math.hypot(...earthVector)) }
   })
   const step = hours / (frames.length - 1)
   const sun = visibility(sunClearance, step)

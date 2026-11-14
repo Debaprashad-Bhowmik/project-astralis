@@ -26,12 +26,44 @@
         <h1>Lunar Site Navigator</h1>
         <p>Find when a landing site has sunlight, a clear view of Earth, or both.</p>
         <a class="hero-action" href="#mission">Plan a landing <span aria-hidden="true">↓</span></a>
+        <a class="hero-action hero-explore" href="#explore">Explore examples <span aria-hidden="true">↓</span></a>
       </div>
       <span class="hero-credit">Illustration</span>
     </div>
 
-    <div class="workspace">
+    <div class="workspace" id="workspace">
+      <nav class="view-switch" aria-label="Experience mode">
+        <a class="subtle" href="#explore" id="mode-explore">Explore</a>
+        <a class="subtle" href="#mission" id="mode-planner" aria-current="page">Planner</a>
+      </nav>
       <div id="boot-error" class="error" role="alert" hidden></div>
+      <section class="panel explore" id="explore" aria-labelledby="explore-heading" hidden>
+        <div class="explore-heading">
+          <h2 id="explore-heading">What makes a good place to land?</h2>
+          <p class="muted">Pick a question and compare the first day after landing using the same NASA data as the planner.</p>
+        </div>
+        <div class="explore-controls">
+          <label for="explore-case">Try a scenario
+            <select id="explore-case" disabled>
+              <option value="delay">What changes if we land three days later?</option>
+              <option value="far">Can the far side see Earth?</option>
+              <option value="power">Does a full day of sunlight mean more power?</option>
+            </select>
+          </label>
+          <button type="button" id="explore-open" class="subtle" disabled>Open this scenario in Planner</button>
+        </div>
+        <p id="explore-conclusion" class="explore-conclusion" role="status">Loading lunar data…</p>
+        <div id="explore-results" class="explore-results"></div>
+        <details class="explore-glossary">
+          <summary>What do these terms mean?</summary>
+          <dl>
+            <dt>Sunlight</dt><dd>Time the Sun is above the local terrain and there is no total eclipse. A low Sun can still give a flat solar panel very little light.</dd>
+            <dt>Earth in view</dt><dd>Time the center of Earth is above the terrain. An actual radio link also needs antennas and a receiving station. A satellite can relay messages from the far side.</dd>
+            <dt>Both together</dt><dd>Time when the Sun and Earth are in view at the same moment. This can help a mission schedule solar-powered work that needs direct contact.</dd>
+            <dt>Local skyline</dt><dd>The outline of hills and crater rims from the landing site. A nearby ridge can hide the Sun even when it is above the Moon’s flat reference horizon.</dd>
+          </dl>
+        </details>
+      </section>
       <div class="primary-grid">
         <section class="panel setup" id="mission" aria-labelledby="setup-heading">
           <h2 id="setup-heading">Mission setup</h2>
@@ -295,7 +327,11 @@
                 <div class="surface-stage">
                   <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
-                  <output id="surface-heading" aria-label="Camera bearing"></output>
+                  <span id="surface-heading" aria-label="Camera bearing"></span>
+                  <div class="surface-guides" aria-label="Off-screen objects">
+                    <button type="button" class="subtle" id="surface-guide-sun" hidden></button>
+                    <button type="button" class="subtle" id="surface-guide-earth" hidden></button>
+                  </div>
                 </div>
                 <div class="globe-controls" role="group" aria-label="Look around the landing site">
                   <button type="button" class="subtle" id="surface-left" aria-label="Look left">←</button>
@@ -305,8 +341,10 @@
                   <button type="button" class="subtle" id="surface-sun">Find Sun</button>
                   <button type="button" class="subtle" id="surface-earth">Find Earth</button>
                   <button type="button" class="subtle" id="surface-north">Face north</button>
+                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show sky arcs</label>
                 </div>
                 <p class="muted" id="surface-caption"></p>
+                <p class="muted" id="surface-angles"></p>
               </div>
             </div>
             <div class="sky-readings">
@@ -352,7 +390,7 @@
       </section>
 
       <section class="panel comparison" id="compare" aria-labelledby="compare-heading">
-        <div class="panel-heading"><div><h2 id="compare-heading">Compare scenarios</h2><p class="muted">Change a site, delay the landing, or do both. The operating window and priorities stay the same.</p></div></div>
+        <div class="panel-heading"><div><h2 id="compare-heading" tabindex="-1">Compare scenarios</h2><p class="muted">Change a site, delay the landing, or do both. The operating window and priorities stay the same.</p></div></div>
         <div class="compare-controls">
           <label>Scenario A <select id="compare-a" aria-label="Scenario A site"></select></label>
           <label>Scenario B <select id="compare-b" aria-label="Scenario B site"></select></label>

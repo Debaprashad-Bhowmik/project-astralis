@@ -6,13 +6,24 @@ import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
-import { surfaceCamera, terrainVertices } from './surface-view.mjs'
+import { surfaceCamera, surfaceTarget, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, subPoint } from './coverage-map.mjs'
 import { missionCrossings } from './planner.mjs'
 import { skyPathSegments } from './sky-view.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('surface disks use the local angular radius and identify an off-screen Sun to the left', () => {
+  const camera = surfaceCamera(345, 2)
+  const sun = surfaceTarget(camera, 275.3, 2.4, .00465, 1060, 320, 265.6)
+  assert.equal(sun.inView, false)
+  assert.equal(sun.edge, 'left')
+  const centered = surfaceTarget(surfaceCamera(275.3, 2.4), 275.3, 2.4, .00465, 1060, 320, 265.6)
+  assert.equal(centered.inView, true)
+  assert.ok(Math.abs(centered.radius - 1.235) < .001)
+  assert.equal(surfaceTarget(camera, 345, 60, .015, 1060, 320, 265.6).edge, 'up')
 })
 
 test('mission events are ordered, scoped to the mission and jump to an available sample', () => {
