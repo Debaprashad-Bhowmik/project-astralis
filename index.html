@@ -249,11 +249,12 @@
           <div id="mission-heat-details" hidden>
             <p id="mission-heat-status" class="muted" role="status"></p>
             <div id="mission-heat-results" hidden>
-              <div class="mission-heat-scale" id="mission-heat-scale" role="group" aria-label="Simultaneous visibility in hours">
+              <div class="mission-heat-scale" id="mission-heat-scale" role="group" aria-label="Simultaneous visibility in hours" aria-describedby="mission-heat-scale-note">
                 <div aria-hidden="true"></div>
                 <span>0 h · No overlap</span><span id="mission-heat-mid"></span><span id="mission-heat-max"></span>
               </div>
               <p class="muted mission-heat-key">× marks sites with zero overlap.</p>
+              <p class="muted mission-heat-key" id="mission-heat-scale-note">Uncolored terrain has no overlap. The right label shows the highest overlap for this period out of the full mission duration.</p>
               <p id="mission-heat-best"></p>
               <p id="mission-heat-site"></p>
               <div id="mission-heat-track"></div>

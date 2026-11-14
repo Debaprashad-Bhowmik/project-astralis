@@ -96,7 +96,12 @@ export function createCoverageMap(canvas, onPoint) {
       canvas.height = ph
     }
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
-    ctx.drawImage(heatRaster ?? raster, 0, 0, width, height)
+    if (heatRaster) {
+      ctx.fillStyle = '#111116'
+      ctx.fillRect(0, 0, width, height)
+      if (basemap) ctx.drawImage(texture, 0, 0, width, height)
+      ctx.drawImage(heatRaster, 0, 0, width, height)
+    } else ctx.drawImage(raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
     ctx.lineWidth = 1

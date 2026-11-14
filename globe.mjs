@@ -97,7 +97,9 @@ void main() {
   vec3 surface = reflectance * shading * 1.21;
   if (layer == ${coverageLayers.mission}) {
     float heatLat = (uv.y * ${(missionGridHeight - 1).toFixed(1)} + .5) / ${missionGridHeight.toFixed(1)};
-    surface = texture2D(missionHeat, vec2(uv.x, heatLat)).rgb * (.81 + reflectance.r * .25);
+    vec4 heat = texture2D(missionHeat, vec2(uv.x, heatLat));
+    // Interpolate toward the terrain across the edge of a colored cell.
+    surface = surface * (1.0 - heat.a) + heat.rgb * (.81 + reflectance.r * .25);
   } else if (layer > 0) {
     float shade = .56 + reflectance.r * (255.0 / 360.0);
     surface = coverageColor(normal) * shade;
@@ -378,7 +380,9 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       if (overlayLayer === 'mission' && heatImage === image) return
       if (heatImage !== image) {
         gl.activeTexture(gl.TEXTURE2)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
         gl.activeTexture(gl.TEXTURE0)
         heatImage = image
       }

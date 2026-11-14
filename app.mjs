@@ -608,7 +608,7 @@ function showMissionHeat(flat) {
     layer.overlaps = new Map(listed.map(([id, overlap]) => {
       const number = formatHours(overlap)
       return [id, { number, overlap, label: `${number} of simultaneous sunlight and Earth visibility`,
-        color: 'rgb(' + overlapRgb(overlap, layer.maxHours).join(',') + ')', nearZero: overlap <= 1e-8 }]
+        color: overlap > 0 ? 'rgb(' + overlapRgb(overlap, layer.maxHours).join(',') + ')' : '#c6c3cc', nearZero: overlap === 0 }]
     }))
   }
   const { maxHours, overlaps, best } = layer
@@ -618,7 +618,9 @@ function showMissionHeat(flat) {
     colors.height = heatGrid.height
     const ctx = colors.getContext('2d')
     const image = ctx.createImageData(heatGrid.width, heatGrid.height)
-    gridPeriod.values.forEach((value, index) => image.data.set([...overlapRgb(value, maxHours), 255], index * 4))
+    gridPeriod.values.forEach((value, index) => {
+      if (value > 0) image.data.set([...overlapRgb(value, maxHours), 255], index * 4)
+    })
     ctx.putImageData(image, 0, 0)
     layer.colors = colors
     layer.colorMax = maxHours
@@ -637,9 +639,10 @@ function showMissionHeat(flat) {
   const siteOverlap = overlaps.get(site.id).overlap
   const scale = get('mission-heat-scale')
   scale.classList.toggle('no-overlap', maxHours === 0)
-  scale.setAttribute('aria-label', maxHours > 0 ? `Overlap scale from zero to ${formatHours(maxHours)}` : 'Zero overlap hours across the map and all listed sites')
+  const maxLabel = `${formatHours(maxHours)} out of ${formatHours(duration)}`
+  scale.setAttribute('aria-label', `Overlap from zero to a maximum of ${maxLabel} in the full mission`)
   get('mission-heat-mid').textContent = maxHours > 0 ? formatHours(maxHours / 2) : ''
-  get('mission-heat-max').textContent = maxHours > 0 ? formatHours(maxHours) + ' · Highest' : ''
+  get('mission-heat-max').textContent = maxLabel
   status.textContent = `${period ? 'Quarter ' + period : 'Entire mission'} · ${dateLabel(start + from * hour)} → ${dateLabel(start + to * hour)} · ${formatHours(hours)}`
   get('mission-heat-best').textContent = bestOverlap > 0
     ? `Best listed overlap · ${siteName(best.site)} · ${formatHours(bestOverlap)} of ${formatHours(hours)}`
