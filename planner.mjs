@@ -27,6 +27,29 @@ export function horizonAt(profile, azimuth) {
   return interpolate(profile[left], profile[(left + 1) % profile.length], index - left)
 }
 
+export function skyCrossings(timeline, step) {
+  function crossings(elevation, horizon) {
+    const events = []
+    const clearance = sample => sample[elevation] - sample[horizon]
+    let before = clearance(timeline[0])
+    for (let index = 1; index < timeline.length; index++) {
+      const after = clearance(timeline[index])
+      if ((before > 0) !== (after > 0)) {
+        const at = (index - 1 + before / (before - after)) * step
+        if (events.at(-1)?.at === at) events.pop()
+        else events.push({ at, rising: after > 0 })
+      }
+      before = after
+    }
+    return events
+  }
+  return { sun: crossings('sunEl', 'sunHorizon'), earth: crossings('earthEl', 'earthHorizon') }
+}
+
+export function nextSkyCrossing(events, elapsedHours) {
+  return events.find(event => event.at > elapsedHours)
+}
+
 export function visibility(values, step) {
   const windows = []
   let start = values[0] > 0 ? 0 : null

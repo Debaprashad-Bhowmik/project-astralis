@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Compare lunar landing sites, dates, sunlight, and Earth visibility with NASA data.">
   <meta name="ai-disclosure" content="Application code and UI exploration used OpenAI Codex and ImageGen. Numerical inputs are attributed NASA and USGS products.">
-  <meta name="theme-color" content="#0c1420">
+  <meta name="theme-color" content="#050507">
   <title>Astralis · Lunar Site Navigator</title>
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./app.mjs"></script>
@@ -17,7 +17,7 @@
       <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
       <span>Lunar Site Navigator</span>
     </a>
-    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#space">Orbits</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
 
   <main>
@@ -126,7 +126,7 @@
         <section class="panel public-answer" aria-labelledby="answer-title">
           <div class="answer-copy" aria-live="polite"><h2 id="answer-title">Finding the best match…</h2><p id="answer-body" class="muted"></p></div>
           <div id="answer-tracks"></div>
-          <nav class="answer-nav" aria-label="Explore results"><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#ops-heading">See sky positions</a></nav>
+          <nav class="answer-nav" aria-label="Explore results"><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#local-sky">See sky positions</a></nav>
         </section>
 
         <section class="panel map-panel" aria-labelledby="map-heading">
@@ -213,12 +213,39 @@
       </div>
 
       <section class="panel operations" aria-labelledby="ops-heading">
-        <div class="panel-heading operations-title"><div><h2 id="ops-heading">Surface operations</h2><p id="ops-subtitle" class="muted"></p></div><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
+        <div class="panel-heading operations-title"><h2 id="ops-heading">Surface operations</h2><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
+        <section class="local-sky" id="local-sky" aria-labelledby="local-sky-heading" hidden>
+          <div class="sky-heading">
+            <div><h3 id="local-sky-heading">Sky from the landing site</h3><p class="muted" id="ops-subtitle"></p></div>
+            <time id="local-sky-time"></time>
+          </div>
+          <div class="sky-grid">
+            <figure class="sky-panorama">
+              <canvas id="sky-canvas" role="img" aria-label="Sun and Earth above or below the skyline, plotted by compass direction and elevation" aria-describedby="sky-caption sky-sun-position sky-earth-position"></canvas>
+              <figcaption id="sky-caption">The shaded area is below the modeled skyline. Hollow markers show a blocked or eclipsed body.</figcaption>
+            </figure>
+            <div class="sky-readings">
+              <div class="sky-body sky-sun">
+                <h4><span aria-hidden="true"></span>Sun</h4>
+                <p id="sky-sun-position"></p>
+                <strong id="sky-sun-event"></strong>
+                <time id="sky-sun-utc" hidden></time>
+              </div>
+              <div class="sky-body sky-earth">
+                <h4><span aria-hidden="true"></span>Earth</h4>
+                <p id="sky-earth-position"></p>
+                <strong id="sky-earth-event"></strong>
+                <time id="sky-earth-utc" hidden></time>
+              </div>
+            </div>
+          </div>
+          <div class="scrub sky-scrub"><button type="button" class="subtle" id="play" aria-label="Play timeline">▶</button><label class="sr-only" for="time-slider">Elapsed mission time</label><input id="time-slider" type="range" min="0" max="72" step=".25" value="0"><output id="selected-time" for="time-slider"></output></div>
+          <p class="muted sky-footnote">Rise and set estimates use the center of each body and look up to 30 days ahead.</p>
+        </section>
         <div class="ops-grid">
           <div class="charts">
             <canvas id="elevation-chart" aria-label="Sun and Earth elevation curves and their local terrain horizons" role="img"></canvas>
             <div id="tracks"></div>
-            <div class="scrub"><button type="button" class="subtle" id="play" aria-label="Play timeline">▶</button><label class="sr-only" for="time-slider">Elapsed mission time</label><input id="time-slider" type="range" min="0" max="72" step=".25" value="0"><output id="selected-time" for="time-slider"></output></div>
           </div>
           <aside class="snapshot" aria-label="Conditions at selected time">
             <div class="chart-legend"><span><i></i>Sun elevation</span><span><i></i>Earth elevation</span><span><i></i>Horizon in each direction</span></div>

@@ -1,7 +1,8 @@
-import { binaryFrames, evaluate, frameAt, radius, rank } from './planner.mjs'
+import { binaryFrames, evaluate, frameAt, nextSkyCrossing, radius, rank, skyCrossings } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { terrainAt } from './terrain.mjs'
+import { drawLocalSky, skyRange } from './sky-view.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -11,6 +12,9 @@ const utc = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: '
 const dateLabel = epoch => utc.format(new Date(epoch)) + ' UTC'
 const controlDate = epoch => new Date(epoch).toISOString().slice(0, 16)
 const formatHours = hours => (hours < .05 && hours > 1e-8 ? '<0.1' : Number(hours.toFixed(1))) + ' h'
+const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+const skyLookahead = 30 * 24
+const signedDegrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
 const presets = { sun: [100, 0, 0], earth: [0, 100, 0], overlap: [0, 0, 100], balanced: [40, 40, 20] }
 const weightInputs = inputs('sun-weight', 'earth-weight', 'overlap-weight')
 const metricNames = { sun: 'Sunlight', earth: 'Earth in view', overlap: 'Both together' }
@@ -49,6 +53,7 @@ let features = []
 let labelsBySize = []
 let namedFeature
 let fetchingFeatures = false
+let localSky
 
 function error(id, message = '') {
   get(id).textContent = message
@@ -161,6 +166,7 @@ function resultNarrative(best, second) {
 
 function showResult() {
   active = ranked.find(row => row.site.id === selected)
+  if (localSky?.row !== active) prepareLocalSky()
   const siteControl = get('space-site')
   siteControl.replaceChildren(...ranked.map(({ site }) => {
     const option = element('option', '', siteName(site))
@@ -427,7 +433,7 @@ function drawChart() {
   }
   for (let i = 0; i <= 4; i++) {
     const value = min + (max - min) * i / 4
-    ctx.strokeStyle = '#354b60'
+    ctx.strokeStyle = '#383841'
     ctx.fillStyle = '#b3c1d1'
     ctx.textAlign = 'right'
     ctx.fillText(value.toFixed(1) + '°', left - 7, py(value))
@@ -435,7 +441,7 @@ function drawChart() {
   }
   for (let i = 0; i <= 4; i++) {
     const hours = settings.duration * i / 4
-    ctx.strokeStyle = '#354b60'
+    ctx.strokeStyle = '#383841'
     ctx.textAlign = i === 4 ? 'right' : i === 0 ? 'left' : 'center'
     ctx.fillText(settings.duration >= 72 ? '+' + Number((hours / 24).toFixed(1)) + 'd' : '+' + hours + 'h', px(hours), bottom + 13)
     ruler(px(hours), 10, px(hours), bottom)
@@ -473,32 +479,11 @@ function showTime() {
   const { start, duration, horizon } = settings
   const window = active.timeline[Math.round(elapsed * 4)]
   const time = dateLabel(start + elapsed * hour)
-  get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
   get('selected-time').value = time
   get('time-slider').value = String(elapsed)
   get('time-slider').setAttribute('aria-valuetext', time)
   get('tracks').replaceChildren(...timeline(active, duration, elapsed))
-  const degrees = value => (value > 0 ? '+' : '') + value.toFixed(2) + '°'
-  function next(windows, body) {
-    const visible = availableAt(windows, elapsed, duration)
-    const transition = visible ? windows.find(([a, b]) => a <= elapsed && b > elapsed)?.[1] : windows.find(([a]) => a > elapsed)?.[0]
-    return (!transition || transition >= duration) ? 'No change within this window' :
-      body + (visible ? ' leaves view in ' : ' comes into view in ') + formatHours(transition - elapsed)
-  }
-  const snapshot = get('snapshot')
-  const entries = [
-    ['Sun · ' + degrees(window.sunEl), window.eclipse ? 'Total eclipse' : (availableAt(active.sun, elapsed, duration) ? 'In view' : 'Below the skyline') +
-      ' · ' + window.sunAz.toFixed(1) + '° bearing · skyline ' + degrees(window.sunHorizon), next(active.sun, 'Sun')],
-    ['Earth · ' + degrees(window.earthEl), (availableAt(active.earth, elapsed, duration) ? 'In view' : 'Below the skyline') +
-      ' · ' + window.earthAz.toFixed(1) + '° bearing · skyline ' + degrees(window.earthHorizon), next(active.earth, 'Earth')],
-  ]
-  const list = element('dl')
-  for (const [title, condition, change] of entries) {
-    list.append(element('dt', '', title), element('dd', '', condition), element('dd', '', change))
-  }
-  list.append(element('dt', '', 'Longest gaps'), element('dd', '', 'Darkness ' + formatHours(active.metrics.darkness) +
-    ' · Earth out of view ' + formatHours(active.metrics.blackout)))
-  snapshot.replaceChildren(element('p', 'muted', time), list)
+  showLocalSky(window, start + elapsed * hour)
   if (updateSpace) {
     const { lunarKm, solarKm } = updateSpace((start + elapsed * hour - catalog.startMs) / (spaceStep * 1000), active.site)
     const slider = get('space-time')
@@ -518,6 +503,73 @@ function showTime() {
     get('space-solar-km').textContent = solarKm + ' km'
   }
   drawChart()
+}
+
+function prepareLocalSky() {
+  const { start, duration, horizon } = settings
+  const profile = horizon === 'terrain' ? active.site.horizon : null
+  const reach = Math.min(duration + skyLookahead, (catalog.endMs - start) / hour)
+  const extension = Math.floor((reach - duration) * 4 + 1e-8) / 4
+  const ahead = extension > 0 ? evaluate(active.site, framesFor(start + duration * hour, extension), extension, Boolean(profile)).timeline.slice(1) : []
+  localSky = { row: active, profile, range: skyRange(active.timeline, profile),
+    endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25) }
+  get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
+  const gaps = element('dl')
+  gaps.append(element('dt', '', 'Longest gaps in this mission'),
+    element('dd', '', 'Darkness ' + formatHours(active.metrics.darkness)),
+    element('dd', '', 'Earth out of view ' + formatHours(active.metrics.blackout)))
+  get('snapshot').replaceChildren(gaps)
+  get('local-sky').hidden = false
+}
+
+function skyClearance(elevation, skyline) {
+  const gap = elevation - skyline
+  if (Math.abs(gap) < .005) return 'At the skyline'
+  return Math.abs(gap).toFixed(2) + '° ' + (gap > 0 ? 'above' : 'below') + ' the skyline'
+}
+
+function skyCountdown(hours) {
+  const minutes = Math.ceil(hours * 60 - 1e-8)
+  if (minutes <= 15) return 'less than 15 min'
+  if (minutes < 120) return `about ${Math.round(minutes / 5) * 5} min`
+  if (hours < 48) return `about ${Number(hours.toFixed(1))} h`
+  return `about ${Number((hours / 24).toFixed(1))} days`
+}
+
+function showLocalSky(sample, epoch) {
+  const time = get('local-sky-time')
+  time.textContent = dateLabel(epoch)
+  time.dateTime = new Date(epoch).toISOString()
+  const bodies = [
+    ['sun', sample.sunAz, sample.sunEl, sample.sunHorizon, 'Sunrise', 'Sunset'],
+    ['earth', sample.earthAz, sample.earthEl, sample.earthHorizon, 'Earthrise', 'Earthset'],
+  ]
+  const limit = Math.min(localSky.endsAt, elapsed + skyLookahead)
+  for (const [key, bearing, elevation, skyline, rise, set] of bodies) {
+    const direction = compass[Math.round(bearing / 45) % compass.length]
+    const parts = [`${(Math.round(bearing * 10) / 10 % 360).toFixed(1)}° ${direction} · ${signedDegrees(elevation)} elevation`, skyClearance(elevation, skyline)]
+    if (key === 'sun' && sample.eclipse) parts.push('Total eclipse')
+    get(`sky-${key}-position`).textContent = parts.join(' · ')
+    const crossing = nextSkyCrossing(localSky.crossings[key], elapsed)
+    const hasCrossing = crossing && crossing.at <= limit
+    const eventTime = get(`sky-${key}-utc`)
+    eventTime.hidden = !hasCrossing
+    if (hasCrossing) {
+      const crossingTime = settings.start + crossing.at * hour
+      const rounded = Math.round(crossingTime / 300000) * 300000
+      get(`sky-${key}-event`).textContent = `${crossing.rising ? rise : set} in ${skyCountdown(crossing.at - elapsed)}`
+      eventTime.textContent = '≈ ' + dateLabel(rounded)
+      eventTime.dateTime = new Date(rounded).toISOString()
+    } else {
+      get(`sky-${key}-event`).textContent = limit - elapsed >= skyLookahead ? 'No crossing in the next 30 days' : 'No crossing before available data ends'
+    }
+  }
+  redrawLocalSky()
+}
+
+function redrawLocalSky() {
+  if (!localSky) return
+  drawLocalSky(get('sky-canvas'), active.timeline[Math.round(elapsed * 4)], localSky.profile, localSky.range)
 }
 
 function updateComparisonOptions() {
@@ -687,6 +739,7 @@ async function start() {
     installGlobe()
     drawGrid()
     recalculate()
+    if (location.hash === '#local-sky') requestAnimationFrame(() => get('local-sky').scrollIntoView({ behavior: 'instant' }))
     void startSpace()
   } catch (reason) {
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
@@ -792,4 +845,5 @@ get('elevation-chart').addEventListener('pointerdown', event => {
 for (const button of inputs('play', 'space-play')) button.addEventListener('click', play)
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))
+new ResizeObserver(redrawLocalSky).observe(get('sky-canvas'))
 start()

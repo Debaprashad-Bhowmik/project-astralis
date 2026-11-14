@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate } from './planner.mjs'
+import { horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing } from './planner.mjs'
 import { globeOrientation, projectSite } from './globe.mjs'
 import { readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
@@ -9,6 +9,27 @@ import { horizonProfile, nearestTiles } from './terrain.mjs'
 
 test('interpolates terrain across north', () => {
   assert.equal(horizonAt([2, 4, 6, 8], 315), 5)
+})
+
+test('sky countdowns use actual terrain crossings even during a total eclipse', () => {
+  const timeline = [
+    { sunEl: 6, sunHorizon: 4, earthEl: -2, earthHorizon: -1, eclipse: true },
+    { sunEl: 4, sunHorizon: 5, earthEl: 3, earthHorizon: -1, eclipse: false },
+    { sunEl: 2, sunHorizon: 5, earthEl: 2, earthHorizon: -1, eclipse: false },
+  ]
+  const events = skyCrossings(timeline, .25)
+  assert.deepEqual(nextSkyCrossing(events.sun, 0), { at: (2 / 3) * .25, rising: false })
+  assert.deepEqual(nextSkyCrossing(events.earth, 0), { at: .05, rising: true })
+  assert.equal(nextSkyCrossing(events.sun, .25), undefined)
+})
+
+test('sky countdowns keep the last covered sample and skip an instantaneous skyline touch', () => {
+  const events = skyCrossings([3, 0, 2, 0, -2].map(sunEl => ({ sunEl, sunHorizon: 0, earthEl: 1, earthHorizon: 0 })), .25)
+  assert.deepEqual(events.sun, [{ at: .75, rising: false }])
+  assert.equal(nextSkyCrossing(events.sun, .75), undefined)
+  assert.equal(nextSkyCrossing(events.earth, 0), undefined)
+  const atEnd = skyCrossings([{ sunEl: 1, sunHorizon: 0 }, { sunEl: 0, sunHorizon: 0 }], .25)
+  assert.deepEqual(atEnd.sun, [{ at: .25, rising: false }])
 })
 
 test('calculates crossings and overlaps at fractional hours', () => {
