@@ -1,5 +1,13 @@
 # Version history
 
+## v1.3.5 — Deb · Preserve map zoom when changing layers (2026-11-15)
+
+- Keep the current 3D map zoom and orientation when changing layers, including South Pole scope. The scope checkbox itself still centers the South Pole when enabled.
+- Retain v1.3.4's above-viewer controls and automatic Orbit/Surface-to-Moon-Map camera journeys. Switch projections only when needed, so layer exploration does not repeatedly reset the view.
+- Add a browser regression that zooms into the South Pole and verifies the rendered camera stays unchanged after a layer selection.
+
+Release prepared by **Deb**, team **Astralis**. Scientific inputs, rendering, and viewer dimensions are unchanged. See the [setup guide](README.md) and [references](REFERENCES.md).
+
 ## v1.3.4 — Deb · Map layers above the viewer (2026-11-15)
 
 - Move South Pole scope and all six layer checkboxes above the shared viewer, where they remain accessible in Orbit, Moon Map, and Surface. Remove the separate Map layers shortcut below the window.

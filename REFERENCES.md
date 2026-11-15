@@ -1,6 +1,6 @@
 # Sources, data, and credits
 
-**Lunar Landing Site Navigator v1.3.4 — Deb · Team Astralis · 2026-11-15**
+**Lunar Landing Site Navigator v1.3.5 — Deb · Team Astralis · 2026-11-15**
 
 This is the release's source register. It distinguishes numerical inputs, display imagery, methods, software, and background research. A realistic-looking image is not evidence of measured terrain. Source pixel spacing is not a guarantee of positional or height accuracy.
 

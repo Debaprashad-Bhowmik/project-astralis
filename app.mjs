@@ -1982,7 +1982,7 @@ async function openMapForLayers() {
     if (request !== layerNavigationRequest) return
     // A later explicit camera choice can supersede this request.
     if (viewerMode === 'map') {
-      if (!get('show-globe').disabled) useMap('globe')
+      if (get('globe-view').hidden && !get('show-globe').disabled) useMap('globe')
       get('viewer-analysis').open = true
     }
     showCoverageLegend()

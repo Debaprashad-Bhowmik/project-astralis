@@ -145,7 +145,12 @@ def audit(page, url):
     page.check('#mission-heat-south')
     settled('map')
     expect(page.locator('#show-globe')).to_have_attribute('aria-pressed', 'true')
+    page.click('#globe-zoom-in')
+    camera_state = "canvas => {const gl=canvas.getContext('webgl'),program=gl.getParameter(gl.CURRENT_PROGRAM);return ['sphereRadius','east','north','front'].map(name=>{const value=gl.getUniform(program,gl.getUniformLocation(program,name));return typeof value === 'number' ? value : Array.from(value)})}"
+    before_layers = page.locator('#globe-canvas').evaluate(camera_state)
     page.check('#layer-sun')
+    settled('map')
+    assert page.locator('#globe-canvas').evaluate(camera_state) == before_layers, 'Changing layers must preserve South Pole zoom and orientation'
     page.check('#layer-earth')
     expect(page.locator('#coverage-intersection-note')).to_be_visible()
     page.check('#layer-power')

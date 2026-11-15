@@ -1,4 +1,4 @@
-# Competition handoff — Lunar Landing Site Navigator v1.3.4
+# Competition handoff — Lunar Landing Site Navigator v1.3.5
 
 **Team: Astralis · Release prepared by Deb · November 15, 2026**
 
