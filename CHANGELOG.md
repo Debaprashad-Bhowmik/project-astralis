@@ -1,5 +1,16 @@
 # Version history
 
+## v1.4.0 — Deb · Visual landing comparisons and Explorer merge (2026-11-15)
+
+- Merge **vnk11's Trade-off Explorer, commit e81fb40**, preserving its Git ancestry and original authorship. Add the catalog Explorer link, date heatmap, adaptive detail levels, trade-off plot, CSV and JPL query links.
+- Bring the Explorer's visual approach into the main planner: three compact patch recommendations, shared-scale energy bars, continuous Earth-view bars, actual visibility timelines, slope indicators, and expandable exact values/ranks. Put additional patches and their clickable trade-off plot under one disclosure.
+- Reuse the same timeline component in the main planner and catalog Explorer. Compute shortlisted-patch windows with the ranking worker's original terrain and cadence; do not infer window timing from totals.
+- Simplify all three original Moon-map comparison panels with the same visual summaries; preserve detailed totals, overlap tracks, model information, time scrubbing, independent selectors and Surface navigation.
+- Resolve the older branch against the current viewer: preserve the original viewer dimensions, above-viewer checkboxes, Both in view intersection, camera journeys, restored features, and energy/communications ranking formulas. Retain the local server cache revalidation improvement.
+- Label the Explorer's broader polar group and sunlight-based priority explicitly. Credit the contributor and distinguish its catalog scoring from the main planner's patch ranking.
+
+Integration and release prepared by **Deb**, team **Astralis**. Explorer contribution by **vnk11**. See the [setup guide](README.md), [references](REFERENCES.md), and [credits](THIRD_PARTY_NOTICES.md).
+
 ## v1.3.5 — Deb · Preserve map zoom when changing layers (2026-11-15)
 
 - Keep the current 3D map zoom and orientation when changing layers, including South Pole scope. The scope checkbox itself still centers the South Pole when enabled.

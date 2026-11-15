@@ -1,6 +1,6 @@
 # Credits and third-party notices
 
-Project: **Lunar Landing Site Navigator**, team **Astralis**. Release **v1.3.5 — Deb**.
+Project: **Lunar Landing Site Navigator**, team **Astralis**. Release **v1.4.0 — Deb**.
 
 ## Scientific data and imagery
 
@@ -20,6 +20,10 @@ These notices accompany the bundled font files and must be retained with them.
 ## Project artwork and AI assistance
 
 Deb supplied the Astralis team logo. The current outlined A and serif wordmark replaces the earlier star-and-orbit logo; the supplied image is preserved unchanged. OpenAI ImageGen produced the identified hero/dust visuals and design concepts; Codex assisted with implementation and documentation. Generated rocks and soil are illustrative. These assets do not establish ground truth, measured hazards, or additional scientific resolution. See the [AI disclosure and asset table](REFERENCES.md#5-display-imagery-and-synthesized-details).
+
+## Contributor credit
+
+**vnk11** authored the Trade-off Explorer in [commit e81fb404b49344da7c515e7e563dfeeb1cd07a57](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57). v1.4.0 merges that commit with its original authorship and adapts its visibility timelines and progressive detail approach into the main planner. Deb prepared the integration and release. The shared component is `mission-visuals.mjs`; adapting the presentation does not substitute Explorer scoring for the main mission ranking.
 
 ## Code and dependencies
 

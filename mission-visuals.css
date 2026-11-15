@@ -1,0 +1,31 @@
+.mission-strip{display:grid;grid-template-columns:64px minmax(35px,1fr) auto;gap:6px 8px;align-items:center;font-size:.75rem;font-variant-numeric:tabular-nums}
+.mission-strip-ruler{grid-column:2/-1;display:flex;justify-content:space-between;font-size:.76rem;color:var(--muted)}
+.mission-lane{width:100%;height:12px;display:block}
+.mission-lane-wrap{position:relative;min-width:0}
+.mission-lane-wrap .now{position:absolute;top:0;bottom:0;width:2px;background:var(--text);pointer-events:none}
+.mission-lane-base{fill:var(--line)}
+.mission-lane.sun,.mission-strip-label.sun,.mission-bar.sun,.tradeoff-label.sun{color:var(--sun)}
+.mission-lane.earth,.mission-strip-label.earth,.mission-bar.earth,.tradeoff-label.earth{color:var(--earth)}
+.mission-lane-on{fill:currentColor}
+.mission-lane-tick{stroke:var(--panel);stroke-width:1;opacity:.55}
+.mission-strip-total{white-space:nowrap;text-align:right;color:var(--text)}
+.mission-bar{display:grid;gap:5px;min-width:0;font-size:.8rem;font-variant-numeric:tabular-nums}
+.mission-bar-label{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.mission-bar-label span{color:var(--muted)}
+.mission-bar-track{height:7px;background:var(--line);border-radius:2px;overflow:hidden}
+.mission-bar-track>span{display:block;height:100%;background:currentColor}
+.mission-slope{display:inline-flex;gap:6px;align-items:center;font-size:.78rem;color:var(--muted)}
+.mission-slope svg{width:34px;height:24px;flex:none}
+.slope-reference{fill:none;stroke:var(--muted);stroke-dasharray:3 3;opacity:.6}
+.slope-surface{fill:none;stroke:var(--text);stroke-width:2}
+.mission-tradeoff{max-width:900px;margin:12px auto}
+.mission-tradeoff>svg{width:100%;height:auto;overflow:visible}
+.mission-tradeoff>p{font-size:.8rem}
+.tradeoff-grid{fill:none;stroke:var(--line)}
+.tradeoff-tick{fill:var(--muted);font:12px 'DM Sans',sans-serif;font-variant-numeric:tabular-nums}
+.tradeoff-label{fill:currentColor;font:12px 'DM Sans',sans-serif}
+.tradeoff-point{cursor:pointer}
+.tradeoff-point circle{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.tradeoff-point text{fill:var(--bg);font:700 11px 'DM Sans',sans-serif;pointer-events:none}
+.tradeoff-point:focus-visible circle,.tradeoff-point:hover circle{stroke:var(--text);stroke-width:3}
+@media(max-width:700px){.mission-tradeoff{overflow:auto}.mission-tradeoff>svg{min-width:540px}}

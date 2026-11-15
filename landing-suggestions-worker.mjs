@@ -1,4 +1,4 @@
-import { frameAt } from './planner.mjs'
+import { evaluate, frameAt } from './planner.mjs'
 import { evaluateLandingPatches, rankLandingScenarios } from './landing-suggestions.mjs?v=1.3.0'
 
 let patchesPromise
@@ -7,8 +7,18 @@ let preference
 let evaluatedMission
 
 function postRanking() {
-  const { rows, duration, step, sampled } = evaluatedMission
+  const { rows, frames, duration, step, sampled } = evaluatedMission
   const result = rankLandingScenarios(rows, { duration, ...preference })
+  // Only send timelines for the handful of displayed patches, not the entire
+  // polar inventory. Use exactly the same terrain and sampling as the ranking.
+  const windows = new Map()
+  for (const site of [...result.rows, result.flattest, ...Object.values(result.winners)].filter(Boolean)) {
+    if (!windows.has(site.id)) {
+      const { sun, earth } = evaluate(site, frames, duration, true)
+      windows.set(site.id, { sunWindows: sun, earthWindows: earth })
+    }
+    Object.assign(site, windows.get(site.id))
+  }
   self.postMessage({ request: currentRequest, result, preference, step, sampled })
 }
 
@@ -53,7 +63,7 @@ self.addEventListener('message', async ({ data }) => {
       return currentRequest === request
     })
     if (rows && currentRequest === request) {
-      evaluatedMission = { rows, duration, step, sampled: patches.length }
+      evaluatedMission = { rows, frames, duration, step, sampled: patches.length }
       postRanking()
     }
   } catch (error) {

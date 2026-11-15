@@ -63,6 +63,22 @@ def audit(page, url):
     expect(toggle).to_be_visible()  # Regression: hidden on arrival in Orbit.
     toggle.check()
     patches()
+    assert page.locator('#landing-suggestions-list > .landing-card').count() == 3
+    assert page.locator('#landing-suggestions-list .mission-strip').count() == 3
+    assert page.locator('#landing-suggestions-list .landing-card-details[open]').count() == 0
+    energy_scales = page.locator('#landing-suggestions-list .mission-bar.sun').evaluate_all('nodes => nodes.map(n => Number(n.dataset.maximum))')
+    assert len(set(energy_scales)) == 1, 'Energy bars must share a scale'
+    first_card = page.locator('#landing-suggestions-list > .landing-card').first
+    first_card.locator('summary').click()
+    expect(first_card.locator('.landing-card-facts')).to_be_visible()
+    expect(first_card.locator('.landing-card-facts')).to_contain_text('Roughness')
+    expect(first_card.locator('.landing-card-facts')).to_contain_text('Comms rank')
+    first_card.locator('summary').click()
+    page.locator('#landing-more > summary').click()
+    expect(page.locator('#landing-tradeoff svg')).to_be_visible()
+    assert page.locator('#landing-more-list .landing-card').count() > 0
+    assert page.locator('#landing-tradeoff .tradeoff-point').count() == page.locator('.landing-card').count()
+    page.locator('#landing-more > summary').click()
     first_results = page.locator('#landing-suggestions-list').inner_text()
     assert page.locator('.compare-scenario').count() == 3, 'Compare all three mission scenarios'
     for key, mode in [('a', 'earth'), ('b', 'solar'), ('c', 'balanced')]:
@@ -236,6 +252,9 @@ def audit_comparison(page, url):
         winner = page.locator(f'#landing-{mode}-winner').inner_text().split(' · ')
         expect(page.locator(f'#compare-view-{key} .compare-site-name')).to_have_text(winner[0])
         expect(page.locator(f'#compare-view-{key} .compare-totals')).to_contain_text(winner[1])
+        expect(page.locator(f'#compare-view-{key} .compare-totals')).to_be_hidden()
+        expect(page.locator(f'#compare-view-{key} .mission-bar.sun')).to_contain_text(winner[1])
+        assert page.locator(f'#compare-view-{key} .mission-lane').count() == 2
         assert page.locator(f'#compare-view-{key} canvas').evaluate("c => c.getContext('webgl').getError()") == 0
         assert page.locator(f'#compare-view-{key} canvas').evaluate("c => {const gl=c.getContext('webgl'),p=gl.getParameter(gl.CURRENT_PROGRAM);return gl.getUniform(p,gl.getUniformLocation(p,'dayNight'))}") == 1
     assert page.locator('#compare-view-a').bounding_box()['x'] < page.locator('#compare-view-b').bounding_box()['x'] < page.locator('#compare-view-c').bounding_box()['x']
@@ -288,6 +307,25 @@ def audit_empty_comparison(page, url):
     print('PASS: no eligible patches show an honest empty state; manual comparison still works', flush=True)
 
 
+def audit_explorer(page, url):
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(url.rstrip('/') + '/explore.html', wait_until='domcontentloaded')
+    page.wait_for_function("document.querySelectorAll('#suggestions .suggestion').length >= 3", timeout=120_000)
+    page.wait_for_function("document.querySelector('#progress').hidden", timeout=120_000)
+    assert page.locator('#suggestions .mission-strip').count() >= 3
+    expect(page.locator('#weight')).to_have_attribute('aria-label', 'Priority between sunlight and Earth contact')
+    page.locator('#levels button').last.click()
+    expect(page.locator('#chart')).to_be_visible()
+    expect(page.locator('#table')).to_be_visible()
+    assert page.locator('#chart .dot').count() > 0
+    page.locator('#levels button').first.click()
+    page.set_viewport_size({'width': 390, 'height': 900})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    assert not errors, errors
+    print('PASS: merged Explorer computes its catalog, shows shared timelines, deeper visualizations and mobile controls', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', help='existing navigator server; omit for bundled-only checks')
@@ -310,6 +348,9 @@ def main():
                 page.close()
                 page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
                 audit_empty_comparison(page, url)
+                page.close()
+                page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
+                audit_explorer(page, url)
             finally:
                 browser.close()
     finally:

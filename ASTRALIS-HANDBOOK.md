@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator — team handbook
 
-**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.3.5 — Deb**
+**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.4.0 — Deb**
 
 Release navigation: [source register](REFERENCES.md) · [version history](CHANGELOG.md) · [submission checklist](docs/SUBMISSION-CHECKLIST.md).
 
@@ -310,3 +310,11 @@ NASA scores each criterion from **1 to 5** at every judging level. These are par
 | **Submission Verification** | A teammate reviews the terms and originality statements and checks the boxes if accurate. Click **Submit for Judging** and verify that the confirmation banner appears. If you edit, resubmit before the cutoff. |
 
 Finish the form in English and have a teammate test both public links from a signed-out browser. Confirm all members appear on the team page and are registered for the same Local Event or the Universal Event. The judging guide sets a maximum of six members and a minimum of two for Universal Event teams seeking global judging. The submission guide excludes under-18 likenesses, images, video, and audio from the submitted demo and final project. Read the current official terms before confirming rights and originality. Local or Universal Event judges select the nominees who advance to Global Judging. [Submission guide](https://www.spaceappschallenge.org/resources/project-submission-guide/) · [Global judging eligibility](https://www.spaceappschallenge.org/resources/judging-awards-guide/#eligibility-for-global-judging) · [Participant terms](https://www.spaceappschallenge.org/legal/) · [NASA images and media guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/)
+
+## Visual comparisons (v1.4.0)
+
+Landing Suggestions now starts with three compact patches. Gold bars compare total energy on the same scale; blue bars compare the uninterrupted Earth window against mission length. The two smaller tracks show actual Sun/Earth windows, so a fragmented contact window is visibly different from uninterrupted contact. Slope remains visible. Exact measurements and cross-scenario ranks are under **Exact values & ranks**; additional patches and the clickable energy-versus-Earth plot are under **More patches and visual trade-offs**.
+
+The three site-comparison Moon maps remain the original renderer. Their summaries use the same visual vocabulary, with exact totals and overlap tracks expandable. Changing a patch still uses the existing map-to-Surface journey. The top layer controls, intersection behavior, mission/annual playback, source resolution, and numerical ranking rules are retained.
+
+The separately linked catalog Trade-off Explorer comes from vnk11's e81fb40. Its sunlight-duration and communication scoring is distinct from the main planner's energy-based South Pole patch search; its labeled 60°S–90°S catalog group does not redefine the main 84°S–90°S boundary.

@@ -1,6 +1,6 @@
 # Sources, data, and credits
 
-**Lunar Landing Site Navigator v1.3.5 — Deb · Team Astralis · 2026-11-15**
+**Lunar Landing Site Navigator v1.4.0 — Deb · Team Astralis · 2026-11-15**
 
 This is the release's source register. It distinguishes numerical inputs, display imagery, methods, software, and background research. A realistic-looking image is not evidence of measured terrain. Source pixel spacing is not a guarantee of positional or height accuracy.
 
@@ -113,3 +113,7 @@ The manifest records SHA-256 hashes of **bundled derivatives**, not unknown orig
 OpenAI Codex assisted with code, data-processing scripts, debugging, research, and documentation. ImageGen assisted with design concepts and the identified visual materials. Numerical celestial positions and measured terrain come from the cited products; procedural visual detail is explicitly separate. Deb and team Astralis are responsible for reviewing the release and describing AI assistance in the competition submission. This release does not make runtime calls to a generative AI service.
 
 The link index preserves references found in this release's source, documentation, and metadata. A listed URL means it was recorded, not that every page was independently revalidated or that every linked dataset was used. Missing provenance should be resolved before making stronger scientific or licensing claims.
+
+## 9. Visual comparison contribution
+
+The Trade-off Explorer, adaptive catalog comparison, date heatmap, and initial timeline presentation were contributed by **vnk11** in [e81fb40](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57). v1.4.0 reuses its presentation in the main planner and retains the separate Explorer page. The main patch ranking still uses total modeled energy and uninterrupted Earth visibility after the slope screen. Its timelines are evaluated from the same terrain horizons and time samples as that ranking. Shared-scale bars visualize measurements; they do not enter the scoring formula.

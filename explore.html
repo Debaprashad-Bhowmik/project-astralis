@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trade-off Explorer · Lunar Landing Site Navigator</title>
+  <meta name="description" content="Compare lunar landing sites and dates by sunlight and Earth contact, with as much detail as you need.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23d3a9ff'/%3E%3Ccircle cx='21' cy='12' r='4' fill='%23050507'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./explore.css">
+  <link rel="stylesheet" href="./mission-visuals.css?v=1.4.0">
+  <script type="module" src="./explore.mjs"></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="./explore.html">Astralis</a>
+    <nav class="levels" id="levels" aria-label="Detail level"></nav>
+    <a class="ghost" href="./index.html">Detailed planner</a>
+  </header>
+
+  <main class="layout">
+    <aside class="rail" aria-label="Mission settings">
+      <section>
+        <h2><label for="presets">Mission type</label></h2>
+        <select id="presets"></select>
+        <p class="needs" id="needs"></p>
+      </section>
+
+      <section>
+        <h2>When</h2>
+        <input id="date" type="date" value="2026-12-01" required aria-label="Landing date">
+        <label class="field" data-min-level="5">Landing time (UTC) <input id="time" type="time" value="00:00" required></label>
+        <label class="duration">Mission lasts <input id="duration" type="number" min="0.25" max="60" step="0.25" value="7" required> days</label>
+      </section>
+
+      <section>
+        <h2>Where</h2>
+        <div class="chips" id="regions" role="group" aria-label="Site groups"></div>
+        <label class="switch" data-min-level="5"><input id="terrain" type="checkbox" checked> LOLA terrain horizon <small>Off uses a 0° reference plane</small></label>
+      </section>
+
+      <section>
+        <h2>What matters more?</h2>
+        <label class="priority">
+          <span class="ends"><span>Sunlight</span><span>Earth contact</span></span>
+          <input id="weight" type="range" min="0" max="100" step="5" value="50" aria-label="Priority between sunlight and Earth contact">
+        </label>
+      </section>
+
+      <section data-min-level="2">
+        <h2>Must have</h2>
+        <label class="range"><span>Sunlight at least <output id="req-sun-out"></output></span><input id="req-sun" type="range" min="0" max="100" step="5" value="0"></label>
+        <label class="range"><span>Earth in view at least <output id="req-earth-out"></output></span><input id="req-earth" type="range" min="0" max="100" step="5" value="0"></label>
+        <label class="range"><span>Darkness at most <output id="req-dark-out"></output></span><input id="req-dark" type="range" min="0" max="120" step="4" value="120"></label>
+        <label class="range"><span>Earth gap at most <output id="req-blackout-out"></output></span><input id="req-blackout" type="range" min="0" max="120" step="4" value="120"></label>
+      </section>
+    </aside>
+
+    <section class="stage" aria-labelledby="level-name">
+      <div class="progress" id="progress" hidden><span></span></div>
+      <p class="level-line"><strong id="level-name"></strong> <span class="muted" id="level-criteria"></span></p>
+      <p class="note" id="note" aria-live="polite" hidden></p>
+      <div class="suggestions" id="suggestions" aria-live="polite"><p class="muted">Loading lunar data…</p></div>
+
+      <div class="options" id="options" data-min-level="2" data-max-level="4" aria-label="More options"></div>
+
+      <div class="card" data-min-level="5">
+        <div class="card-head">
+          <h2>Trade-off map <span class="muted">up and right is better</span></h2>
+          <div class="axis-picks" data-min-level="5">
+            <label>X <select id="x-axis"></select></label>
+            <label>Y <select id="y-axis"></select></label>
+          </div>
+        </div>
+        <div class="chart-wrap" id="chart-wrap">
+          <svg id="chart" role="img" aria-label="Trade-off map of the two most decisive factors"></svg>
+          <div class="tooltip" id="tooltip" hidden></div>
+        </div>
+        <p class="legend"><span><i class="key top">1</i> suggested</span><span><i class="key front"></i> nothing beats it on both axes</span><span><i class="key fail"></i> misses a must-have</span><span class="muted">Click a dot to compare it.</span></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Other landing dates <span class="muted">green is better, red is worse · grey stripes miss a must-have · click a day to land then</span></h2><button type="button" class="link" id="heat-toggle"></button></div>
+        <div class="heat-wrap"><svg id="heat" role="img" aria-label="Score of each site for landing dates 15 days either side"></svg></div>
+      </div>
+
+      <div class="card" data-min-level="5">
+        <div class="card-head"><h2>All scenarios at this date</h2><button type="button" class="ghost" id="export">Export CSV</button></div>
+        <div class="table-wrap"><table id="table"></table></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

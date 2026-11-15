@@ -8,6 +8,7 @@ import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
 import { polarIlluminationAt } from './polar-shadows.mjs'
+import { metricBar, missionStrip, terrainSlope, tradeoffPlot } from './mission-visuals.mjs'
 
 const get = id => document.getElementById(id)
 const inputs = (...ids) => ids.map(get)
@@ -591,7 +592,7 @@ function showMap() {
 }
 
 function showGlobeSites() {
-  for (const button of get('landing-suggestions-list').querySelectorAll('button')) {
+  for (const button of get('landing-suggestions').querySelectorAll('button[data-site]')) {
     button.setAttribute('aria-pressed', String(button.dataset.site === selected))
   }
   if (!globe) return
@@ -668,43 +669,56 @@ function showLandingSuggestions({ result, preference, step, sampled }) {
     ...row, kind: 'Landing suggestion', displayName: landingPatchName(row.id),
   }))
   get('landing-rank-note').hidden = false
-  const list = get('landing-suggestions-list')
-  list.replaceChildren(...landingRows.map(site => {
-    const item = element('li', '')
-    const button = element('button', 'rank-row landing-row')
-    button.type = 'button'
-    button.dataset.site = site.id
-    button.setAttribute('aria-pressed', String(site.id === selected))
-    button.addEventListener('click', () => focusLandingSuggestion(site))
-    const notes = [site.displayName]
-    if (site.id === flattest.id) notes.push('Flattest')
-    if (!site.qualifies) notes.push('Misses scenario')
-    const metrics = element('span', 'landing-metrics')
-    metrics.append(element('span', '', `${formatEnergy(site.energyKwh)} total`),
-      element('span', '', `${formatPower(site.averageWatts)} avg`))
-    const ranks = element('span', 'landing-ranks')
-    for (const [key, label] of Object.entries(landingRankLabels)) {
-      const rank = site.scenarioRanks[key]
-      const column = element('span', key === mode ? 'current' : '')
-      const rankText = element('strong', '', rank ? `#${rank.toLocaleString()}` : '—')
-      column.append(element('small', '', label), rankText)
-      if (!rank) {
-        rankText.setAttribute('aria-hidden', 'true')
-        column.append(element('span', 'sr-only', 'No qualifying rank'))
-      }
-      ranks.append(column)
-    }
-    button.append(element('strong', 'site-name', notes.join(' · ')), ranks, metrics,
-      element('span', 'landing-terrain', `Earth view ${formatHours(site.earthHours)} (${formatPercent.format(site.earthFraction)}) · Sunlight ${formatHours(site.sunHours)} (${formatPercent.format(site.sunFraction)})`),
-      element('span', 'landing-terrain', `Longest Earth view ${formatHours(site.longestEarthHours)} · Longest outage ${formatHours(site.longestEarthGap)}`),
-      element('span', 'landing-terrain', `Longest sunlight ${formatHours(site.longestSunHours)}`),
-      element('span', 'landing-terrain', `Slope ${site.slope.toFixed(2)}° · Roughness ${site.roughness.toFixed(2)} m`),
-      element('span', 'landing-terrain', siteCoordinates(site)),
-      element('span', 'landing-terrain', 'Open first-person view'))
-    item.append(button)
-    return item
-  }))
+  const maxEnergy = Math.max(...Object.values(summaries).map(summary => summary.energyKwh ?? 0), ...landingRows.map(site => site.energyKwh))
+  const cards = landingRows.map((site, index) => landingCard(site, index, landingRows[0], flattest.id, mode, maxEnergy))
+  get('landing-suggestions-list').replaceChildren(...cards.slice(0, 3))
+  get('landing-more-list').replaceChildren(...cards.slice(3))
+  get('landing-more').hidden = !landingRows.length
+  get('landing-tradeoff').replaceChildren(tradeoffPlot(landingRows, settings.duration, focusLandingSuggestion))
   showGlobeSites()
+}
+
+function landingCard(site, index, leader, flattestId, mode, maxEnergy) {
+  const item = element('li', 'landing-card')
+  item.dataset.site = site.id
+  const head = element('div', 'landing-card-head')
+  head.append(element('span', 'landing-card-number', String(index + 1)), element('h3', '', site.displayName))
+  if (site.id === flattestId) head.append(element('span', 'landing-card-tag', 'Flattest'))
+  const deltaEnergy = site.energyKwh - leader.energyKwh
+  const deltaEarth = site.longestEarthHours - leader.longestEarthHours
+  const gains = []
+  if (Math.abs(deltaEnergy) >= .005) gains.push(`${formatEnergy(Math.abs(deltaEnergy))} ${deltaEnergy > 0 ? 'more' : 'less'} energy`)
+  if (Math.abs(deltaEarth) >= .05) gains.push(`${formatHours(Math.abs(deltaEarth))} ${deltaEarth > 0 ? 'longer' : 'shorter'} Earth window`)
+  const reason = !site.qualifies ? 'Closest alternative · misses this scenario.' : index === 0 ? {
+    earth: 'Full-mission Earth view, then the most solar energy.',
+    solar: 'Most solar energy within your continuity requirement.',
+    balanced: 'Best balance of energy and continuous Earth view.',
+  }[mode] : gains.length ? gains.join(' · ') + ' than #1.' : 'Similar energy and Earth continuity to #1.'
+  item.append(head, element('p', 'landing-card-reason', reason),
+    metricBar('Solar energy', site.energyKwh, maxEnergy, formatEnergy(site.energyKwh), 'sun', 'Same energy scale across these patches; full bar is the highest energy across the scenario winners and shortlist.'),
+    metricBar('Continuous Earth view', site.longestEarthHours, settings.duration, formatHours(site.longestEarthHours), 'earth', `Full bar is the entire ${formatHours(settings.duration)} mission.`),
+    missionStrip({ ...site, duration: settings.duration }), terrainSlope(site.slope))
+  const details = element('details', 'landing-card-details')
+  details.append(element('summary', '', 'Exact values & ranks'))
+  const facts = element('dl', 'landing-card-facts')
+  for (const [label, value] of [
+    ['Total solar energy', formatEnergy(site.energyKwh)], ['Average power', formatPower(site.averageWatts)],
+    ['Earth view', `${formatHours(site.earthHours)} (${formatPercent.format(site.earthFraction)})`],
+    ['Sunlight', `${formatHours(site.sunHours)} (${formatPercent.format(site.sunFraction)})`],
+    ['Longest Earth view', formatHours(site.longestEarthHours)], ['Longest outage', formatHours(site.longestEarthGap)],
+    ['Longest sunlight', formatHours(site.longestSunHours)], ['Slope', `${site.slope.toFixed(2)}°`],
+    ['Roughness', `${site.roughness.toFixed(2)} m`], ['Coordinates', siteCoordinates(site)],
+    ...Object.entries(landingRankLabels).map(([key, label]) => [`${label} rank`, site.scenarioRanks[key] ? `#${site.scenarioRanks[key].toLocaleString()}` : 'Not qualified']),
+  ]) facts.append(element('dt', '', label), element('dd', '', value))
+  details.append(facts)
+  const button = element('button', 'landing-row subtle', 'Explore this surface →')
+  button.type = 'button'
+  button.dataset.site = site.id
+  button.setAttribute('aria-label', `Explore ${site.displayName} in Surface view`)
+  button.setAttribute('aria-pressed', String(site.id === selected))
+  button.addEventListener('click', () => focusLandingSuggestion(site))
+  item.append(details, button)
+  return item
 }
 
 function landingPreference() {
@@ -761,6 +775,9 @@ function syncLandingSuggestions() {
   for (const key of Object.keys(landingRankLabels)) get(`landing-${key}-winner`).textContent = ''
   get('landing-rank-note').hidden = true
   get('landing-suggestions-list').replaceChildren()
+  get('landing-more-list').replaceChildren()
+  get('landing-tradeoff').replaceChildren()
+  get('landing-more').hidden = true
   showGlobeSites()
   if (!key) {
     landingWorker?.postMessage({ request })
@@ -777,7 +794,7 @@ function syncLandingSuggestions() {
   }
   try {
     if (!landingWorker) {
-      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs?v=1.3.0', import.meta.url), { type: 'module' })
+      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs?v=1.4.0', import.meta.url), { type: 'module' })
       landingWorker.addEventListener('message', ({ data }) => {
         if (data.request !== landingRequest) return
         if (data.error) fail(data.error)
@@ -936,8 +953,11 @@ function showCoverage() {
     globe?.setHeatDetail(heat?.patch ?? null)
     let scores = heat?.overlaps
     if (ready && colorByPower && siteValues) scores = new Map(siteValues.map(({ site, sample, watts }) => {
-        const number = formatPower(watts)
-        return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)} · ${number} estimated electrical output`,
+        // The pin uses the site's own skyline, so it can sit in a small shadow the surrounding map colors hide.
+        const shadowed = watts === 0 && !sample.eclipse && sample.sunEl > 0
+        const number = shadowed ? `${formatPower(watts)} · terrain shadow` : formatPower(watts)
+        const reason = shadowed ? ` · local skyline ${signedDegrees(sample.sunHorizon)} blocks the Sun` : sample.eclipse ? ' · total solar eclipse' : ''
+        return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)}${reason} · ${formatPower(watts)} estimated electrical output`,
           color: `rgb(${solarPowerColor(watts, powerMax).join(',')})`, nearZero: watts === 0 }]
     }))
     if (filtered && scores && siteValues) {
@@ -2238,12 +2258,21 @@ function compare() {
       item.append(element('dt', '', label), element('dd', '', value))
       totalMetrics.append(item)
     }
-    view.tracks.replaceChildren(element('h4', '', 'Over the whole mission'), totalMetrics,
+    const energyMaximum = Math.max(...scenarios.filter(Boolean).map(([candidate]) => candidate.metrics.energyKwh ?? 0))
+    const visuals = element('div', 'compare-visuals')
+    visuals.append(
+      metricBar('Solar energy', power.energyKwh, energyMaximum, formatEnergy(power.energyKwh), 'sun', 'Shared scale across the three selected scenarios.'),
+      metricBar('Continuous Earth view', longestEarth, hours, formatHours(longestEarth), 'earth', `Full bar is the ${formatHours(hours)} mission.`),
+      missionStrip({ sunWindows: row.sun, earthWindows: row.earth, duration: hours, at: Math.min(elapsed, hours) }),
+      terrainSlope(row.site.slope))
+    const technical = element('details', 'compare-technical')
+    technical.append(element('summary', '', 'Exact values, overlap & model'), totalMetrics,
       element('p', 'muted', `${dateLabel(epoch)} → ${dateLabel(epoch + hours * hour)}`),
       element('p', 'muted', `${terrainLabel(row.site, horizonFor(row.site))} · ${cadence} time samples`),
-      element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''), row.unmet.length ? 'Misses setup limits: ' + row.unmet.join(', ') : 'Meets the mission setup limits.'),
       axis(hours), ...timeline(row, hours, Math.min(elapsed, hours)),
       element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) + ' · Longest Earth gap ' + formatHours(row.metrics.blackout)))
+    view.tracks.replaceChildren(element('h4', '', 'Over the whole mission'), visuals, technical)
+    if (row.unmet.length) view.tracks.prepend(element('p', 'compare-status failed', 'Misses setup limits: ' + row.unmet.join(', ')))
     const detail = element('article')
     detail.append(element('h3', '', title))
     for (const [metric, windows] of [['sun', row.sun], ['earth', row.earth], ['overlap', row.metrics.both]]) {
@@ -2251,7 +2280,7 @@ function compare() {
     }
     details.append(detail)
   })
-  get('compare-context').textContent = 'Compare energy, continuous Earth view and terrain together. All three maps share time since landing; each uses its own selected date.'
+  get('compare-context').textContent = 'Energy bars share one scale. Earth bars show the uninterrupted share of each mission. All three Moon maps share time since landing.'
   get('window-detail').replaceChildren(details)
   get('compare-result').hidden = false
   showComparisonTime()
