@@ -5,9 +5,11 @@ import { gunzipSync } from 'node:zlib'
 import { annualMissionHours, horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap, radius } from './planner.mjs'
 import { artemisSouthLatitude, globeOrientation, projectSite, southPoleView } from './globe.mjs'
 import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
+import { earthOrientation, rotateBodyVector, textureOffset } from './body-textures.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { earthDiskIncidence, earthIllumination, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, surfaceTerrainSampler, terrainGroundAt, terrainVertices } from './surface-view.mjs'
+import { buildSurfaceDetail, surfaceDetailStride } from './surface-detail.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, coverageColorIndex, coverageMatches, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
 import { createSolarPowerModel } from './coverage-map.mjs'
@@ -163,6 +165,57 @@ test('walking uses triangle heights in every direction, with the landing point a
   assert.ok(Math.abs(terrainGroundAt(mesh, -1, 14) + .6) < .001)
   assert.ok(Math.abs(terrainGroundAt(mesh, -8, -12) + 3.2) < .001)
   assert.equal(terrainGroundAt(mesh, 0, 45), null)
+})
+
+test('generated rocks and soil relief stay anchored while walking, including at the pole and longitude seam', () => {
+  const floor = (east, north) => -2 + east * .02 - north * .03
+  for (const [lat, lon] of [[-3.01, -23.42], [-90, 0], [5, 179.9999]]) {
+    const frame = observer(lat, lon, 0)
+    const mesh = buildSurfaceDetail(frame, 0, 0, floor)
+    assert.ok(mesh.length > 0 && mesh.length % (surfaceDetailStride * 3) === 0)
+    assert.ok(mesh.every(Number.isFinite))
+    const nearby = []
+    const materials = new Set()
+    for (let i = 0; i < mesh.length; i += surfaceDetailStride) {
+      if (mesh[i + 1] > floor(mesh[i], mesh[i + 2]) + .04) materials.add(mesh[i + 6] > 0)
+      if (Math.hypot(mesh[i], mesh[i + 2]) < 8) nearby.push(mesh.subarray(i, i + surfaceDetailStride).join(','))
+    }
+    assert.deepEqual(materials, new Set([false, true]))
+    const walked = buildSurfaceDetail(frame, 12, 12, floor)
+    const overlap = []
+    for (let i = 0; i < walked.length; i += surfaceDetailStride) {
+      if (Math.hypot(walked[i], walked[i + 2]) < 8) overlap.push(walked.subarray(i, i + surfaceDetailStride).join(','))
+    }
+    assert.ok(nearby.length > 0)
+    assert.deepEqual(nearby.sort(), overlap.sort())
+  }
+})
+
+test('foreground rocks are closed surfaces with coherent normals and no collapsed triangles', () => {
+  const mesh = buildSurfaceDetail(observer(-3.01, -23.42, 0), 0, 0, () => -2)
+  const tone = mesh.find((value, index) => index % surfaceDetailStride === 6 && value > 0)
+  const edges = new Map()
+  const vertexNormals = new Map()
+  let triangles = 0
+  for (let i = 0; i < mesh.length; i += surfaceDetailStride * 3) {
+    if (mesh[i + 6] !== tone) continue
+    const points = [0, 1, 2].map(v => Array.from(mesh.subarray(i + v * surfaceDetailStride, i + v * surfaceDetailStride + 3)))
+    const keys = points.map(p => p.join(','))
+    const ab = points[1].map((v, axis) => v - points[0][axis])
+    const ac = points[2].map((v, axis) => v - points[0][axis])
+    assert.ok(Math.hypot(ab[1]*ac[2]-ab[2]*ac[1], ab[2]*ac[0]-ab[0]*ac[2], ab[0]*ac[1]-ab[1]*ac[0]) > 1e-8)
+    for (let v = 0; v < 3; v++) {
+      const key = [keys[v], keys[(v + 1) % 3]].sort().join('|')
+      edges.set(key, (edges.get(key) ?? 0) + 1)
+      const n = Array.from(mesh.subarray(i + v * surfaceDetailStride + 3, i + v * surfaceDetailStride + 6))
+      assert.ok(Math.abs(Math.hypot(...n) - 1) < 1e-5)
+      if (vertexNormals.has(keys[v])) assert.deepEqual(n, vertexNormals.get(keys[v]), 'shared vertices must shade continuously')
+      vertexNormals.set(keys[v], n)
+    }
+    triangles++
+  }
+  assert.ok(triangles > 0)
+  assert.ok([...edges.values()].every(count => count === 2), 'each rock edge must join exactly two triangles')
 })
 
 test('Earth phases use the Sun direction from Earth, and the bright limb points toward the Sun', () => {
@@ -526,4 +579,25 @@ test('gazetteer includes unique valid features from both hemispheres', () => {
   assert.ok(features.every(feature => Math.abs(feature.lat) <= 90 && Math.abs(feature.lon) <= 180))
   assert.equal(features.find(feature => feature.name === 'Tycho').kind, 'Crater')
   assert.ok(Math.abs(features.find(feature => feature.name === 'Von Kármán').lon) > 90)
+})
+
+test('a lunar site round-trips between the map and the orbital camera', () => {
+  const halfAngle = Math.PI / 6
+  const rotation = [Math.cos(halfAngle), 0, Math.sin(halfAngle), 0]
+  const site = { lat: -84.79, lon: 29.2 }
+  const rendered = siteDirection(site, { rotation })
+  const picked = rotateBodyVector(rendered, rotation, true)
+  const { up } = observer(site.lat, site.lon, 0)
+  assert.ok(picked.every((value, axis) => Math.abs(value - up[axis]) < 1e-12))
+})
+
+test('the Earth globe rotates eastward with time and samples a continuous date line', () => {
+  const epoch = Date.UTC(2026, 11, 1)
+  const [x, y] = earthOrientation(epoch)([1, 0, 0])
+  const [nextX, nextY] = earthOrientation(epoch + 3600_000)([1, 0, 0])
+  const forward = Math.atan2(x * nextY - y * nextX, x * nextX + y * nextY) * 180 / Math.PI
+  assert.ok(Math.abs(forward + 15.0411) < .001)
+  const globe = { width: 8, height: 4 }
+  assert.equal(textureOffset(globe, -1, 0, 0), textureOffset(globe, -1, -0, 0))
+  assert.equal(textureOffset(globe, 1, 0, 0), 4 * (2 * globe.width + globe.width / 2))
 })

@@ -1,6 +1,23 @@
-# Project Astralis
+# Astralis · Lunar Site Navigator
+
+**The Astralis · v1.1.0 · Release prepared by Deb**
 
 The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
+
+## Start here
+
+| I want to… | Read this |
+| --- | --- |
+| Run the latest release | [Windows](#run-astralis-on-windows) or [macOS](#run-astralis-on-macos) copy/paste setup below |
+| Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
+| Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
+| Review what changed | [v1.1.0 release notes](CHANGELOG.md) |
+| Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
+| Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
+
+Choose a site and mission window, compare solar energy and Earth visibility, then inspect terrain in one Orbit / Moon Map / Surface viewer. South Pole suggestions add a slope screen and three mission scenarios. Calculations use JPL ephemerides and measured lunar terrain. Generated rocks and fine dust improve the view without entering the planning calculations.
+
+The repository is maintained privately for the team. Collaborators need an accepted invitation. The local app requires no API key; finer on-demand terrain needs internet access. A GitHub release is source code, not a hosted deployment or a completed competition submission.
 
 [Windows setup](#run-astralis-on-windows) · [macOS setup](#run-astralis-on-macos) · [Version history](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)
 
@@ -11,6 +28,9 @@ Both commands start the newest version tagged on main. They keep a separate proj
 Accept your invitation to the private repository. Open **Windows PowerShell** in the folder where you want Astralis, use the copy button on the code block below, paste the whole block, and press Enter. If Git opens a sign-in window, use the GitHub account that accepted the invite. [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
 
 The block uses WinGet to install Git and x64 Python 3.13 if needed. It then downloads the project and bundled lunar data, installs the terrain packages, and opens Astralis in your default browser. The terminal prints the localhost link. Keep the window open while using the site and press **Ctrl+C** to stop it. [Microsoft WinGet guide](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+
+<details>
+<summary>Show the Windows copy/paste command</summary>
 
 ```powershell
 & {
@@ -116,11 +136,16 @@ The block uses WinGet to install Git and x64 Python 3.13 if needed. It then down
 }
 ```
 
+</details>
+
 If WinGet is missing or your computer blocks it, install or update App Installer, or install Git and the **64-bit Windows installer for Python 3.13** directly. Open a new PowerShell window and paste the block again. [Microsoft App Installer](https://learn.microsoft.com/en-us/windows/package-manager/winget/) · [Git for Windows](https://git-scm.com/install/win) · [Python for Windows](https://www.python.org/downloads/windows/)
 
 ## Run Astralis on macOS
 
 Accept your invitation to the private repository. Open **Terminal**, go to the folder where you want Astralis, and paste the whole block below. The block uses Homebrew when a tool is missing. During the first clone, sign in through the browser with the GitHub account that accepted the invite. [Homebrew](https://brew.sh/) · [GitHub CLI sign-in](https://cli.github.com/manual/gh_auth_login)
+
+<details>
+<summary>Show the macOS copy/paste command</summary>
 
 ```sh
 (
@@ -203,6 +228,8 @@ Accept your invitation to the private repository. Open **Terminal**, go to the f
 )
 ```
 
+</details>
+
 The terminal prints the localhost link and opens your default browser. Keep Terminal open while using Astralis. Press **Control+C** to stop the server. Paste the same block from the same folder to reopen it.
 
 For a Mac without Homebrew, follow the installation links for any missing tools and paste the block again. Apple's Command Line Tools provide Git, and the Python 3.13 macOS installer is listed on Python.org. [Apple Command Line Tools](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools) · [GitHub CLI](https://cli.github.com/) · [Python for macOS](https://www.python.org/downloads/macos/)
@@ -215,15 +242,31 @@ Choose a landing date, mission length, and priority to rank 39 landing and study
 
 **Explore three guided examples.** Compare a three-day landing delay, near-side and far-side Earth visibility, or the solar power implications of a low Sun. Each example uses the mission planner’s data and can open as an editable comparison.
 
-**Open the local sky view.** Switch to the first-person 3D surface view to see the Sun and Earth at their apparent sizes. Illustrated is the default style, and the Style menu also offers Natural. Both styles use NASA LOLA elevations for crater relief and time-dependent shadows, plus LROC reflectance with illustrative dust texture. Point toward a nearby named crater to see how its shadow moves with the timeline. Preset sites with dedicated elevation meshes use those meshes, including the 5 m near-field terrain at Shackleton Rim. For other coordinates, the view blends the bundled polar elevation grids into the global terrain wherever those grids cover the scene.
+**Open Surface in the Lunar mission viewer** to see the Sun and Earth at their apparent sizes from the selected coordinates. The same site and UTC time are used in Orbit, Moon Map, and Surface. Illustrated is the default style, and the Style menu also offers Natural. Both styles use NASA LOLA elevations for crater relief and time-dependent shadows, plus LROC reflectance with illustrative dust texture. Point toward a nearby named crater to see how its shadow moves with the timeline. Preset sites with dedicated elevation meshes use those meshes, including the 5 m near-field terrain at Shackleton Rim. For other coordinates, the view blends the bundled polar elevation grids into the global terrain wherever those grids cover the scene.
 
 At Chang’e 5, the first-person view uses a 3.07 km square of the LROC stereo elevation model at its native 3 m/pixel spacing, blended into the global LOLA terrain. Select **Look toward → Xu Guangqi** to face the nearby crater. Use **View height → 100 m · survey** to see into the basin from above the near rim. The browser grid fills 101 small gaps from neighboring elevations. To regenerate it with NumPy and Rasterio, run `python scripts/prepare_surface_region.py NAC_DTM_CHANGE501.TIF data/surface/change5-elevation.bin.gz 43.0576 -51.9161`. [LROC stereo terrain](https://data.lroc.im-ldi.com/lroc/view_rdr/NAC_DTM_CHANGE501) · [IAU crater coordinates](https://planetarynames.wr.usgs.gov/Feature/15995)
 
 Apollo 12 and Surveyor 3 share a 2.05 km square of LROC stereo elevation data with 2 m spacing. Select **Look toward → Surveyor crater** to see the measured depression southeast of Apollo 12's landing point. Run `python scripts/prepare_surface_region.py NAC_DTM_APOLLO12.TIF data/surface/apollo12-elevation.bin.gz -3.0128 -23.4219` to regenerate the crop. Local stereo terrain feeds the 3D surface view. The sky calculations show their own elevation source above the view. [LROC stereo terrain](https://data.lroc.im-ldi.com/lroc/view_rdr/NAC_DTM_APOLLO12) · [NASA Apollo 12 site visualization](https://svs.gsfc.nasa.gov/4767/)
 
-Focus the 3D scene and hold **W, A, S, D** to move, or use the buttons below it to step 10 m at a time. The camera follows the same terrain triangles drawn on screen and can move up to 500 m from the landing point. The visibility timeline reports conditions at the selected landing coordinates. The near shadow map resolves local crater walls and rims, and the regional pass includes distant blockers. Low Sun angles make the relief easiest to see where the source elevations resolve it.
+Focus the 3D scene and hold **W, A, S, D** to move, or use the buttons below it to step 10 m at a time. The camera follows the measured terrain and can move up to 500 m from the landing point. Generated rocks and shallow soil relief appear in the foreground at named sites, custom coordinates, and suggested patches. The rocks use closed, irregular shapes with blended face normals and texture on every side. A continuous centimeter-scale soil overlay adds uneven ground without flattening the measured elevations. These illustrative details cast moving shadows in both Illustrated and Natural styles. The timeline, power estimates, and landing rankings use the measured terrain at the selected coordinates.
 
-**3D orbit view.** Switch between Earth-centered and Sun-centered views. Select **Whole year** to explore any calendar year from 2024 through 2030 in UTC. Jump to a month, scrub the date slider, or play at 1, 5, or 15 simulation days per second. **Mission window** returns to the shared mission timeline.
+**Explore from orbit to the surface.** Use **Orbit**, **Moon Map**, or **Surface** below the shared viewer. Drag the orbit camera to change perspective. On the Moon Map, the shaded hemisphere is in lunar night, and the Sun and Earth arrows update as you rotate the globe. Select a landing site or custom coordinate on the Moon Map, then open **Surface** to view its terrain. Select **Whole year** to scrub any UTC calendar year from 2024 through 2030 across all three views. **Mission window** returns to the selected landing date and operating window.
+
+Orbit interpolates JPL geometric positions and displays physical distances in the readout. All radii and separations share one physical scale, projected through a perspective camera. Earth–Moon and solar overviews show how much empty space separates the bodies; use the Focus selector or camera zoom to inspect Earth, Moon, or Sun. A farther body and its glare cannot paint through a nearer sphere. Earth uses an archival satellite mosaic with approximate sidereal rotation and dynamic lighting in Orbit and Surface. The Sun disk uses an archival SDO observation recolored for display. Clouds and solar activity do not simulate weather at the selected date. [NASA Blue Marble](https://svs.gsfc.nasa.gov/3615/) · [NASA CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/) · [NASA SDO archive](https://svs.gsfc.nasa.gov/4551/)
+
+
+Orbit and Moon Map use one lunar renderer: the camera closes in on the same sphere. Surface first loads the selected coordinate's terrain, moves the map toward that site, then uses a short soft-focus dissolve into a low-altitude view. The camera settles to the selected viewing height. This cinematic handoff is an illustrative navigation transition, not a simulated landing trajectory; it avoids exposing coarse imagery and local mesh boundaries from orbital heights. Reduced-motion settings skip camera travel. Screen resolution adapts during flight and returns to full resolution on arrival. Analysis colors start off; open **Analyze landing conditions** to enable them. Date, site, Sun/Earth positions and mission totals stay together, with advanced controls in expandable sections.
+
+**Rendering data and limits.** The Moon uses an 8,192-pixel global color map on capable devices, with 4,096-pixel regional tiles cut from NASA's 16,384-pixel original when zoomed in. Image resolution is separate from elevation resolution. The global visual shadows and normals use the bundled LOLA grid (about 1.9 km spacing north–south); polar rendering uses the finer nested LOLA grids. Selected first-person views can use finer stereo elevation. Earth is a lit, rotating globe with an archival cloud mosaic, ocean highlights and a thin atmospheric rim. These are rendering effects, not an atmospheric simulation. Orbit uses physical sphere radii and JPL separations; close-ups change the camera, not the body size. Surface disks use the modeled apparent angular sizes.
+
+To reproduce the display textures, install Pillow and NumPy, then run `python scripts/prepare_visual_assets.py --moon-tiff <downloaded-lroc-tiff> --earth-tiff <downloaded-earth-tiff>`. Running the script without arguments repacks the existing global elevations losslessly for the GPU. It does not change the scientific terrain or ephemeris files.
+
+| Display asset | Original source | Use |
+| --- | --- | --- |
+| 8K Moon map and eight regional tiles | [NASA 2019 LROC color map, 16K TIFF](https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_16k.tif) · [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/) | Lunar color; polar areas include lower-resolution LOLA albedo fill |
+| Packed global elevation PNG | Repository `data/terrain/*.bin`, sourced from [NASA LOLA](https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_16_uint.tif) | Terrain normals and approximate visual shadow tracing; retains original half-meter encoding |
+| Earth with clouds | [NASA global Earth TIFF](https://svs.gsfc.nasa.gov/vis/a000000/a003600/a003615/flat_earth03.tif) · [source page](https://svs.gsfc.nasa.gov/3615/) | Archival geography and cloud pattern, rotated and lit for the selected time |
+| Sun disk | [NASA SDO archive](https://svs.gsfc.nasa.gov/4551/) | Archival disk texture, recolored with a display glow |
 
 In **Mission setup → Operating window**, select **Full year** to run from landing to the same UTC date and time the next year. The window has 365 or 366 days, and a starting date of February 29 ends on March 1 the following year. The end must be within the bundled ephemeris, which runs through January 1, 2031 at 00:00 UTC. The heat map, comparisons, surface views, and orbit scene’s **Mission window** mode all use that window.
 
@@ -245,7 +288,7 @@ Turn on **South Pole only** in the map controls to focus every surface layer on 
 
 ## Run manually
 
-From the repository root, install the terrain reader with `python -m pip install numpy rasterio`. Run `python scripts/serve_astralis.py --open` to serve Astralis at [localhost:4173](http://localhost:4173). Add `--port 0` to pick any available port. The server reads elevation windows around the selected location and needs no API key. The static app uses bundled terrain when the terrain endpoint or its data source is unavailable. Run `node --test planner.test.mjs landing-suggestions.test.mjs` to verify the ranking and reference calculations.
+From the repository root, install the terrain reader with `python -m pip install numpy rasterio`. Run `python scripts/serve_astralis.py --open` to serve Astralis at [localhost:4173](http://localhost:4173). Add `--port 0` to pick any available port. The server reads elevation windows around the selected location and needs no API key. The static app uses bundled terrain when the terrain endpoint or its data source is unavailable. Run `node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs` to verify the ranking and reference calculations.
 
 The terrain server uses NASA’s 10 m LOLA product for South Pole patches and the USGS global LOLA grid at 256 samples per degree elsewhere. The global grid has about 118 m between north–south samples. Existing 2 m and 3 m stereo terrain and the prepared 5 m Shackleton Rim mesh provide finer detail in smaller areas. The caption shows the actual local source. The renderer and skyline blend into coarser terrain farther away, and grid spacing does not establish feature accuracy or resolve every obstacle. [NASA polar elevations](https://pgda.gsfc.nasa.gov/products/90) · [USGS global elevations](https://astrogeology.usgs.gov/search/map/moon_lro_lola_dem_118m) · [GMT tiles of the USGS grid](https://www.generic-mapping-tools.org/remote-datasets/moon-relief.html)
 
@@ -263,7 +306,7 @@ Compare the three leading patches at the top of Landing Suggestions. Select a sc
 
 The list shows the longest uninterrupted Earth view and sunlight windows, as well as the longest Earth-view outage. If a scenario has no match, the list labels the closest alternatives as missing the scenario. The terrain inventory selects the lowest-slope 100 m-baseline measurement with roughness data in each 4 km square of the 84°S–90°S region. Candidate skylines use the bundled LOLA elevation grids at 3° bearing intervals. The mission is sampled every 15 minutes through 30 days and every two hours for longer windows. [NASA LOLA slope and roughness](https://pgda.gsfc.nasa.gov/products/90)
 
-To regenerate the inventory, download the `LDRM_80S_50MPP_ADJ_SLP_100M.TIF` and `LDRM_80S_50MPP_ADJ_ROUGH_100M.TIF` GeoTIFFs from the NASA source above. Run `python scripts/prepare_landing_patches.py SLOPE.TIF ROUGHNESS.TIF patches.json` with NumPy and Rasterio installed, then `node scripts/prepare_landing_horizons.mjs patches.json`. Run `node --test planner.test.mjs landing-suggestions.test.mjs` to verify the models.
+To regenerate the inventory, download the `LDRM_80S_50MPP_ADJ_SLP_100M.TIF` and `LDRM_80S_50MPP_ADJ_ROUGH_100M.TIF` GeoTIFFs from the NASA source above. Run `python scripts/prepare_landing_patches.py SLOPE.TIF ROUGHNESS.TIF patches.json` with NumPy and Rasterio installed, then `node scripts/prepare_landing_horizons.mjs patches.json`. Run `node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs` to verify the models.
 
 ## Working together
 
@@ -271,17 +314,17 @@ Clone the repo, create a branch from `main` for your task, and open a pull reque
 
 ### Publish a version
 
-Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, tag the release commit on main, and push both together. For example, use the following commands for v1.0.1. Each tag stays attached to its original release commit.
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.1.1. Each tag stays attached to its original release commit.
 
 ```sh
-git tag -a v1.0.1 -m "Astralis v1.0.1"
-git push --atomic origin main v1.0.1
+git tag -a v1.1.1 -m "Astralis v1.1.1 — Deb"
+git push --atomic origin main v1.1.1
 ```
 
 The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)
 
-## References
+## References and attribution
 
-- [NASA Space Apps Project Submission Guide](https://www.spaceappschallenge.org/resources/project-submission-guide/)
-- [NASA JPL Horizons ephemeris service](https://ssd.jpl.nasa.gov/horizons/)
-- [NASA Goddard LOLA south pole elevation data](https://pgda.gsfc.nasa.gov/products/90)
+The [source register](REFERENCES.md) maps scientific inputs and visual assets to their exact providers, products, preprocessing steps, and limitations. The [full link index](docs/references/link-index.md) preserves recorded research references. [Third-party notices](THIRD_PARTY_NOTICES.md) retain source credits and font terms; [CITATION.cff](CITATION.cff) identifies this release.
+
+OpenAI Codex assisted with development and documentation; ImageGen assisted with the identified design artwork and dust material. Ephemerides and measured elevations come from the cited scientific products. Astralis is a challenge project by The Astralis, not a NASA-certified landing solution.

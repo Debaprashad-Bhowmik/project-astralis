@@ -1,18 +1,20 @@
+import { earthOrientation, loadBodyTexture, rotateBodyVector, textureOffset } from './body-textures.mjs'
 import { earthRadius, observer, radius } from './planner.mjs'
 import { horizonProfile, loadTerrainSampler, polarHorizon } from './terrain.mjs'
 import { loadPolarGrids, polarProjection, samplePolarGrid } from './polar-shadows.mjs'
+import { buildSurfaceDetail, surfaceDetailStride } from './surface-detail.mjs?v=2'
 
 const radians = Math.PI / 180
 const spokes = 180
 const globalSpacing = 1900
 const walkLimit = 500
 const localShadowExtent = [640, 640, 3500]
+const detailShadowExtent = [48, 48, 125]
+const detailTileSize = 12
 const distance = [0, ...Array.from({ length: 184 }, (_, i) => (i + 1) * globalSpacing), 350_000]
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value))
 const bearing = value => (value % 360 + 360) % 360
 const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0)
-// Pixel bounds of Earth's limb in NASA's 540 × 540 Apollo 17 JPG.
-const earthPhotoCrop = [15, 15, 508, 508]
 const earthDiskSize = 128
 const regolithSize = 256
 const stereoRegions = [
@@ -92,14 +94,19 @@ export function earthIllumination(sample) {
   return { light, fraction: (1 - clamp(dot(light, earth), -1, 1)) / 2 }
 }
 
-export function earthDiskIncidence(x, y, axis, light, radius) {
+function earthIntersection(x, y, axis, radius) {
   // Intersect the camera ray with a sphere at unit distance. Its visible surface normal controls the light.
   const inverseLength = 1 / Math.hypot(x, y, 1)
   const along = (x * axis[0] + y * axis[1] + axis[2]) * inverseLength
   const discriminant = along * along - 1 + radius * radius
   if (discriminant < 0 || along <= 0) return null
-  const distance = along - Math.sqrt(discriminant)
-  const rayLight = (x * light[0] + y * light[1] + light[2]) * inverseLength
+  return (along - Math.sqrt(discriminant)) * inverseLength
+}
+
+export function earthDiskIncidence(x, y, axis, light, radius) {
+  const distance = earthIntersection(x, y, axis, radius)
+  if (distance === null) return null
+  const rayLight = (x * light[0] + y * light[1] + light[2])
   return clamp((distance * rayLight - dot(axis, light)) / radius, -1, 1)
 }
 
@@ -301,13 +308,16 @@ function terrainNormals(mesh) {
 
 const vertex = `
 attribute vec3 position, normal;
+attribute float stoneTone;
 uniform vec3 cameraRight, cameraUp, cameraForward, cameraPosition;
 uniform vec2 lens;
 varying vec3 terrain;
 varying vec3 groundNormal;
+varying float stone;
 void main() {
   terrain = position;
   groundNormal = normal;
+  stone = stoneTone;
   vec3 view = position - cameraPosition;
   float z = dot(view, cameraForward);
   // The landing-point vertex can lie exactly on the camera plane. Keep its
@@ -324,10 +334,12 @@ uniform float daylight, inkStyle;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent, localShadowExtent;
-uniform sampler2D albedoMap, shadowMap, localShadowMap, regolithMap, dustMap;
-uniform float shadowPixel, localShadowPixel;
+uniform vec3 detailShadowExtent, detailShadowCenter;
+uniform sampler2D albedoMap, shadowMap, localShadowMap, regolithMap, dustMap, detailShadowMap;
+uniform float shadowPixel, localShadowPixel, detailShadowPixel;
 varying vec3 terrain;
 varying vec3 groundNormal;
+varying float stone;
 const float pi = 3.14159265359;
 float hash(vec2 cell) {
   return fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
@@ -392,12 +404,39 @@ float shadow(vec3 normal) {
   return mix(broad, min(rim, distant), useLocal);
 }
 
+float detailVisibility(vec3 normal) {
+  vec3 relative = terrain - detailShadowCenter;
+  float surroundings = 1.0 - smoothstep(24.0, 34.0, length(relative.xz));
+  if (detailShadowPixel <= 0.0 || surroundings <= 0.0) return 1.0;
+  vec3 lightNormal = vec3(dot(normal,shadowRight), dot(normal,shadowUp), dot(normal,shadowDepth));
+  vec3 lightPoint = vec3(dot(relative,shadowRight), dot(relative,shadowUp), dot(relative,shadowDepth));
+  vec3 uv = (lightPoint + .010 * lightNormal) / detailShadowExtent * .5 + .5;
+  if (any(lessThan(uv, vec3(0))) || any(greaterThan(uv, vec3(1)))) return 1.0;
+  vec2 gradient = -lightNormal.xy * detailShadowExtent.xy / (min(lightNormal.z, -.04) * detailShadowExtent.z);
+  vec2 grid = uv.xy / detailShadowPixel - .5;
+  vec2 fraction = fract(grid);
+  vec2 center = (floor(grid) + .5) * detailShadowPixel;
+  float visible = 0.0;
+  for (int x = 0; x < 2; x++) {
+    for (int y = 0; y < 2; y++) {
+      vec2 offset = vec2(float(x), float(y));
+      vec2 tap = center + offset * detailShadowPixel;
+      vec3 pixel = texture2D(detailShadowMap, tap).rgb;
+      float occluder = dot(pixel, vec3(1.0, 1.0/255.0, 1.0/65025.0));
+      float receiver = uv.z - .025 / (2.0 * detailShadowExtent.z) + dot(gradient, tap - uv.xy);
+      vec2 weight = 1.0 - abs(offset - fraction);
+      visible += step(receiver, occluder) * weight.x * weight.y;
+    }
+  }
+  return mix(1.0, visible, surroundings);
+}
+
 float celStep(float value, float threshold) {
   float width = clamp(fwidth(value) * .6, .025, .09);
   return smoothstep(threshold - width, threshold + width, value);
 }
 
-vec3 celColor(vec3 normal, vec2 relief, float sunVisibility, float reflectance, float detail) {
+vec3 celColor(vec3 normal, vec3 relief, float sunVisibility, float reflectance, float detail) {
   const vec3 fillDirection = vec3(-.50,.76,.42);
   float facing = dot(normal, fillDirection);
   float plane = clamp(.15 + .58 * facing, 0.0, 1.0);
@@ -411,11 +450,11 @@ vec3 celColor(vec3 normal, vec2 relief, float sunVisibility, float reflectance, 
   sunlit = mix(sunlit, vec3(.89,.835,.75), celStep(beam,.67));
   sunlit *= mix(.83,1.16,beam);
 
-  // Only measured slopes and cast shadows select the cel bands. Grain adds
+  // Geometry and cast shadows select the cel bands. Material grain adds
   // continuous shading within a band so small stones cannot create stripes.
   float illuminated = sunVisibility * smoothstep(0.0,.045,incidence);
   vec3 color = mix(shaded, sunlit, illuminated);
-  vec3 grainNormal = normalize(normal + vec3(relief.x,0.0,relief.y) * .85);
+  vec3 grainNormal = normalize(normal + relief * .85);
   float grainLight = dot(grainNormal - normal, mix(fillDirection, sunDirection, illuminated));
   float tone = .78 + reflectance * .44 + clamp(detail,-.38,.38) * .78 + grainLight * .85;
   return color * clamp(tone,.55,1.36);
@@ -427,28 +466,50 @@ void main() {
   vec2 uv = vec2(atan(point.y, point.x) / (2.0*pi) + .5, .5 - asin(clamp(point.z,-1.0,1.0)) / pi);
   float reflectance = dot(texture2D(albedoMap, uv).rgb, vec3(.299,.587,.114));
   vec2 local = terrain.xz;
-  vec3 grit = texture2D(regolithMap, local / 4.0).rgb;
+  vec3 grit = texture2D(regolithMap, local / 2.0).rgb;
   vec3 fragments = texture2D(regolithMap, local / 28.0 + vec2(.29,.53)).rgb;
   float footprint = max(length(dFdx(local)),length(dFdy(local)));
   float fine = 1.0 - smoothstep(.25,1.4,footprint);
   float coarse = 1.0 - smoothstep(1.0,6.0,footprint);
   float patches = (grain(local*.009)-.5) * (1.0-smoothstep(30.0,115.0,footprint));
-  vec2 relief = (grit.gb - .5) * .52 * fine + (fragments.gb - .5) * .85 * coarse;
-  float direct = daylight > 0.0 ? shadow(n) : 0.0;
+  vec2 dustRelief = (grit.gb - .5) * .52 * fine + (fragments.gb - .5) * .42 * coarse;
+  vec3 relief = vec3(dustRelief.x, 0.0, dustRelief.y);
+  float direct = daylight > 0.0 ? min(shadow(n), detailVisibility(n)) : 0.0;
   const mat2 rotation = mat2(.8,.6,-.6,.8);
 
-  float nearDust = texture2D(dustMap, local / 4.0).r;
+  float nearDust = texture2D(dustMap, local / 2.0).r;
   float coarseDust = texture2D(dustMap, rotation * local / 19.0 + vec2(.35,.81)).r;
-  float fineDetail = (grit.r - .51) * .25 + (nearDust - .36) * 1.75;
-  float coarseDetail = (fragments.r - .51) * .29 + (coarseDust - .36) * .84;
+  float fineDetail = (grit.r - .51) * .34 + (nearDust - .36) * .82;
+  float coarseDetail = (fragments.r - .51) * .18 + (coarseDust - .36) * .30;
   float detail = fineDetail * fine + coarseDetail * coarse + patches * .10;
+  float material = 1.0;
+  if (stone > 0.0) {
+    // Blend projections on three axes: vertical stone faces must not inherit
+    // stretched, top-down ground texels. Detail is locked to local position.
+    vec3 weight = pow(abs(n), vec3(4.0));
+    weight /= max(.001, weight.x + weight.y + weight.z);
+    vec3 rx = texture2D(regolithMap, terrain.zy / 1.3).rgb;
+    vec3 ry = texture2D(regolithMap, terrain.xz / 1.3).rgb;
+    vec3 rz = texture2D(regolithMap, terrain.xy / 1.3).rgb;
+    vec3 chips = rx * weight.x + ry * weight.y + rz * weight.z;
+    float mottling = texture2D(dustMap, terrain.zy / .65).r * weight.x
+      + texture2D(dustMap, terrain.xz / .65).r * weight.y
+      + texture2D(dustMap, terrain.xy / .65).r * weight.z;
+    relief = (vec3(0.0, rx.b-.5, rx.g-.5) * weight.x
+      + vec3(ry.g-.5, 0.0, ry.b-.5) * weight.y
+      + vec3(rz.g-.5, rz.b-.5, 0.0) * weight.z) * .72 * fine;
+    relief -= n * dot(n, relief);
+    material = stone * .90;
+    detail = ((chips.r - .51) * .8 + (mottling - .36) * .9) * fine;
+
+  }
   if (inkStyle > .5) {
-    gl_FragColor = vec4(celColor(n, relief, direct, reflectance, detail + patches * .16), 1.0);
+    gl_FragColor = vec4(celColor(n, relief, direct, reflectance, detail + patches * .16) * material, 1.0);
     return;
   }
-  vec3 textured = normalize(n + vec3(relief.x,0,relief.y) * .12);
+  vec3 textured = normalize(n + relief * .25);
   float lit = max(0.0, dot(textured, sunDirection)) * direct;
-  float albedo = (.20 + reflectance*.83) * clamp(1.0 + detail*.38, .8, 1.18);
+  float albedo = (.20 + reflectance*.83) * clamp(1.0 + detail*.38, .8, 1.18) * material;
   // Display exposure and a faint fill preserve shape in modeled shadow.
   float exposure = mix(1.88, 1.48, smoothstep(.02,.6,sunDirection.y));
   vec3 shade = vec3(.031,.034,.041) + vec3(1.03,1.0,.97) * (exposure * pow(lit,.55));
@@ -458,9 +519,10 @@ void main() {
 
 const shadowVertex = `
 attribute vec3 position;
-uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent;
+uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent, shadowCenter;
 void main() {
-  gl_Position = vec4(vec3(dot(position,shadowRight),dot(position,shadowUp),dot(position,shadowDepth)) / shadowExtent, 1.0);
+  vec3 relative = position - shadowCenter;
+  gl_Position = vec4(vec3(dot(relative,shadowRight),dot(relative,shadowUp),dot(relative,shadowDepth)) / shadowExtent, 1.0);
 }`
 const shadowFragment = `
 precision highp float;
@@ -481,6 +543,7 @@ function terrainProgram(gl, vertexSource, fragmentSource) {
   }
   gl.bindAttribLocation(program, 0, 'position')
   gl.bindAttribLocation(program, 1, 'normal')
+  gl.bindAttribLocation(program, 2, 'stoneTone')
   gl.linkProgram(program)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('The 3D terrain renderer could not start. Use the skyline plot.')
   return program
@@ -497,18 +560,34 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
   const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'cameraPosition', 'lens', 'sunDirection', 'daylight', 'inkStyle',
     'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'localShadowMap', 'regolithMap', 'dustMap',
-    'shadowPixel', 'localShadowPixel', 'localShadowExtent', ...shadowNames])
-  const shadowUniforms = locations(shadowProgram, shadowNames)
+    'shadowPixel', 'localShadowPixel', 'localShadowExtent', 'detailShadowMap', 'detailShadowPixel', 'detailShadowExtent',
+    'detailShadowCenter', ...shadowNames])
+  const shadowUniforms = locations(shadowProgram, [...shadowNames, 'shadowCenter'])
   const vertices = gl.createBuffer()
   const normals = gl.createBuffer()
   const elements = gl.createBuffer()
+  const detailBuffer = gl.createBuffer()
+  function bindTerrain() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertices)
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
+    gl.bindBuffer(gl.ARRAY_BUFFER, normals)
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
+    gl.disableVertexAttribArray(2)
+    gl.vertexAttrib1f(2, 0)
+  }
+  function bindDetail() {
+    const bytes = Float32Array.BYTES_PER_ELEMENT
+    const stride = surfaceDetailStride * bytes
+    gl.bindBuffer(gl.ARRAY_BUFFER, detailBuffer)
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0)
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 3 * bytes)
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 6 * bytes)
+    gl.enableVertexAttribArray(2)
+  }
   gl.useProgram(program)
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertices)
   gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0)
-  gl.bindBuffer(gl.ARRAY_BUFFER, normals)
   gl.enableVertexAttribArray(1)
-  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
+  bindTerrain()
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elements)
   gl.enable(gl.DEPTH_TEST)
   const albedo = gl.createTexture()
@@ -519,13 +598,14 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   const shadowSize = Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE))
-  function createShadowTarget(unit) {
+  const detailShadowSize = Math.min(3072, gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE))
+  function createShadowTarget(unit, size = shadowSize) {
     const target = gl.createFramebuffer()
     gl.bindFramebuffer(gl.FRAMEBUFFER, target)
     const texture = gl.createTexture()
     gl.activeTexture(gl.TEXTURE0 + unit)
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, shadowSize, shadowSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -533,7 +613,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
     const buffer = gl.createRenderbuffer()
     gl.bindRenderbuffer(gl.RENDERBUFFER, buffer)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, shadowSize, shadowSize)
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, size, size)
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, buffer)
     const ready = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -541,6 +621,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   }
   const regionalTarget = createShadowTarget(1)
   const localTarget = createShadowTarget(3)
+  const detailTarget = createShadowTarget(5, detailShadowSize)
   const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic')
   function uploadMaterial(unit, texture, size, data) {
     gl.activeTexture(gl.TEXTURE0 + unit)
@@ -559,18 +640,26 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   gl.uniform1i(uniforms.localShadowMap, 3)
   gl.uniform1i(uniforms.regolithMap, 2)
   gl.uniform1i(uniforms.dustMap, 4)
+  gl.uniform1i(uniforms.detailShadowMap, 5)
   gl.uniform1f(uniforms.shadowPixel, regionalTarget ? 1 / shadowSize : 0)
   gl.uniform1f(uniforms.localShadowPixel, localTarget ? 1 / shadowSize : 0)
   gl.uniform3fv(uniforms.localShadowExtent, localShadowExtent)
+  gl.uniform1f(uniforms.detailShadowPixel, detailTarget ? 1 / detailShadowSize : 0)
+  gl.uniform3fv(uniforms.detailShadowExtent, detailShadowExtent)
 
   let sample
   let count = 0
   let terrainMesh
+  let siteFrame
+  let detailCenter
+  let detailCount = 0
+  let detailShadowSample
   let walkEast = 0
   let walkNorth = 0
   let groundHeight = -2
   let azimuth = 0
   let elevation = 1
+  let flying = false
   let cameraHeight = 2
   let zoom = 1
   let illustrated = true
@@ -582,13 +671,11 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   const earthContext = earthDisk.getContext('2d')
   const earthPixels = earthContext.createImageData(earthDiskSize, earthDiskSize)
   let earthTexture
-  const earthPhoto = new Image()
-  earthPhoto.addEventListener('load', () => {
-    earthContext.drawImage(earthPhoto, ...earthPhotoCrop, 0, 0, earthDiskSize, earthDiskSize)
-    earthTexture = earthContext.getImageData(0, 0, earthDiskSize, earthDiskSize).data
+  let earthFrame
+  void loadBodyTexture('./assets/earth-clouds.webp').then(texture => {
+    earthTexture = texture
     draw()
   })
-  earthPhoto.src = new URL('./assets/earth-blue-marble.jpg', import.meta.url).href
   const moonPhoto = new Image()
   const dustPhoto = new Image()
   dustPhoto.addEventListener('load', () => {
@@ -618,6 +705,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     const axis = camera.project(sample.earthAz, sample.earthEl)
     const light = camera.projectVector(earthIllumination(sample).light)
     const radius = Math.sin(sample.earthRadius)
+    const basis = earthFrame?.map(axis => camera.projectVector(axis))
+    const image = basis && earthTexture
     const shaded = earthPixels.data
     const fallbackColor = [139, 184, 251]
     for (let row = 0; row < earthDiskSize; row++) {
@@ -625,15 +714,22 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       for (let col = 0; col < earthDiskSize; col++) {
         const x = (left + diskWidth * (col + .5) / earthDiskSize - width / 2) / scale
         const offset = (row * earthDiskSize + col) * 4
-        const incidence = earthDiskIncidence(x, y, axis, light, radius)
-        shaded[offset + 3] = incidence === null ? 0 : 255
-        if (incidence === null) continue
+        const intersection = earthIntersection(x, y, axis, radius)
+        shaded[offset + 3] = intersection === null ? 0 : 255
+        if (intersection === null) continue
+        const nx = (x * intersection - axis[0]) / radius
+        const ny = (y * intersection - axis[1]) / radius
+        const nz = (intersection - axis[2]) / radius
+        const incidence = nx * light[0] + ny * light[1] + nz * light[2]
         const twilight = clamp((incidence + .13) / .20, 0, 1)
         const fade = twilight * twilight * (3 - 2 * twilight)
         const brightness = .025 + .075 * fade + .9 * Math.sqrt(Math.max(0, incidence))
         const saturation = .2 + .8 * fade
-        const channels = earthTexture ?? fallbackColor
-        const index = earthTexture ? offset : 0
+        const channels = image?.data ?? fallbackColor
+        const index = image ? textureOffset(image,
+          nx * basis[0][0] + ny * basis[0][1] + nz * basis[0][2],
+          nx * basis[1][0] + ny * basis[1][1] + nz * basis[1][2],
+          nx * basis[2][0] + ny * basis[2][1] + nz * basis[2][2]) : 0
         const gray = .2126 * channels[index] + .7152 * channels[index + 1] + .0722 * channels[index + 2]
         for (let channel = 0; channel < 3; channel++) {
           shaded[offset + channel] = brightness * (gray + saturation * (channels[index + channel] - gray))
@@ -644,9 +740,32 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     sky.drawImage(earthDisk, left, top, diskWidth, diskHeight)
   }
 
+  function updateDetail() {
+    const east = Math.round(walkEast / detailTileSize) * detailTileSize
+    const north = Math.round(walkNorth / detailTileSize) * detailTileSize
+    if (detailCenter?.[0] === east && detailCenter[2] === north) return
+    const heightAt = (x, z) => terrainGroundAt(terrainMesh, x, z)
+    detailCenter = [east, heightAt(east, north) ?? groundHeight, north]
+    const mesh = buildSurfaceDetail(siteFrame, east, north, heightAt)
+    gl.bindBuffer(gl.ARRAY_BUFFER, detailBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.DYNAMIC_DRAW)
+    detailCount = mesh.length / surfaceDetailStride
+    detailShadowSample = null
+  }
+
+  function prepareShadowTarget(target, size, extent, center) {
+    gl.uniform3fv(shadowUniforms.shadowExtent, extent)
+    gl.uniform3fv(shadowUniforms.shadowCenter, center)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target)
+    gl.viewport(0, 0, size, size)
+    gl.clearColor(1, 1, 1, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+  }
+
   function drawShadows() {
-    if ((!regionalTarget && !localTarget) || shadowSample === sample || sample.eclipse) return
-    shadowSample = sample
+    const refreshTerrain = (regionalTarget || localTarget) && shadowSample !== sample
+    const refreshDetail = detailTarget && detailShadowSample !== sample
+    if (sample.eclipse || (!refreshTerrain && !refreshDetail)) return
     const frame = solarShadowFrame(sample.sunAz, sample.sunEl)
     const width = 390_000
     const height = 40_000 + width * Math.abs(Math.sin(sample.sunEl * radians))
@@ -658,22 +777,28 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       gl.uniform3f(bindings.shadowExtent, width, height, width)
     }
     gl.useProgram(shadowProgram)
-    for (const [target, extent] of [[regionalTarget, [width, height, width]], [localTarget, localShadowExtent]]) {
-      if (!target) continue
-      gl.uniform3fv(shadowUniforms.shadowExtent, extent)
-      gl.bindFramebuffer(gl.FRAMEBUFFER, target)
-      gl.viewport(0, 0, shadowSize, shadowSize)
-      gl.clearColor(1, 1, 1, 1)
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-      gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
+    if (refreshTerrain) {
+      bindTerrain()
+      for (const [target, extent] of [[regionalTarget, [width, height, width]], [localTarget, localShadowExtent]]) {
+        if (!target) continue
+        prepareShadowTarget(target, shadowSize, extent, [0, 0, 0])
+        gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
+      }
+      shadowSample = sample
+    }
+    if (refreshDetail) {
+      bindDetail()
+      prepareShadowTarget(detailTarget, detailShadowSize, detailShadowExtent, detailCenter)
+      gl.drawArrays(gl.TRIANGLES, 0, detailCount)
+      detailShadowSample = sample
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 
   function draw() {
     const { clientWidth: width, clientHeight: height } = canvas
-    if (!sample || !count || !width || !height) return
-    const pixel = Math.min(devicePixelRatio || 1, 2)
+    if (!sample || !count || !width || !height || canvas.closest('.viewer-layer')?.inert) return
+    const pixel = flying ? Math.min(1,1280/Math.max(width,height)) : Math.min(devicePixelRatio || 1, 2)
     const pixelWidth = Math.round(width * pixel)
     const pixelHeight = Math.round(height * pixel)
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -682,6 +807,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     }
     const camera = surfaceCamera(azimuth, elevation)
     const scale = Math.min(width, height) * .83 * zoom
+    updateDetail()
     drawShadows()
     gl.useProgram(program)
     gl.viewport(0, 0, canvas.width, canvas.height)
@@ -695,7 +821,13 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform3fv(uniforms.sunDirection, direction(sample.sunAz, sample.sunEl))
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
     gl.uniform1f(uniforms.inkStyle, Number(illustrated))
+    gl.uniform3fv(uniforms.detailShadowCenter, detailCenter)
+    bindTerrain()
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
+    if (detailCount) {
+      bindDetail()
+      gl.drawArrays(gl.TRIANGLES, 0, detailCount)
+    }
 
     sky.setTransform(pixel, 0, 0, pixel, 0, 0)
     sky.clearRect(0, 0, width, height)
@@ -895,6 +1027,16 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   new ResizeObserver(draw).observe(canvas)
 
   return { draw, turn, aim, walk, returnToLanding,
+    prepareFlight() { gl.finish() },
+    camera: () => ({height:cameraHeight,azimuth,elevation,zoom}),
+    flight({height,azimuth:heading,elevation:pitch,zoom:scale=1,moving=false}) {
+      flying=moving
+      cameraHeight=height
+      azimuth=heading
+      elevation=pitch
+      zoom=scale
+      draw()
+    },
     aimAtGround(east, north, pitch) {
       const x = east - walkEast
       const z = north - walkNorth
@@ -910,7 +1052,19 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       cameraHeight = value
       draw()
     },
-    update(value, track = null) { sample = value; paths = track; draw() }, setTerrain(mesh, site, initialAzimuth) {
+    update(value, track = null, epoch = 0, rotation = null) {
+      sample = value
+      paths = track
+      if (rotation && siteFrame) {
+        const toEarth = earthOrientation(epoch)
+        const axes = [siteFrame.east, siteFrame.up, siteFrame.north].map(axis => toEarth(rotateBodyVector(axis, rotation)))
+        earthFrame = axes[0].map((_, index) => axes.map(axis => axis[index]))
+      } else {
+        earthFrame = null
+      }
+      draw()
+    },
+    setTerrain(mesh, site, initialAzimuth) {
     sample = null
     terrainMesh = mesh
     stopWalking()
@@ -922,7 +1076,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.bufferData(gl.ARRAY_BUFFER, terrainNormals(mesh), gl.STATIC_DRAW)
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
     count = indices.length
-    const siteFrame = observer(site.lat, site.lon, 0)
+    siteFrame = observer(site.lat, site.lon, 0)
+    detailCenter = null
     gl.useProgram(program)
     gl.uniform3fv(uniforms.siteEast, siteFrame.east)
     gl.uniform3fv(uniforms.siteNorth, siteFrame.north)

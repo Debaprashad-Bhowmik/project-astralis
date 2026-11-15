@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "Please cite this version of Astralis and the original data products in REFERENCES.md when using its results."
+type: software
+title: "Astralis: Lunar Site Navigator"
+authors:
+  - name: "The Astralis"
+  - name: "Deb"
+version: 1.1.0
+date-released: 2026-11-15
+repository-code: "https://github.com/Debaprashad-Bhowmik/project-astralis"
+url: "https://github.com/Debaprashad-Bhowmik/project-astralis"
+abstract: "A lunar landing-site comparison application using JPL ephemerides and measured lunar terrain to explore solar energy, Earth visibility, and terrain trade-offs."
+keywords:
+  - lunar exploration
+  - NASA Space Apps
+  - solar energy
+  - Earth visibility
+  - LOLA

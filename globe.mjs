@@ -1,3 +1,4 @@
+import { sphereIntersectionGLSL } from './orbital-geometry.mjs'
 import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
 import { coveragePalette, solarPowerPalette, solarPowerScaleMax, totalityPossible, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, overlapColors } from './mission-heat.mjs'
@@ -46,6 +47,10 @@ const fragment = `
 precision highp float;
 uniform sampler2D lunarMap;
 uniform sampler2D polarRelief;
+uniform sampler2D globalElevation;
+uniform bool elevationReady;
+uniform vec4 imageBounds;
+uniform bool tileReady;
 uniform sampler2D missionHeat;
 uniform sampler2D detailHeat;
 uniform vec3 detailEast, detailNorth, detailFront;
@@ -54,17 +59,25 @@ uniform bool showDetail;
 uniform vec2 heatContrast;
 uniform float northLatitude, heatHeight, powerMax;
 uniform float polarExtent;
-uniform float reliefMix;
 uniform vec2 viewport;
 uniform float sphereRadius;
+uniform vec2 sphereCenter;
+uniform vec3 foregroundBody;
+uniform vec4 orbitMoon, orbitEarth, orbitSun;
+uniform float orbitLens, orbitMapBlend;
+uniform bool annotations;
+uniform bool analysis;
+uniform bool terrainAnalysis;
 uniform vec3 east;
 uniform vec3 north;
 uniform vec3 front;
 uniform vec3 sun, earth;
+uniform bool dayNight;
 uniform vec2 visibility;
 uniform bool showPower, showHeat, colorByPower;
 uniform bool possibleEclipse;
 const float pi = 3.14159265359;
+${sphereIntersectionGLSL}
 ${polarShadowShader}
 void conditions(vec3 normal, out bool sunlight, out bool earthView, out float powerFraction, out bool craterShadow) {
   vec3 toSun = sun - normal;
@@ -79,7 +92,7 @@ void conditions(vec3 normal, out bool sunlight, out bool earthView, out float po
   }
   bool smoothSun = sunlight;
   craterShadow = false;
-  if (polarShadows && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)}) {
+  if (polarShadows && terrainAnalysis && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)}) {
     float spacing;
     float height = terrainHeight(normal, spacing);
     if (height > missingHeight) {
@@ -120,39 +133,92 @@ vec3 overlapInk(float value) {
   float band = clamp(fraction, 0.0, 1.0) * ${(overlapColors.length - 1).toFixed(1)};
   ${overlapColors.slice(0, -1).map((color, i) => `${i < overlapColors.length - 2 ? `if (band < ${(i + 1).toFixed(1)}) ` : ''}return mix(${glslColor(color)}, ${glslColor(overlapColors[i + 1])}, band - ${i.toFixed(1)});`).join('\n  ')}
 }
+float globalHeight(vec3 normal) {
+  if(!elevationReady) return 0.0;
+  vec2 uv=vec2(fract(atan(normal.y,normal.x)/(2.0*pi)+.5),.5-asin(clamp(normal.z,-1.0,1.0))/pi);
+  return dot(texture2D(globalElevation,uv).rg,vec2(32640.0,127.5))-10000.0;
+}
+bool globalClear(vec3 start,vec3 light) {
+  if(!elevationReady) return true;
+  float distance=1900.0;
+  for(int i=0;i<52;i++) {
+    vec3 samplePoint=start+light*(distance/moonRadius);
+    float radial=length(samplePoint);
+    float height=(radial-1.0)*moonRadius;
+    if(height>11000.0) return true;
+    if(globalHeight(samplePoint/radial)>height) return false;
+    distance+=max(1900.0,distance*.09);
+  }
+  return true;
+}
 void main() {
-  vec2 p = (gl_FragCoord.xy - viewport / 2.0) / sphereRadius;
+  vec2 p = (gl_FragCoord.xy - sphereCenter) / sphereRadius;
+  vec2 screenPixel=vec2(gl_FragCoord.x,viewport.y-gl_FragCoord.y);
+  if(foregroundBody.z>0.0 && length(screenPixel-foregroundBody.xy)<foregroundBody.z) discard;
   float distanceSquared = dot(p, p);
-  if (distanceSquared > 1.0) discard;
-  float depth = sqrt(1.0 - distanceSquared);
-  vec3 normal = p.x * east + p.y * north + depth * front;
+  float depth = sqrt(max(0.0, 1.0-distanceSquared));
+  vec3 normal;
+  if(orbitLens>0.0) {
+    vec3 ray=normalize(vec3((gl_FragCoord.xy-viewport*.5)/orbitLens,1.0));
+    float hit=hitSphere(ray,orbitMoon);
+    if(hit>1.0e19 || min(hitSphere(ray,orbitEarth),hitSphere(ray,orbitSun))<hit) discard;
+    vec3 cameraNormal=normalize(ray*hit-orbitMoon.xyz);
+    normal=cameraNormal.x*east+cameraNormal.y*north-cameraNormal.z*front;
+    // The flight ends in the map's orthographic projection without a texture jump.
+    vec3 mapNormal=p.x*east+p.y*north+depth*front;
+    normal=normalize(mix(normal,mapNormal,orbitMapBlend));
+    depth=max(0.0,-cameraNormal.z);
+  } else {
+    if(distanceSquared>1.0) discard;
+    normal=p.x*east+p.y*north+depth*front;
+  }
   float longitude = atan(normal.y, normal.x);
   float latitude = asin(clamp(normal.z, -1.0, 1.0));
   vec2 uv = vec2(longitude / (2.0 * pi) + 0.5, 0.5 - latitude / pi);
   vec3 reflectance = texture2D(lunarMap, uv).rgb;
-  if (reliefMix > 0.0 && normal.z < -.97) {
-    float polarDistance = tan((latitude + pi * .5) * .5) / polarExtent;
-    vec2 polarUv = vec2(.5) + polarDistance * vec2(sin(longitude), -cos(longitude));
-    float edge = length(polarUv - .5);
-    float strength = reliefMix * (1.0 - smoothstep(.37, .49, edge));
-    vec3 relief = texture2D(polarRelief, polarUv).rgb;
-    reflectance = mix(reflectance, relief, strength);
-  }
-  if (polarShadows && reliefMix > .75 && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)}) {
-    vec2 meters = projectedTerrain(normal);
-    float spacing, unused;
-    float here = polarElevation(meters, spacing);
-    float eastward = polarElevation(meters + vec2(spacing, 0.0), unused);
-    float northward = polarElevation(meters + vec2(0.0, spacing), unused);
-    if (min(here, min(eastward, northward)) > missingHeight) {
-      vec3 slope = normalize(vec3(here - eastward, here - northward, spacing));
-      float reliefLight = .35 + .65 * max(0.0, dot(slope, normalize(vec3(-.55, .66, .60))));
-      reflectance *= reliefLight * 1.25;
-    }
+  vec2 tileUv=(uv-imageBounds.xy)/imageBounds.zw;
+  if(tileReady && min(tileUv.x,tileUv.y)>.002 && max(tileUv.x,tileUv.y)<.998) {
+    reflectance=texture2D(polarRelief,tileUv).rgb;
   }
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
-  if (latitude <= northLatitude) {
+  if (dayNight) {
+    vec3 toSun=normalize(sun-normal);
+    vec3 localEast=normalize(vec3(-normal.y,normal.x,0.0000001));
+    vec3 localNorth=normalize(cross(normal,localEast));
+    float h=globalHeight(normal);
+    float spacing=1900.0;
+    if(polarShadows && normal.z<-.99) {
+      float polar=terrainHeight(normal,spacing);
+      if(polar>missingHeight) h=polar;
+    }
+    vec3 nEast=normalize(normal+localEast*(spacing/moonRadius));
+    vec3 nNorth=normalize(normal+localNorth*(spacing/moonRadius));
+    float e=globalHeight(nEast), n=globalHeight(nNorth);
+    if(polarShadows && normal.z<-.99) {
+      float unused;
+      float pe=terrainHeight(nEast,unused), pn=terrainHeight(nNorth,unused);
+      if(pe>missingHeight) e=pe;
+      if(pn>missingHeight) n=pn;
+    }
+    vec3 slope=normalize(normal-localEast*((e-h)/spacing)-localNorth*((n-h)/spacing));
+    float elevation=dot(normal,toSun);
+    float incidence=dot(slope,toSun);
+    bool illuminated=elevation>-.12 && incidence>0.0;
+    if(illuminated && elevation<.30) {
+      vec3 start=normal*(1.0+(h+3.0)/moonRadius);
+      illuminated=polarShadows && normal.z<-.99
+        ? clearOfTerrain(start,toSun,spacing) : globalClear(start,toSun);
+    }
+    if(illuminated && possibleEclipse) {
+      vec3 earthDirection=normalize(earth-normal);
+      float separation=atan(length(cross(toSun,earthDirection)),dot(toSun,earthDirection));
+      if(separation+asin(${(sunRadius/radius).toFixed(8)}/length(sun-normal))<=asin(${(earthRadius/radius).toFixed(8)}/length(earth-normal))) illuminated=false;
+    }
+    float diffuse=illuminated?sqrt(max(0.0,incidence)):0.0;
+    surface=reflectance*(vec3(.025,.028,.035)+vec3(1.12)*diffuse);
+  }
+  if (analysis && latitude <= northLatitude) {
     vec4 heat = vec4(0.0);
     if (showHeat) {
       float fraction = (northLatitude - latitude) / (northLatitude + pi * .5);
@@ -174,7 +240,7 @@ void main() {
     bool live = showPower || showVisibility;
     bool sunlight = false, earthView = false, craterShadow = false;
     float powerFraction = 0.0;
-    if (live || (polarShadows && !showHeat && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)})) {
+    if (live || (polarShadows && terrainAnalysis && !showHeat && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)})) {
       conditions(normal, sunlight, earthView, powerFraction, craterShadow);
     }
     // Decode the sampled hours before masking them by the live conditions.
@@ -194,8 +260,10 @@ void main() {
   float pixel = max(length(vec2(dFdx(latitude), dFdy(latitude))), .00002);
   float ring = 1.0 - smoothstep(.65 * pixel, 1.55 * pixel, edge);
   float outline = 1.0 - smoothstep(1.75 * pixel, 2.75 * pixel, edge);
-  surface = mix(surface, vec3(.12,.065,.17), outline * .72);
-  surface = mix(surface, vec3(.91,.69,1.0), ring);
+  if (annotations) {
+    surface = mix(surface, vec3(.12,.065,.17), outline * .72);
+    surface = mix(surface, vec3(.91,.69,1.0), ring);
+  }
   gl_FragColor = vec4(surface, 1.0);
 }
 `
@@ -208,13 +276,14 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onTerrainStatus } = {}) {
-  const gl = canvas.getContext('webgl', { antialias: true, alpha: true })
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onTerrainStatus, directions } = {}) {
+  const gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer:true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
   for (const [source, kind] of [[vertex, gl.VERTEX_SHADER], [fragment, gl.FRAGMENT_SHADER]]) {
     const shader = gl.createShader(kind)
-    gl.shaderSource(shader, source)
+    gl.shaderSource(shader, gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)>=9 ? source :
+      source.replace('uniform sampler2D globalElevation;', '').replace('dot(texture2D(globalElevation,uv).rg,vec2(32640.0,127.5))-10000.0', '0.0'))
     gl.compileShader(shader)
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error('3D rendering failed. Use the polar map to select sites.')
     gl.attachShader(program, shader)
@@ -228,9 +297,9 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   const point = gl.getAttribLocation(program, 'point')
   gl.enableVertexAttribArray(point)
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
-  const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
-    'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'colorByPower', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
-    'polarExtent', 'reliefMix', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
+  const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'sphereCenter', 'foregroundBody', 'orbitMoon', 'orbitEarth', 'orbitSun', 'orbitLens', 'orbitMapBlend', 'annotations', 'analysis', 'terrainAnalysis', 'east', 'north', 'front',
+    'sun', 'earth', 'dayNight', 'visibility', 'showPower', 'showHeat', 'colorByPower', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
+    'globalElevation','elevationReady','tileReady','imageBounds','polarExtent', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -260,6 +329,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.activeTexture(gl.TEXTURE0)
   gl.uniform1f(uniforms.polarExtent, polarExtent / radius)
 
+  let flightCamera = null
   let latitude = -12
   let longitude = 17
   let zoom = 1
@@ -285,11 +355,14 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let drag
   const pointers = new Map()
   let ready = false
-  let reliefReady = false
+  let imageTile
+  let wantedTile
   const markers = new Map()
   const featureContext = featureCanvas?.getContext('2d')
   const globeImage = new Image()
   globeImage.onload = () => {
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D,texture)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, globeImage)
     ready = true
     draw()
@@ -297,33 +370,85 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   globeImage.onerror = () => canvas.dispatchEvent(new Event('textureerror'))
   globeImage.src = new URL('./assets/moon-color.jpg', import.meta.url).href
   const detailImage = new Image()
-  const polarImage = new Image()
-  polarImage.onload = () => {
-    gl.activeTexture(gl.TEXTURE1)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, polarImage)
+  if(directions && gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)>=9 && gl.getParameter(gl.MAX_TEXTURE_SIZE)>=5760) {
+    gl.activeTexture(gl.TEXTURE8)
+    gl.bindTexture(gl.TEXTURE_2D,gl.createTexture())
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([78,32,0,255]))
+    for(const parameter of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D,parameter,gl.LINEAR)
+    for(const parameter of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D,parameter,gl.CLAMP_TO_EDGE)
+    gl.uniform1i(uniforms.globalElevation,8)
     gl.activeTexture(gl.TEXTURE0)
-    reliefReady = true
-    draw()
+    const elevations=new Image()
+    elevations.onload=()=>{
+      gl.activeTexture(gl.TEXTURE8)
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,gl.NONE)
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,elevations)
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,gl.BROWSER_DEFAULT_WEBGL)
+      gl.uniform1i(uniforms.elevationReady,1)
+      gl.activeTexture(gl.TEXTURE0)
+      draw()
+    }
+    elevations.src=new URL('./assets/moon-elevation.png',import.meta.url).href
   }
-  polarImage.src = new URL('./data/polar-relief.webp', import.meta.url).href
+  function requestImageTile(orientation,size,height) {
+    if(!detail || size<height*.9 || gl.getParameter(gl.MAX_TEXTURE_SIZE)<4096) return
+    const normal=orientation.front
+    const u=((Math.atan2(normal[1],normal[0])/(2*Math.PI)+.5)%1+1)%1
+    const v=.5-Math.asin(normal[2])/Math.PI
+    const x=Math.min(3,Math.floor(u*4)),y=Math.min(1,Math.floor(v*2))
+    const tile=x+'-'+y
+    if(wantedTile===tile) return
+    wantedTile=tile
+    const image=new Image()
+    image.onload=()=>{
+      if(wantedTile!==tile)return
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D,reliefTexture)
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image)
+      gl.generateMipmap(gl.TEXTURE_2D)
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR)
+      gl.uniform4f(uniforms.imageBounds,x/4,y/2,.25,.5)
+      gl.uniform1i(uniforms.tileReady,1)
+      gl.activeTexture(gl.TEXTURE0)
+      imageTile=tile
+      canvas.dataset.texture='16K regional detail'
+      draw()
+    }
+    image.onerror=()=>{if(wantedTile===tile)wantedTile=imageTile}
+    image.src=new URL('./assets/moon-tiles/'+tile+'.webp',import.meta.url).href
+  }
   detailImage.onload = () => {
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D,texture)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, detailImage)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR)
+    canvas.dataset.texture=detailImage.naturalWidth+" px global imagery"
     ready = true
     draw()
   }
   if (detail && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 4096) {
     globeImage.addEventListener('load', () => {
-      detailImage.src = new URL('./assets/moon-color-4k.webp', import.meta.url).href
+      const high=gl.getParameter(gl.MAX_TEXTURE_SIZE)>=8192 && (navigator.deviceMemory??8)>=8
+      detailImage.src = new URL(high?'./assets/moon-color-8k.webp':'./assets/moon-color-4k.webp', import.meta.url).href
     }, { once: true })
   }
 
   function draw() {
+    if (canvas.closest('.viewer-layer')?.inert && !flightCamera) return
     const { clientWidth: width, clientHeight: height } = canvas
     if (!width || !height) return
-    const ratio = Math.min(devicePixelRatio || 1, 2)
-    const size = Math.min(width, height) * .46 * zoom
-    const orientation = globeOrientation(latitude, longitude)
-    if (onViewChange) {
+    const ratio = flightCamera?.moving ? Math.min(1,720/Math.max(width,height)) : Math.min(devicePixelRatio || 1, 2)
+    const size = flightCamera?.radius ?? Math.min(width, height) * .46 * zoom
+    const orientation = flightCamera?.orientation ?? globeOrientation(latitude, longitude)
+    const center = flightCamera?.center ?? [width / 2, height / 2]
+    requestImageTile(orientation,size,height)
+    const annotations = !flightCamera
+    markerLayer.hidden = !annotations
+    if (featureCanvas) featureCanvas.style.visibility = annotations ? '' : 'hidden'
+    if (poleMarker && !annotations) poleMarker.hidden = true
+    if (directions) for (const label of Object.values(directions)) label.style.visibility = annotations ? '' : 'hidden'
+    if (onViewChange && !flightCamera) {
       const key = `${latitude}/${longitude}/${zoom}/${width}/${height}`
       if (viewKey !== key) {
         viewKey = key
@@ -336,7 +461,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     }
     if (ready) {
       const reach = Math.asin(Math.min(1, Math.hypot(width, height) / (2 * size))) / rad
-      const showShadows = shadowRequested && latitude - reach <= artemisSouthLatitude
+      const viewLatitude=Math.asin(orientation.front[2])/rad
+      const showShadows = Boolean(directions) && viewLatitude - reach <= artemisSouthLatitude
       if (showShadows && polarState === 'idle') {
         polarState = 'loading'
         onTerrainStatus?.('loading')
@@ -353,10 +479,19 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.uniform2f(uniforms.viewport, canvas.width, canvas.height)
       gl.uniform1f(uniforms.sphereRadius, size * ratio)
-      gl.uniform1f(uniforms.reliefMix, reliefReady ? clamp((zoom - 2) / 2, 0, 1) : 0)
+      gl.uniform2f(uniforms.sphereCenter, center[0] * ratio, (height - center[1]) * ratio)
+      gl.uniform3fv(uniforms.foregroundBody,(flightCamera?.foregroundBody??[0,0,0]).map(value=>value*ratio))
+      const perspective=flightCamera?.perspective
+      gl.uniform1f(uniforms.orbitLens,(perspective?.lens??0)*ratio)
+      gl.uniform1f(uniforms.orbitMapBlend,perspective?.mapBlend??0)
+      for(const name of ['moon','earth','sun']) gl.uniform4fv(uniforms['orbit'+name[0].toUpperCase()+name.slice(1)],perspective?.[name]??[0,0,0,0])
+      gl.uniform1i(uniforms.annotations, Number(annotations))
+      gl.uniform1i(uniforms.analysis, Number(!flightCamera))
+      gl.uniform1i(uniforms.terrainAnalysis,Number(shadowRequested))
       for (const [name, direction] of Object.entries(orientation)) gl.uniform3fv(uniforms[name], direction)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
+    if (flightCamera) return
     const [poleX, poleY, poleDepth] = projectSite(southPoleView, orientation)
     const poleLeft = width / 2 + size * poleX
     const poleTop = height / 2 - size * poleY
@@ -381,7 +516,28 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       marker.classList.toggle('flip', left > width - Math.min(width * .62, label.length * 6.6 + 24))
       marker.setAttribute('aria-pressed', String(selected === site.id))
     }
+    if (directions) positionDirections(width, height, size, orientation)
     drawFeatures(width, height, size, ratio, orientation)
+  }
+
+  function positionDirections(width, height, size, orientation) {
+    for (const [index, name] of ['sun', 'earth'].entries()) {
+      const label = directions[name]
+      label.hidden = !overlayFrame
+      if (!overlayFrame) continue
+      const vector = overlayFrame[index]
+      const length = Math.hypot(...vector)
+      const x = dot(vector, orientation.east) / length
+      const y = -dot(vector, orientation.north) / length
+      const front = dot(vector, orientation.front) > 0
+      const direction = Math.hypot(x, y) < .08 ? (front ? '⊙' : '⊗')
+        : ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'][(Math.round(Math.atan2(y, x) * 4 / Math.PI) + 8) % 8]
+      const title = name === 'sun' ? 'Sun' : 'Earth'
+      label.textContent = `${direction} ${title} ${front ? '· near side' : '· far side'}`
+      label.style.setProperty('--direction-x', clamp(x * size, 64 - width / 2, width / 2 - 64) + 'px')
+      const top = height / 2 + y * size
+      label.style.top = clamp(top, 18, height - 45) + (index * 24) + 'px'
+    }
   }
 
   function drawFeatures(width, height, size, ratio, orientation) {
@@ -490,6 +646,36 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
 
   return {
     draw, rotate,
+    setLighting(frame) {
+      gl.uniform1i(uniforms.dayNight,Number(Boolean(frame)))
+      if(frame) {
+        gl.uniform3fv(uniforms.sun,frame[0].map(value=>value/radius))
+        gl.uniform3fv(uniforms.earth,frame[1].map(value=>value/radius))
+        gl.uniform1i(uniforms.possibleEclipse,Number(totalityPossible(frame[0],frame[1])))
+      }
+    },
+    flight(camera) { flightCamera = camera; draw() },
+    camera() {
+      const { clientWidth: width, clientHeight: height } = canvas
+      return flightCamera ?? { radius: Math.min(width, height) * .46 * zoom, center: [width / 2, height / 2],
+        orientation: globeOrientation(latitude, longitude) }
+    },
+    landCamera(site, scale = 1) {
+      latitude = site.lat
+      longitude = site.lon
+      zoom = scale
+      flightCamera = null
+      draw()
+    },
+    viewCenter: () => ({ lat: latitude, lon: longitude }),
+    siteAnchor(site) {
+      if (!site) return null
+      const { clientWidth: width, clientHeight: height } = canvas
+      const [x, y, depth] = projectSite(site, globeOrientation(latitude, longitude))
+      const size = Math.min(width, height) * .46 * zoom
+      return depth > 0 && Math.abs(size * x) < width / 2 && Math.abs(size * y) < height / 2
+        ? `calc(50% + ${x * size}px) calc(50% - ${y * size}px)` : null
+    },
     heatViewport() {
       const { clientWidth: width, clientHeight: height } = canvas
       if (!width || !height || zoom < 2.5) return null
@@ -537,6 +723,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       gl.uniform2fv(uniforms.heatContrast, heatContrast)
       gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
       gl.uniform1f(uniforms.powerMax, powerMax)
+      gl.uniform1i(uniforms.dayNight, Number(Boolean(directions && frame)))
       if (frame) {
         const [sun, earth] = frame
         gl.uniform3fv(uniforms.sun, sun.map(value => value / radius))

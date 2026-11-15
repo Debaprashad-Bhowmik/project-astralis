@@ -1,1 +1,19 @@
 .venv/
+
+# Local attachments, source downloads, and generated scratch work
+.codex-attachments/
+docs/superpowers/
+.local-artifacts/
+downloads/
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# Unused working derivative (older tracked assets remain for provenance)
+assets/earth-global.webp

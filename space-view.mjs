@@ -1,4 +1,9 @@
 import { observer } from './planner.mjs'
+import { earthOrientation, rotateBodyVector } from './body-textures.mjs'
+
+import { globeOrientation } from './globe.mjs'
+import { createOrbitalBodies } from './orbital-bodies.mjs?v=physical-orbit-1'
+import { physicalBodies, orbitUnitKm, projectBody, nearestBody } from './orbital-geometry.mjs'
 
 const stride = 10
 const magnitude = vector => Math.hypot(...vector)
@@ -52,217 +57,189 @@ export function systemAt(samples, index) {
 
 export function siteDirection(site, state) {
   const normal = observer(site.lat, site.lon, 0).up
-  const [scalar, ...axis] = state.rotation
-  const t = scale(cross(axis, normal), 2)
-  const term = cross(axis, t)
-  return normal.map((value, i) => value + scalar * t[i] + term[i])
+  return rotateBodyVector(normal, state.rotation)
 }
 
 const distanceLabel = new Intl.NumberFormat('en', { maximumFractionDigits: 0 })
-const earthMoonScale = 384400
-const sunDrawingDistance = 2.25
-const defaultPitch = -.57
-const colors = { sun: '#ffc975', earth: '#acc4ff', moon: '#e8e8eb', site: '#83dccb' }
+export function fullyOcculted(body, others) {
+  const distance = magnitude(body.slice(0,3))
+  const direction = unit(body.slice(0,3))
+  const radius = Math.asin(clamp(body[3]/distance,0,1))
+  return others.some(other => {
+    const separation = magnitude(other.slice(0,3))
+    if(separation >= distance) return false
+    const axis = unit(other.slice(0,3))
+    const angle = Math.atan2(magnitude(cross(direction,axis)),dot(direction,axis))
+    return angle + radius < Math.asin(clamp(other[3]/separation,0,1))
+  })
+}
 
 export function createSpaceView(canvas, samples, controls) {
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('This browser could not start the 3D view.')
-  const sprite = document.createElement('canvas')
-  const spriteContext = sprite.getContext('2d')
-  let current
-  let yaw = 0
-  let pitch = defaultPitch
-  let drag
-  let scene = 'earth'
-  let heading
+  const bodies = createOrbitalBodies(canvas)
+  const labels = controls.labels
+  const ctx = labels.getContext('2d')
   const paths = new Map()
+  let current, drag, approachRadius, approachSite, moonCamera
+  let latitude = 18, longitude = -70, scene = 'earth', focus = controls.focus?.value??'', zoom = 1, approach = 0
 
   function trail(index, kind) {
     const last = samples.length / stride - 1
     const lunar = kind === 'moon'
-    const yearRange = lunar ? null : current.yearRange
-    const period = yearRange ? yearRange[1] - yearRange[0] : Math.min(last, lunar ? 656 : 8766)
-    const segments = Math.max(1, Math.ceil(period / (lunar ? 4 : 36)))
-    const start = yearRange ? yearRange[0] : clamp(Math.floor(index / 24) * 24 - Math.floor(period / 2), 0, last - period)
+    const period = Math.min(last, lunar ? 656 : 8766)
+    const start = clamp(Math.floor(index / 24)*24-Math.floor(period/2),0,last-period)
     const cached = paths.get(kind)
-    if (cached?.start === start && cached.period === period) return cached.points
-    const points = Array.from({ length: segments + 1 }, (_, i) => {
-      const offset = Math.round(start + i * period / segments) * stride + (lunar ? 0 : 3)
-      const vector = Array.from(samples.subarray(offset, offset + 3))
-      if (lunar) return scale(vector, 1 / earthMoonScale)
-      return kind === 'earth' ? scale(vector, -1 / 149597871) : scale(unit(vector), sunDrawingDistance)
+    if(cached?.start === start) return cached.points
+    const segments = lunar ? 180 : 260
+    const points = Array.from({length:segments+1},(_,i)=>{
+      const offset = Math.round(start+i*period/segments)*stride+(lunar?0:3)
+      return scale(Array.from(samples.subarray(offset,offset+3)),1/orbitUnitKm)
     })
-    paths.set(kind, { start, period, points })
+    paths.set(kind,{start,points})
     return points
   }
 
-  function drawPhase(x, y, radius, light, color, dpi) {
-    const diameter = Math.ceil(2 * radius * dpi)
-    sprite.width = sprite.height = diameter
-    const pixels = spriteContext.createImageData(diameter, diameter)
-    for (let row = 0; row < diameter; row++) {
-      const ny = 1 - (row + .5) * 2 / diameter
-      for (let column = 0; column < diameter; column++) {
-        const nx = (column + .5) * 2 / diameter - 1
-        const r2 = nx * nx + ny * ny
-        if (r2 >= 1) continue
-        const nz = Math.sqrt(1 - r2)
-        const glow = Math.max(0, light[0] * nx + light[1] * ny + light[2] * nz)
-        const shade = .17 + .83 * Math.sqrt(glow)
-        const offset = (row * diameter + column) * 4
-        for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = color[channel] * shade
-        pixels.data[offset + 3] = Math.min(255, (1 - Math.sqrt(r2)) * diameter * 150)
-      }
-    }
-    spriteContext.putImageData(pixels, 0, 0)
-    ctx.drawImage(sprite, x - radius, y - radius, 2 * radius, 2 * radius)
-  }
-
   function draw() {
-    if (!current || !ctx) return
-    const { clientWidth: width, clientHeight: height } = canvas
-    if (!width || !height) return
-    const dpi = Math.min(2, devicePixelRatio || 1)
-    canvas.width = Math.round(width * dpi)
-    canvas.height = Math.round(height * dpi)
-    ctx.setTransform(dpi, 0, 0, dpi, 0, 0)
-
-    const { state, site, index } = current
-    const aroundSun = scene === 'sun'
-    const sunPosition = aroundSun ? [0, 0, 0] : scale(state.sun, sunDrawingDistance / magnitude(state.sun))
-    const earthPosition = aroundSun ? scale(state.sun, -1 / 149597871) : [0, 0, 0]
-    const moonOffset = scale(state.moon, aroundSun ? .25 / earthMoonScale : 1 / earthMoonScale)
-    const moonPosition = earthPosition.map((value, i) => value + moonOffset[i])
-    const longitude = heading + yaw
-    const right = [Math.cos(longitude), Math.sin(longitude), 0]
-    const forward = [-Math.sin(longitude), Math.cos(longitude), 0]
-    const up = [...scale(forward.slice(0, 2), -Math.sin(pitch)), Math.cos(pitch)]
-    const toward = cross(right, up)
-    const size = aroundSun
-      ? Math.min((width - 62) / 2.6, (height - 55) / 2.4)
-      : Math.min((width - 62) / 4.5, (height - 68) / (4.5 * Math.max(.46, Math.abs(Math.sin(pitch)))))
-    const middle = [width / 2, height / 2]
-    function project(vector) {
-      return [middle[0] + dot(vector, right) * size, middle[1] - dot(vector, up) * size, dot(vector, toward)]
+    if(!current || canvas.closest('.viewer-layer')?.inert) return
+    const width=canvas.clientWidth, height=canvas.clientHeight
+    if(!width || !height) return
+    const dpi=Math.min(2,devicePixelRatio||1)
+    if(labels.width!==Math.round(width*dpi) || labels.height!==Math.round(height*dpi)) {
+      labels.width=Math.round(width*dpi); labels.height=Math.round(height*dpi)
     }
-    function line(points, color, dash = []) {
-      ctx.beginPath()
-      ctx.setLineDash(dash)
-      ctx.strokeStyle = color
-      points.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y))
-      ctx.stroke()
-      ctx.setLineDash([])
+    ctx.setTransform(dpi,0,0,dpi,0,0)
+    ctx.clearRect(0,0,width,height)
+    const {state,index,epoch,site}=current
+    const world=physicalBodies(state)
+    const delta=approachSite?((approachSite.lon-longitude+540)%360)-180:0
+    const orientation=globeOrientation(latitude+((approachSite?.lat??latitude)-latitude)*approach,longitude+delta*approach)
+    const camera=[orientation.east,orientation.north,orientation.front].map(axis=>rotateBodyVector(axis,state.rotation))
+    const [right,up,toward]=camera
+    const axes=[right,up,scale(toward,-1)]
+    const lens=Math.min(width,height)*.95
+    const originalTarget=focus ? world[focus].slice(0,3) : scene==='sun' ? world.sun.slice(0,3) : scale(world.moon.slice(0,3),.5)
+    const originalDistance=focus ? world[focus][3]*4 : scene==='sun' ? magnitude(world.sun.slice(0,3))*2.6 : magnitude(world.moon.slice(0,3))*1.7
+    const minimum=focus ? world[focus][3]*1.08 : scene==='sun' ? world.sun[3]*1.08 : world.earth[3]+magnitude(world.moon.slice(0,3))*.51
+    const startDistance=Math.max(minimum,originalDistance/zoom)
+    const finalRadius=approachRadius??Math.min(width,height)*.46
+    const endDistance=world.moon[3]*Math.sqrt(1+(lens/finalRadius)**2)
+    const distance=startDistance*Math.exp(Math.log(endDistance/startDistance)*approach)
+    // Recenter in proportion to camera distance. Linear travel from the Sun
+    // would leave the Moon off screen until the final few frames.
+    const centerRatio=Math.abs(startDistance-endDistance)>1e-12 ?
+      clamp((distance-endDistance)/(startDistance-endDistance),0,1) : 1-approach
+    const target=originalTarget.map((v,i)=>world.moon[i]+(v-world.moon[i])*centerRatio)
+    const eye=target.map((v,i)=>v+toward[i]*distance)
+    const transform=point=>axes.map(axis=>dot(point.map((v,i)=>v-eye[i]),axis))
+    const view=Object.fromEntries(Object.entries(world).map(([name,body])=>[name,[...transform(body.slice(0,3)),body[3]]]))
+    const projected=Object.fromEntries(Object.entries(view).map(([name,body])=>[name,projectBody(body,lens,width,height)]))
+    const hidden=Object.fromEntries(Object.entries(view).map(([name,body])=>[name,fullyOcculted(body,Object.entries(view).filter(([other])=>other!==name).map(([,value])=>value))]))
+    function project(point) {
+      const p=transform(point)
+      return p[2]>0 ? [width/2+lens*p[0]/p[2],height/2-lens*p[1]/p[2]] : null
     }
-    const earth = project(earthPosition)
-    const moon = project(moonPosition)
-    const sun = project(sunPosition)
-    if (controls.yearPath.checked) line(trail(index, aroundSun ? 'earth' : 'sun').map(project), aroundSun ? '#718bc2' : '#8e7248')
-    if (controls.moonPath.checked) {
-      const moonTrail = trail(index, 'moon')
-      line(moonTrail.map(point => project(point.map((value, i) => earthPosition[i] + (aroundSun ? .25 : 1) * value))), '#8d8a9e')
-    }
-    if (controls.links.checked) {
-      line([earth, sun], '#80643e', [4, 5])
-      line([earth, moon], '#758bb4', [3, 4])
-    }
-
-    const moonRadius = aroundSun ? 8 : clamp(size * .19, 10, 19)
-    const objects = [
-      { point: sun, radius: clamp(size * .26, 15, 27), color: colors.sun, name: 'Sun' },
-      { point: earth, radius: clamp(size * (aroundSun ? .12 : .26), 12, 24), color: colors.earth,
-        name: 'Earth', light: unit(state.sun), surface: [139, 184, 251] },
-      { point: moon, radius: moonRadius, color: colors.moon, name: 'Moon',
-        light: unit(state.sun.map((component, i) => component - state.moon[i])), surface: [227, 225, 225] },
-    ].sort((a, b) => a.point[2] - b.point[2])
-    for (const { point: [x, y], radius, color, light, surface } of objects) {
-      ctx.beginPath()
-      ctx.arc(x, y, radius, 0, Math.PI * 2)
-      if (light) {
-        drawPhase(x, y, radius, [dot(light, right), dot(light, up), dot(light, toward)], surface, dpi)
-      } else {
-        const glow = ctx.createRadialGradient(x, y, radius * .25, x, y, radius)
-        glow.addColorStop(0, '#fff2b8')
-        glow.addColorStop(1, '#cd7735')
-        ctx.fillStyle = glow
-        ctx.fill()
+    function line(points,color,dash=[]) {
+      ctx.beginPath();ctx.setLineDash(dash);ctx.strokeStyle=color;ctx.globalAlpha=1-approach
+      let previous=false
+      for(const point of points) {
+        const p=project(point)
+        if(!p) { previous=false; continue }
+        if(previous) ctx.lineTo(...p);else ctx.moveTo(...p)
+        previous=true
       }
-      ctx.strokeStyle = light ? color + '88' : color
-      ctx.stroke()
+      ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1
     }
-    if (!controls.yearPath.checked && !controls.moonPath.checked) return
-    ctx.font = '600 13px DM Sans, sans-serif'
-    ctx.textBaseline = 'middle'
-    const labels = []
-    for (const { point: [x, y], radius, color, name } of objects) {
-      const textWidth = ctx.measureText(name).width
-      let textX = clamp(x - textWidth / 2, 6, width - textWidth - 6)
-      let textY = name === 'Moon' ? y + radius + 13 : y - radius - 13
-      const collides = () => labels.some(label => Math.abs(textY - label.y) < 17 && textX < label.right + 7 && textX + textWidth > label.left - 7)
-      if (textY > height - 12) textY = y - radius - 13
-      if (textY < 12 || collides()) textY = y + radius + 13
-      if (collides()) textX = clamp(x + radius + 9, 6, width - textWidth - 6)
-      labels.push({ y: textY, left: textX, right: textX + textWidth })
-      ctx.strokeStyle = '#0b1420'
-      ctx.lineWidth = 3
-      ctx.strokeText(name, textX, textY)
-      ctx.fillStyle = color
-      ctx.fillText(name, textX, textY)
-      ctx.lineWidth = 1
+    if(controls.yearPath.checked) line(trail(index,'sun').map(point=>scene==='sun'?world.sun.slice(0,3).map((v,i)=>v-point[i]):point),'#665944')
+    if(controls.moonPath.checked) line(trail(index,'moon'),'#515265')
+    if(controls.links.checked) {
+      line([world.earth.slice(0,3),world.sun.slice(0,3)],'#685335',[3,7])
+      line([world.earth.slice(0,3),world.moon.slice(0,3)],'#53647e',[3,7])
     }
-    const direction = siteDirection(site, state)
-    const pin = [moon[0] + dot(direction, right) * moonRadius, moon[1] - dot(direction, up) * moonRadius]
-    ctx.beginPath()
-    ctx.arc(...pin, 3, 0, Math.PI * 2)
-    const pinVisible = dot(direction, toward) > 0
-    ctx.fillStyle = pinVisible ? colors.site : '#101e2c'
-    ctx.strokeStyle = colors.site
-    ctx.fill()
-    ctx.stroke()
+    bodies.draw({...view,lens,sunGlow:hidden.sun?0:1,
+      light:axes.map(axis=>dot(unit(state.sun),axis)),basis:axes.map(earthOrientation(epoch))})
+    const lunar=projected.moon
+    moonCamera={moving:approach>0&&approach<1,radius:lunar.radius,center:lunar.center,orientation,
+      perspective:{...view,lens,mapBlend:approach*approach*approach}}
+    controls.moonCamera(moonCamera,state)
+    // Trace annotations are separate from the actual ray-tested body pixels.
+    ctx.globalCompositeOperation='destination-out'
+    for(const item of Object.values(projected)) if(item.inFront) {
+      ctx.beginPath();ctx.arc(...item.center,item.radius+1,0,Math.PI*2);ctx.fill()
+    }
+    ctx.globalCompositeOperation='source-over'
+    ctx.globalAlpha=1-approach
+    ctx.font='600 13px DM Sans, sans-serif';ctx.textAlign='center'
+    const unresolvedPair=projected.earth.radius<4 && projected.moon.radius<4 &&
+      Math.hypot(...projected.earth.center.map((v,i)=>v-projected.moon.center[i]))<35
+    const placedLabels=[]
+    for(const [name,color] of [['earth','#b6cdff'],['sun','#ffd18a'],['moon','#eae9f0']]) {
+      if(name==='moon' && unresolvedPair && !hidden.earth) continue
+      if(hidden[name]) continue
+      const {center:[x,y],radius,inFront}=projected[name]
+      const outside=!inFront || x+radius<0 || x-radius>width || y+radius<0 || y-radius>height
+      const arrow=!inFront?'↶ ':x<0?'← ':x>width?'→ ':y<0?'↑ ':y>height?'↓ ':''
+      const title=name==='earth'&&unresolvedPair&&!hidden.moon?'Earth + Moon':name[0].toUpperCase()+name.slice(1)
+      ctx.fillStyle=color
+      const labelX=clamp(x,85,width-85),initialY=clamp(y+radius+20,24,height-16)
+      const labelY=[0,22,-22,44,-44].map(offset=>initialY+offset).find(candidate=>
+        candidate>=18 && candidate<=height-14 && !placedLabels.some(([px,py])=>Math.abs(px-labelX)<150 && Math.abs(py-candidate)<20))??initialY
+      placedLabels.push([labelX,labelY])
+      ctx.fillText((outside?arrow:'')+title+(outside?' · off screen':''),labelX,labelY)
+    }
+    if(!hidden.moon && lunar.inFront && lunar.radius>4) {
+      const direction=siteDirection(site,state)
+      const worldPoint=world.moon.slice(0,3).map((v,i)=>v+direction[i]*world.moon[3])
+      if(dot(direction,eye.map((v,i)=>v-worldPoint[i]))>0) {
+        const point=project(worldPoint)
+        if(point && nearestBody(transform(worldPoint),view)==='moon') {ctx.beginPath();ctx.arc(...point,3,0,Math.PI*2);ctx.fillStyle='#8edcce';ctx.fill()}
+      }
+    }
+    ctx.globalAlpha=1
+    if(controls.note) controls.note.textContent=Object.entries(hidden).filter(([,value])=>value).map(([name])=>name[0].toUpperCase()+name.slice(1)+' is hidden behind a nearer body.').join(' ')
   }
 
-  function turn(deltaYaw, deltaPitch) {
-    yaw += deltaYaw
-    pitch = clamp(pitch + deltaPitch, -Math.PI / 2, Math.PI / 2)
+  function turn(north,east) {latitude=clamp(latitude+north,-89.8,89.8);longitude=(longitude+east)%360;draw()}
+  canvas.addEventListener('pointerdown',event=>{canvas.setPointerCapture(event.pointerId);drag={x:event.clientX,y:event.clientY}})
+  canvas.addEventListener('pointermove',event=>{
+    if(!drag)return
+    turn((event.clientY-drag.y)*.22,(drag.x-event.clientX)*.22);drag={x:event.clientX,y:event.clientY}
+  })
+  canvas.addEventListener('lostpointercapture',()=>{drag=null})
+  canvas.addEventListener('wheel',event=>{event.preventDefault();zoom=clamp(zoom*Math.exp(-event.deltaY*.0015),.1,20);draw()},{passive:false})
+  controls.left.addEventListener('click',()=>turn(0,-15))
+  controls.right.addEventListener('click',()=>turn(0,15))
+  controls.up.addEventListener('click',()=>turn(12,0))
+  controls.down.addEventListener('click',()=>turn(-12,0))
+  controls.reset.addEventListener('click',()=>{latitude=18;longitude=-70;zoom=1;draw()})
+  controls.focus?.addEventListener('change',event=>{focus=event.target.value;zoom=1;draw()})
+  controls.zoomIn?.addEventListener('click',()=>{zoom=clamp(zoom*1.4,.1,20);draw()})
+  controls.zoomOut?.addEventListener('click',()=>{zoom=clamp(zoom/1.4,.1,20);draw()})
+  for(const control of [controls.yearPath,controls.moonPath,controls.links]) control.addEventListener('change',draw)
+  for(const button of [controls.earthView,controls.sunView]) button.addEventListener('click',()=>{
+    scene=button.value;focus='';zoom=1
+    if(scene==='sun' && current) {
+      const pole=rotateBodyVector([0,0,1],current.state.rotation,true)
+      latitude=Math.asin(clamp(pole[2],-1,1))*180/Math.PI
+      longitude=Math.atan2(pole[1],pole[0])*180/Math.PI
+      controls.yearPath.checked=true
+    }
+    if(controls.focus) controls.focus.value=''
+    controls.earthView.setAttribute('aria-pressed',String(scene==='earth'))
+    controls.sunView.setAttribute('aria-pressed',String(scene==='sun'))
+    controls.yearLabel.textContent=scene==='earth'?'Sun’s annual path':'Earth’s orbit'
     draw()
-  }
-  canvas.addEventListener('pointerdown', event => {
-    canvas.setPointerCapture(event.pointerId)
-    drag = { x: event.clientX, y: event.clientY }
   })
-  canvas.addEventListener('pointermove', event => {
-    if (!drag) return
-    turn((event.clientX - drag.x) * .01, (event.clientY - drag.y) * .01)
-    drag = { x: event.clientX, y: event.clientY }
-  })
-  canvas.addEventListener('lostpointercapture', () => { drag = null })
-  controls.left.addEventListener('click', () => turn(-.26, 0))
-  controls.right.addEventListener('click', () => turn(.26, 0))
-  controls.up.addEventListener('click', () => turn(0, .18))
-  controls.down.addEventListener('click', () => turn(0, -.18))
-  controls.reset.addEventListener('click', () => { yaw = 0; pitch = defaultPitch; draw() })
-  for (const control of [controls.yearPath, controls.moonPath, controls.links]) control.addEventListener('change', draw)
-  for (const button of [controls.earthView, controls.sunView]) {
-    button.addEventListener('click', () => {
-      scene = button.value
-      controls.earthView.setAttribute('aria-pressed', String(scene === 'earth'))
-      controls.sunView.setAttribute('aria-pressed', String(scene === 'sun'))
-      controls.yearLabel.textContent = scene === 'earth' ? 'Sun’s annual path' : 'Earth’s orbit'
-      controls.scale.textContent = scene === 'earth'
-        ? 'The Sun follows its apparent annual path as seen from Earth. Sizes and the Sun’s distance are schematic.'
-        : 'Earth’s path around the Sun is shown from the Sun. Body sizes and the Earth–Moon separation are enlarged.'
-      draw()
-    })
-  }
   new ResizeObserver(draw).observe(canvas)
-
-  return (index, site, yearRange = null) => {
-    const state = systemAt(samples, index)
-    heading ??= Math.atan2(state.sun[1], state.sun[0])
-    current = { state, site, index, yearRange }
-    draw()
-    return {
-      lunarKm: distanceLabel.format(magnitude(state.moon)),
-      solarKm: distanceLabel.format(magnitude(state.sun)),
-    }
+  function update(index,site,yearRange=null,epoch=0,visible=true) {
+    const state=systemAt(samples,index)
+    current={state,index,site,epoch,yearRange}
+    if(visible) draw()
+    return {lunarKm:distanceLabel.format(magnitude(state.moon)),solarKm:distanceLabel.format(magnitude(state.sun))}
   }
+  update.approach=(amount,target,radius)=>{approach=amount;approachSite=target;approachRadius=radius;draw()}
+  update.camera=()=>moonCamera
+  update.viewCenter=()=>({lat:latitude,lon:longitude})
+  update.centerOnLunarView=site=>{latitude=site.lat;longitude=site.lon;draw()}
+  update.lunarRotation=index=>current?.index===index?current.state.rotation:systemAt(samples,index).rotation
+  update.ready=bodies.ready
+  return update
 }

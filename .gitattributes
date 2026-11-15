@@ -1,0 +1,9 @@
+# Keep release checksums and text files identical on Windows, macOS, and CI.
+* text=auto eol=lf
+*.bin -text
+*.gz -text
+*.png -text
+*.jpg -text
+*.webp -text
+*.woff2 -text
+*.pdf -text

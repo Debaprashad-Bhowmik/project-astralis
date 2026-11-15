@@ -1,8 +1,8 @@
 import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, siteSolarPower, skyCrossings, solarExposure } from './planner.mjs'
-import { createGlobe } from './globe.mjs'
-import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
+import { createGlobe, globeOrientation } from './globe.mjs?v=physical-orbit-1'
+import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs?v=physical-orbit-1'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=20261115-terrain-relief'
+import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=cinematic-surface-1'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
@@ -79,6 +79,7 @@ function syncExperience() {
     renderLesson()
     requestAnimationFrame(() => get('explore').scrollIntoView({ behavior: 'instant' }))
   } else if (active) requestAnimationFrame(() => {
+    if (wasExploring && location.hash === '#space') globe?.draw()
     showTime()
     if (wasExploring) get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' })
   })
@@ -148,6 +149,10 @@ let landingRows = []
 const inspectedPatches = new Map()
 const refiningPatches = new Set()
 let updateSpace
+let viewerMode = 'orbit'
+let viewerDestination = 'orbit'
+let viewerFlight = null
+let viewerCrossings
 let spaceYearMode = false
 let spaceYearWindow
 let spaceYearHours = 0
@@ -588,9 +593,7 @@ function focusLandingSuggestion(site) {
   get('surface-height').value = '2'
   surfaceView?.setHeight(2)
   selectSite(site.id, false, true)
-  if (get('surface-view').hidden) void useSkyView(true)
-  get('ops-heading').focus({ preventScroll: true })
-  get('ops-heading').scrollIntoView({ behavior: 'instant' })
+  void openSurfaceView()
   void refineLandingSuggestion(inspectedPatches.get(site.id))
 }
 
@@ -771,6 +774,9 @@ function useMap(view) {
     get(`${mode}-view`).hidden = view !== mode
     get(button).setAttribute('aria-pressed', String(view === mode))
   }
+  for (const [mode, id] of [['globe', 'globe-stage'], ['polar', 'polar-map'], ['coverage', 'viewer-coverage']]) {
+    get(id).hidden = view !== mode
+  }
   get('site-map-legend').hidden = view === 'coverage'
   get('coverage-toolbar').hidden = view === 'polar'
   if (view === 'globe') {
@@ -800,7 +806,7 @@ function showCoverage() {
   const live = Boolean(visibility || power)
   const filtered = Boolean(mission && live || power && visibility)
   const shadows = available && settings.horizon === 'terrain'
-  const drawShadows = shadows && onGlobe && (live || !mission)
+  const drawShadows = shadows && onGlobe && live
   const northLatitude = southOnly ? artemisSouthLatitude : 90
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
@@ -845,8 +851,8 @@ function showCoverage() {
       ? 'Colors use the overlap range for the selected region and period. Areas in color meet every selected filter.'
       : 'Deep blue shows zero overlap. Pale gold marks the highest estimate for this period. Pins show site estimates.'
   }
-  const epoch = settings.start + elapsed * hour
-  if ((live || drawShadows) && coverageEpoch !== epoch) {
+  const epoch = viewerEpoch()
+  if ((onGlobe || live || drawShadows) && coverageEpoch !== epoch) {
     coverageEpoch = epoch
     coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
   }
@@ -855,7 +861,7 @@ function showCoverage() {
   if ((power || filtered) && (!flat || (power && southOnly))) {
     const frameIndex = Math.round(elapsed * 4)
     siteValues = ranked.filter(({ site }) => inMapRegion(site)).map(({ site, timeline }) => {
-      const sample = timeline?.[frameIndex] ?? siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
+      const sample = (!spaceYearMode && timeline?.[frameIndex]) || siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
       return { site, sample, watts: siteSolarPower(sample) }
     })
     if (power && southOnly) {
@@ -879,7 +885,7 @@ function showCoverage() {
   const options = { northLatitude, powerMax, visibility: ready ? visibility : 0, power: ready && power,
     colorByPower: ready && colorByPower, terrainShadows: ready && drawShadows,
     overlap: heat?.flatHeat, heatRaster: heat?.globeRaster, heatContrast: heat?.contrast }
-  const frame = live || drawShadows ? coverageFrame : null
+  const frame = onGlobe || live || drawShadows ? coverageFrame : null
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
     drawCoverage(frame, active.site, options)
@@ -914,11 +920,7 @@ function showCoverage() {
   const clock = get('coverage-clock')
   clock.textContent = time
   clock.dateTime = new Date(epoch).toISOString()
-  const slider = get('coverage-time')
-  slider.max = settings.duration
-  slider.value = String(elapsed)
-  slider.setAttribute('aria-valuetext', time)
-  const sample = active.timeline[Math.round(elapsed * 4)]
+  const sample = viewerSample()
   const siteOutside = `${siteName(active.site)} is outside the South Pole region. Choose a site between 84°S and 90°S.`
   const sun = sample.eclipse ? 'Total solar eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
   if (power) {
@@ -1183,7 +1185,9 @@ function installGlobe() {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
-  }, { onViewChange: queueHeatDetail, onTerrainStatus(status) {
+  }, {
+    directions: { sun: get('globe-sun-marker'), earth: get('globe-earth-marker') },
+    onViewChange: queueHeatDetail, onTerrainStatus(status) {
     polarShadowStatus = status
     requestAnimationFrame(showCoverage)
   } }) }
@@ -1377,23 +1381,40 @@ function showTime() {
   showLocalSky(window, start + elapsed * hour)
   showCoverage()
   showComparisonTime()
-  if (!spaceYearMode) showSpaceTime()
+  if (!spaceYearMode) showSpaceTime(false)
   drawChart()
 }
 
-function showSpaceTime() {
-  if (!updateSpace || !active) return
-  const { start, duration, annual, horizon } = settings
+function viewerEpoch() {
+  return spaceYearMode ? spaceYearWindow.start + spaceYearHours * hour : settings.start + elapsed * hour
+}
+
+function viewerSample() {
+  const site = active.site
+  if (!spaceYearMode) return active.timeline[Math.round(elapsed * 4)]
+  return siteSkyModel(site, horizonFor(site) === 'terrain')(
+    frameAt(ephemeris, (viewerEpoch() - catalog.startMs) / (catalog.step * 1000)),
+  )
+}
+
+function showSpaceTime(refreshViewer = true) {
+  if (!active) return
+  const { start, duration, annual } = settings
   const site = active.site
   const year = spaceYearMode ? spaceYearWindow : null
   const hours = year ? spaceYearHours : elapsed
-  const epoch = (year?.start ?? start) + hours * hour
+  const epoch = viewerEpoch()
   const index = time => (time - catalog.startMs) / (spaceStep * 1000)
   const trail = year ? [index(year.start), index(year.end)] : annual ? [index(start), index(start + duration * hour)] : null
-  const { lunarKm, solarKm } = updateSpace(index(epoch), site, trail)
-  const sample = year
-    ? siteSkyModel(site, horizon === 'terrain')(frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000)))
-    : active.timeline[Math.round(elapsed * 4)]
+  globe?.setLighting(frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000)))
+  const distances = updateSpace?.(index(epoch), site, trail, epoch, viewerMode === 'orbit')
+  const sample = viewerSample()
+  const percent = hours => formatPercent.format(hours / duration)
+  get('viewer-sun-hours').textContent=formatHours(active.metrics.sun)+' · '+percent(active.metrics.sun)
+  get('viewer-earth-hours').textContent=formatHours(active.metrics.earth)+' · '+percent(active.metrics.earth)
+  get('viewer-power').textContent=formatPower(siteSolarPower(sample))
+  get('viewer-events').hidden=viewerMode!=='surface'
+  if(viewerMode==='surface') showViewerEvents(epoch)
   const time = dateLabel(epoch)
   const slider = get('space-time')
   slider.max = year?.hours ?? duration
@@ -1401,16 +1422,47 @@ function showSpaceTime() {
   slider.setAttribute('aria-valuetext', time)
   get('space-clock').value = time
   if (year) get('space-month').value = new Date(epoch).getUTCMonth()
-  const skyline = horizon === 'terrain' ? 'local skyline' : '0° reference horizon'
+  const skyline = horizonFor(site) === 'terrain' ? 'local skyline' : '0° reference horizon'
   const clearance = difference => {
     if (Math.abs(difference) < .005) return 'at the ' + skyline
     return Math.abs(difference).toFixed(2) + '° ' + (difference > 0 ? 'above' : 'below') + ' the ' + skyline
   }
-  get('space-caption').textContent = terrainLabel(site, horizon)
-  get('space-sun').textContent = clearance(sample.sunEl - sample.sunHorizon) + (sample.eclipse ? ' · Total solar eclipse' : '')
-  get('space-earth').textContent = clearance(sample.earthEl - sample.earthHorizon)
-  get('space-lunar-km').textContent = lunarKm + ' km'
-  get('space-solar-km').textContent = solarKm + ' km'
+  get('space-caption').textContent = siteCoordinates(site) + ' · ' + terrainLabel(site, horizonFor(site))
+  const skyPosition = (azimuth, elevation, horizonAngle) => {
+    const direction = compass[Math.round(azimuth / 45) % compass.length]
+    return `${direction} · ${signedDegrees(elevation)} elevation · ${clearance(elevation - horizonAngle)}`
+  }
+  get('space-sun').textContent = skyPosition(sample.sunAz, sample.sunEl, sample.sunHorizon) + (sample.eclipse ? ' · Total solar eclipse' : '')
+  get('space-earth').textContent = skyPosition(sample.earthAz, sample.earthEl, sample.earthHorizon)
+  if (distances && viewerMode === 'orbit') {
+    get('space-lunar-km').textContent = distances.lunarKm + ' km'
+    get('space-solar-km').textContent = distances.solarKm + ' km'
+  }
+  if (refreshViewer) {
+    if (viewerMode === 'map') showCoverage()
+    if (viewerMode === 'surface' && surfaceSite === site) updateSurface(sample)
+  }
+}
+
+function showViewerEvents(epoch) {
+  const site=active.site
+  const terrain=horizonFor(site)==='terrain'
+  const monthStart=Date.UTC(new Date(epoch).getUTCFullYear(),new Date(epoch).getUTCMonth(),1)
+  if(!viewerCrossings || viewerCrossings.site!==site || viewerCrossings.terrain!==terrain || viewerCrossings.start!==monthStart) {
+    const end=Math.min(monthStart+62*day,catalog.endMs)
+    const sample=siteSkyModel(site,terrain)
+    const data=framesFor(monthStart,(end-monthStart)/hour).map(sample)
+    viewerCrossings={site,terrain,start:monthStart,end,crossings:skyCrossings(data,.25)}
+  }
+  const elapsedHours=(epoch-monthStart)/hour
+  for(const [body,name] of [['sun','Sun'],['earth','Earth']]) {
+    const crossing=nextSkyCrossing(viewerCrossings.crossings[body],elapsedHours)
+    const limit=Math.min(30*24,(viewerCrossings.end-epoch)/hour)
+    const label=get('viewer-'+body+'-event')
+    if(crossing && crossing.at-elapsedHours<=limit) {
+      label.textContent=name+(crossing.rising?'rise':'set')+' in '+skyCountdown(crossing.at-elapsedHours)
+    } else label.textContent=name+' has no horizon crossing in the next '+formatHours(limit)
+  }
 }
 
 function setSpaceYear(year, epoch) {
@@ -1428,7 +1480,7 @@ function setSpaceYear(year, epoch) {
 }
 
 function setSpaceMode(year) {
-  if (!updateSpace || spaceYearMode === year) return
+  if (!active || spaceYearMode === year) return
   stop()
   stopSpaceYear()
   spaceYearMode = year
@@ -1546,11 +1598,10 @@ function showLocalSky(sample, epoch) {
 function redrawLocalSky() {
   if (!localSky) return
   const sample = active.timeline[Math.round(elapsed * 4)]
-  if (get('surface-view').hidden) {
-    const showPaths = get('sky-paths').checked
-    if (showPaths && !localSky.paths) localSky.paths = { sun: skyPathSegments(active.timeline, 'sun'), earth: skyPathSegments(active.timeline, 'earth') }
-    drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range, showPaths ? localSky.paths : null)
-  } else if (surfaceSite === active.site) updateSurface(sample)
+  const showPaths = get('sky-paths').checked
+  if (showPaths && !localSky.paths) localSky.paths = { sun: skyPathSegments(active.timeline, 'sun'), earth: skyPathSegments(active.timeline, 'earth') }
+  drawLocalSky(get('sky-canvas'), sample, localSky.profile, localSky.range, showPaths ? localSky.paths : null)
+  if (viewerMode === 'surface' && surfaceSite === active.site && !spaceYearMode) updateSurface(sample)
 }
 
 function updateSurface(sample) {
@@ -1558,8 +1609,10 @@ function updateSurface(sample) {
   get('surface-heading').hidden = !showPaths
   get('surface-labels').hidden = !showPaths
   get('surface-guide-sun').parentElement.hidden = !showPaths
-  if (showPaths && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
-  surfaceView?.update(sample, showPaths ? localSky.surfacePaths : null)
+  if (showPaths && !spaceYearMode && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
+  const epoch = viewerEpoch()
+  const rotation = updateSpace?.lunarRotation((epoch - catalog.startMs) / (spaceStep * 1000))
+  surfaceView?.update(sample, showPaths && !spaceYearMode ? localSky.surfacePaths : null, epoch, rotation)
   const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
   const { fraction } = earthIllumination(sample)
   get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)} · Earth’s visible disk ${formatPercent.format(fraction)} sunlit`
@@ -1589,7 +1642,7 @@ async function showNearbyCraters(site, terrain) {
 function showSurfaceCaption() {
   const height = get('surface-height').value
   const detail = surfaceTerrain.coarse ? 'This grid can miss nearby craters and slopes.' : 'Crater relief comes from NASA elevations.'
-  get('surface-caption').textContent = `${surfaceTerrain.source} · Camera ${height} m above the modeled ground. ${detail} Fine dust and pebble texture are illustrative.` +
+  get('surface-caption').textContent = `${surfaceTerrain.source} · Camera ${height} m above the modeled ground. ${detail} Generated rocks and fine soil relief are illustrative.` +
     (horizonFor(active.site) === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   const sourceLink = get('surface-terrain-source')
   sourceLink.href = surfaceTerrain.sourceUrl ?? 'https://svs.gsfc.nasa.gov/4720/'
@@ -1600,9 +1653,10 @@ async function showSurface() {
   if (!active) return
   const { site } = active
   const request = ++surfaceRequest
-  const sample = active.timeline[Math.round(elapsed * 4)]
+  const sample = viewerSample()
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
+    get('viewer-surface').dataset.ready = 'true'
     get('surface-retry').hidden = true
     get('surface-status').textContent = ''
     showSurfaceCaption()
@@ -1611,6 +1665,7 @@ async function showSurface() {
   }
   get('surface-retry').hidden = true
   get('surface-scene').hidden = true
+  delete get('viewer-surface').dataset.ready
   get('surface-status').textContent = 'Loading NASA terrain…'
   try {
     surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-sky'), get('surface-labels'), (angle, targets, distance) => {
@@ -1632,31 +1687,212 @@ async function showSurface() {
     if (request !== surfaceRequest) return
     get('surface-scene').hidden = false
     get('surface-status').textContent = ''
-    const current = active.timeline[Math.round(elapsed * 4)]
+    const current = viewerSample()
     surfaceView.setTerrain(terrain.mesh, terrain.site, current.sunAz)
     surfaceView.setStyle(get('surface-style').value)
     surfaceSite = site
     surfaceTerrain = terrain
     showSurfaceCaption()
     updateSurface(current)
-    await showNearbyCraters(site, terrain)
+    get('viewer-surface').dataset.ready = 'true'
+    void showNearbyCraters(site, terrain)
   } catch (reason) {
     if (request !== surfaceRequest) return
     get('surface-scene').hidden = true
+    delete get('viewer-surface').dataset.ready
     get('surface-status').textContent = reason.message
     get('surface-retry').hidden = false
   }
 }
 
-function useSkyView(surface) {
-  get('skyline-view').hidden = surface
-  get('surface-view').hidden = !surface
-  get('show-skyline').setAttribute('aria-pressed', String(!surface))
-  get('show-surface').setAttribute('aria-pressed', String(surface))
-  get('sky-paths').parentElement.hidden = surface
-  if (surface) return showSurface()
-  surfaceRequest++
-  redrawLocalSky()
+function displayViewerMode(mode) {
+  viewerMode = mode
+  get('space').dataset.viewerMode = mode
+  for (const name of ['orbit','map','surface']) {
+    const layer=get(`viewer-${name}`)
+    layer.inert=name!==mode
+    layer.setAttribute('aria-hidden',String(name!==mode))
+    document.querySelector(`[data-viewer="${name}"]`).setAttribute('aria-pressed',String(name===mode))
+  }
+  get('viewer-orbit-controls').hidden=mode!=='orbit'
+  get('viewer-map-controls').hidden=mode!=='map'
+  get('surface-view').hidden=mode!=='surface'
+  get('globe-stage').hidden=mode==='surface' || mode==='map' && get('globe-view').hidden
+  get('globe-stage').inert=mode!=='map'
+  showSpaceTime()
+}
+
+function animateFlight(duration, frame) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { frame(1); return Promise.resolve() }
+  return new Promise((resolve,reject)=>{
+    let previous=performance.now()
+    let elapsedMs=0
+    function tick(now) {
+      // A slow texture upload must not skip straight from orbit to the ground.
+      elapsedMs+=Math.min(64,Math.max(0,now-previous))
+      previous=now
+      const t=Math.min(1,elapsedMs/duration)
+      try { frame(t*t*t*(t*(t*6-15)+10)) } catch(reason) { reject(reason); return }
+      if(t<1) requestAnimationFrame(tick)
+      else resolve()
+    }
+    requestAnimationFrame(tick)
+  })
+}
+
+function clearMapColors() {
+  for(const id of ['layer-overlap','layer-sun','layer-earth','layer-both','layer-power']) get(id).checked=false
+  showCoverage()
+}
+
+async function approachMoon(reverse=false) {
+  const target=reverse ? globe.viewCenter() : southOnly ? {lat:-90,lon:0} : updateSpace.viewCenter()
+  const radius=reverse?globe.camera().radius:undefined
+  if(reverse) updateSpace.centerOnLunarView(target)
+  updateSpace.approach(reverse?1:0,target,radius)
+  displayViewerMode('orbit')
+  clearMapColors()
+  useMap('globe')
+  const status=get('viewer-flight-status')
+  status.textContent=reverse?'Leaving lunar orbit…':'Approaching the Moon…'
+  await animateFlight(2100,t=>updateSpace.approach(reverse?1-t:t,target,radius))
+  if(!reverse) {
+    globe.landCamera(target)
+    displayViewerMode('map')
+    globe.draw()
+  }
+}
+
+async function approachSurface(reverse=false) {
+  const site=active.site
+  const status=get('viewer-flight-status')
+  status.textContent=reverse?'Ascending from the landing site…':'Loading the terrain at '+siteName(site)+'…'
+  if(!reverse) {
+    // Keep the map visible until a complete terrain mesh is ready.
+    await showSurface()
+    if(surfaceSite!==site || active.site!==site || get('surface-scene').hidden) {
+      get('surface-retry').hidden=false
+      status.textContent=(get('surface-status').textContent || 'The selected site changed.')+' Select Surface to retry.'
+      return false
+    }
+  }
+  const eye=reverse?surfaceView.camera():{height:Number(get('surface-height').value),azimuth:0,elevation:2,zoom:Number(get('surface-zoom').value)}
+  const start=globe.camera()
+  const origin=globe.viewCenter()
+  const delta=((site.lon-origin.lon+540)%360)-180
+  const stage=get('viewer-stage')
+  const surface=get('viewer-surface')
+  const globeStage=get('globe-stage')
+  const startRadius=start.radius>0?start.radius:Math.min(stage.clientWidth,stage.clientHeight)*.46
+  // A cinematic handoff avoids magnifying map pixels and exposing the local
+  // terrain mesh from orbital altitudes. The scientific endpoint is unchanged.
+  const smooth=(from,to,value)=>{
+    const x=Math.min(1,Math.max(0,(value-from)/(to-from)))
+    return x*x*(3-2*x)
+  }
+  const startingHeight=Math.max(eye.height,Math.min(eye.height*2.5,eye.height+8))
+  const startingPitch=Math.max(-35,eye.elevation-14)
+  const clearFlightStyles=()=>{
+    for(const node of [surface,globeStage]) {
+      for(const property of ['opacity','filter','will-change','z-index','pointer-events']) node.style.removeProperty(property)
+    }
+    delete get('space').dataset.flying
+  }
+  useMap('globe')
+  clearMapColors()
+  surface.inert=false
+  surface.style.opacity=reverse?'1':'0'
+  surface.style.zIndex='3'
+  surface.style.pointerEvents='none'
+  surface.style.willChange='opacity, filter'
+  globeStage.style.willChange='opacity, filter'
+  globeStage.hidden=false
+  globeStage.inert=true
+  get('space').dataset.flying='true'
+  if(!reverse) surfaceView.returnToLanding()
+  surfaceView.flight(reverse?eye:{height:startingHeight,azimuth:eye.azimuth,elevation:startingPitch,zoom:eye.zoom})
+  updateSurface(viewerSample())
+  surfaceView.prepareFlight()
+  status.textContent=reverse?'Returning to the lunar map…':'Approaching '+siteName(site)+'…'
+  try {
+    await animateFlight(reverse?1500:1900,progress=>{
+      if(active.site!==site) throw new Error("The selected site changed. Choose Surface to travel to the new site.")
+      const t=reverse?1-progress:progress
+      const alignment=smooth(0,.4,t)
+      const lat=origin.lat+(site.lat-origin.lat)*alignment
+      const lon=origin.lon+delta*alignment
+      const mapZoom=smooth(.08,.62,t)
+      const handoff=smooth(.34,.72,t)
+      const settle=smooth(.44,1,t)
+      const soften=Math.sin(Math.PI*handoff)
+      globeStage.hidden=handoff===1
+      globeStage.style.opacity=String(1-handoff)
+      globeStage.style.filter=`blur(${(handoff*9).toFixed(2)}px) brightness(${1-.22*soften})`
+      if(handoff<1) globe.flight({moving:true,radius:startRadius*(1+2*mapZoom),center:[stage.clientWidth/2,stage.clientHeight/2],orientation:globeOrientation(lat,lon)})
+      surface.style.opacity=String(handoff)
+      surface.style.filter=`blur(${(9*(1-settle)).toFixed(2)}px) brightness(${1-.22*soften})`
+      if(handoff>0) surfaceView.flight({moving:true,
+        height:startingHeight+(eye.height-startingHeight)*settle,
+        azimuth:eye.azimuth,elevation:startingPitch+(eye.elevation-startingPitch)*settle,zoom:eye.zoom})
+    })
+  } finally {
+    clearFlightStyles()
+  }
+  globe.landCamera(reverse?origin:site)
+  displayViewerMode(reverse?'map':'surface')
+  if(reverse) globe.draw()
+  else {
+    surfaceView.flight(eye)
+    get('surface-canvas').focus({preventScroll:true})
+  }
+  return true
+}
+
+async function setViewerMode(mode) {
+  viewerDestination=mode
+  if(viewerFlight) return viewerFlight
+  if(!active) return
+  if(mode===viewerMode) return
+  stop()
+  stopSpaceYear()
+  const status=get('viewer-flight-status')
+  status.hidden=false
+  const journey=async()=>{
+    try {
+      while(viewerMode!==viewerDestination) {
+        if(!globe || !updateSpace) {
+          displayViewerMode(viewerDestination)
+          if(viewerMode==='surface') await showSurface()
+          break
+        }
+        if(viewerMode==='orbit') await approachMoon()
+        else if(viewerMode==='surface') await approachSurface(true)
+        else if(viewerDestination==='orbit') await approachMoon(true)
+        else if(!await approachSurface()) {viewerDestination='map';return}
+      }
+      status.hidden=true
+    } catch(reason) {
+      status.textContent='The camera could not finish this transition. '+reason.message
+      get('viewer-surface').style.removeProperty('opacity')
+      get('viewer-surface').style.removeProperty('pointer-events')
+      delete get('space').dataset.flying
+      globe?.flight(null)
+      displayViewerMode('map')
+      viewerDestination='map'
+    } finally {
+      viewerFlight=null
+      get('viewer-stage').removeAttribute('aria-busy')
+    }
+  }
+  get('viewer-stage').setAttribute('aria-busy','true')
+  viewerFlight=journey()
+  return viewerFlight
+}
+
+function openSurfaceView() {
+  get('space-heading').focus({ preventScroll: true })
+  get('space').scrollIntoView({ block: 'start', behavior:'smooth' })
+  return setViewerMode('surface')
 }
 
 async function openSurfaceLink() {
@@ -1666,7 +1902,7 @@ async function openSurfaceLink() {
   const epoch = Date.parse(params.get('at'))
   if (epoch >= catalog.startMs && epoch + settings.duration * hour <= catalog.endMs) setMissionTime(epoch)
   selectSite(id, false)
-  await useSkyView(true)
+  await openSurfaceView()
   if (active.site.id !== id || surfaceSite !== active.site || get('surface-view').hidden) return
   for (const [parameter, control] of [['height', 'surface-height'], ['crater', 'surface-crater']]) {
     const value = params.get(parameter)
@@ -1675,7 +1911,7 @@ async function openSurfaceLink() {
     select.value = value
     select.dispatchEvent(new Event('change'))
   }
-  get('local-sky').scrollIntoView({ behavior: 'instant' })
+  get('space').scrollIntoView({ behavior: 'instant' })
 }
 
 function updateComparisonOptions() {
@@ -1880,8 +2116,6 @@ function stop() {
   get('play').textContent = '▶'
   get('play').setAttribute('aria-label', 'Play timeline')
   syncSpacePlayButton()
-  get('coverage-play').textContent = '▶'
-  get('coverage-play').setAttribute('aria-label', 'Play map timeline')
 }
 
 function syncSpacePlayButton() {
@@ -1932,8 +2166,6 @@ function play() {
   const speed = Number(get('timeline-speed').value)
   get('play').textContent = 'Ⅱ'
   get('play').setAttribute('aria-label', 'Pause timeline')
-  get('coverage-play').textContent = 'Ⅱ'
-  get('coverage-play').setAttribute('aria-label', 'Pause map timeline')
   function update(now) {
     const next = Math.min(settings.duration, Math.round((initial + (now - began) * settings.duration * speed / 20_000) * 4) / 4)
     if (next !== elapsed) {
@@ -2006,6 +2238,9 @@ async function startSpace() {
     if (!response.ok) throw new Error('The 3D ephemeris could not be loaded.')
     const samples = readSpaceSamples(await response.arrayBuffer(), catalog.startMs, catalog.endMs)
     const controls = {
+      labels:get('orbit-labels'), focus:get('space-focus'), note:get('space-geometry-note'),
+      zoomIn:get('space-zoom-in'), zoomOut:get('space-zoom-out'),
+      moonCamera(camera) {globe?.flight(camera)},
       earthView: get('space-earth-view'), sunView: get('space-sun-view'), scale: get('space-scale'),
       yearPath: get('space-year-path'), moonPath: get('space-moon-path'), links: get('space-links'), yearLabel: get('space-year-label'),
       left: get('space-left'), right: get('space-right'), up: get('space-up'), down: get('space-down'), reset: get('space-reset'),
@@ -2015,7 +2250,7 @@ async function startSpace() {
     const lastYear = new Date(catalog.endMs - 1).getUTCFullYear()
     get('space-year').replaceChildren(...Array.from({ length: lastYear - firstYear + 1 }, (_, i) => new Option(firstYear + i, firstYear + i)))
     get('space-content').hidden = false
-    for (const button of Object.values(controls)) if (button.tagName === 'BUTTON') button.disabled = false
+    for (const button of Object.values(controls)) if (button?.tagName === 'BUTTON') button.disabled = false
     for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
     get('space-status').hidden = true
     showTime()
@@ -2023,8 +2258,17 @@ async function startSpace() {
     updateSpace = undefined
     get('space-status').hidden = true
     error('space-error', reason.message + ' Site rankings and surface operations are available below.')
-    get('space-content').hidden = true
+    get('space-content').hidden = false
+    for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
+    showTime()
   }
+}
+
+for (const button of document.querySelectorAll('[data-viewer]')) {
+  button.addEventListener('click', () => { void setViewerMode(button.dataset.viewer) })
+}
+for (const link of document.querySelectorAll('[data-viewer-link]')) {
+  link.addEventListener('click', () => { void setViewerMode(link.dataset.viewerLink) })
 }
 
 get('mission-form').addEventListener('submit', event => event.preventDefault())
@@ -2096,9 +2340,10 @@ get('delay-b').addEventListener('click', () => {
   compare()
 })
 for (const select of inputs('space-site', 'assessment-site')) select.addEventListener('change', event => selectSite(event.target.value, false))
-get('show-skyline').addEventListener('click', () => useSkyView(false))
-get('show-surface').addEventListener('click', () => useSkyView(true))
+get('show-surface').addEventListener('click', () => openSurfaceView())
 get('surface-retry').addEventListener('click', showSurface)
+get('surface-primary-sun').addEventListener('click',()=>get('surface-sun').click())
+get('surface-primary-earth').addEventListener('click',()=>get('surface-earth').click())
 const surfaceTurns = { left: [-15, 0], right: [15, 0], up: [0, 10], down: [0, -10] }
 for (const [id, angles] of Object.entries(surfaceTurns)) get(`surface-${id}`).addEventListener('click', () => surfaceView?.turn(...angles))
 const surfaceSteps = { forward: [1, 0], backward: [-1, 0], left: [0, -1], right: [0, 1] }
@@ -2115,7 +2360,9 @@ for (const body of ['sun', 'earth']) {
 }
 get('surface-north').addEventListener('click', () => surfaceView?.aim(0, 2))
 get('sky-paths').addEventListener('change', redrawLocalSky)
-get('surface-paths').addEventListener('change', redrawLocalSky)
+get('surface-paths').addEventListener('change', () => {
+  if (active && surfaceSite === active.site) updateSurface(viewerSample())
+})
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
 function aimAtSurfaceCrater(crater) {
@@ -2158,9 +2405,7 @@ get('timeline-speed').addEventListener('change', () => {
   stop()
   play()
 })
-for (const slider of inputs('time-slider', 'coverage-time')) slider.addEventListener('input', event => {
-  seekTime(Number(event.target.value))
-})
+get('time-slider').addEventListener('input', event => seekTime(Number(event.target.value)))
 get('space-time').addEventListener('input', event => {
   const hours = Number(event.target.value)
   if (!spaceYearMode) { seekTime(hours); return }
@@ -2220,7 +2465,7 @@ get('elevation-chart').addEventListener('pointerdown', event => {
   const fraction = Math.max(0, Math.min(1, (event.offsetX - 45) / (event.currentTarget.clientWidth - 58)))
   seekTime(Math.round(fraction * settings.duration * 4) / 4)
 })
-for (const button of inputs('play', 'coverage-play')) button.addEventListener('click', play)
+get('play').addEventListener('click', play)
 get('space-play').addEventListener('click', () => spaceYearMode ? playSpaceYear() : play())
 get('export').addEventListener('click', exportCsv)
 new ResizeObserver(drawChart).observe(get('elevation-chart'))

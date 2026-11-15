@@ -1,5 +1,7 @@
 # 2026 NASA Space Apps judging rubric
 
+**Team reference summary.** Retained from the project's earlier guide research. The official pages did not load during the November 15, 2026 release audit; recheck current rules before submitting. [Submission checklist](docs/SUBMISSION-CHECKLIST.md) · [Source register](REFERENCES.md)
+
 Judges rate each of the five criteria from **1 to 5** at every round, from Local and Universal Event judging through Executive Judging. The descriptions below paraphrase NASA's published criteria and top-score examples. [Official 2026 Judging & Awards Guide](https://www.spaceappschallenge.org/resources/judging-awards-guide/#judging-criteria)
 
 | Criterion | What judges look for | What a 5 demonstrates |

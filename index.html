@@ -6,9 +6,10 @@
   <meta name="description" content="Compare lunar landing sites, dates, sunlight, and Earth visibility with NASA data.">
   <meta name="ai-disclosure" content="Application code and UI exploration used OpenAI Codex and ImageGen. Numerical inputs are attributed NASA and USGS products.">
   <meta name="theme-color" content="#050507">
+  <link rel="icon" href="./assets/the-astralis-logo.png">
   <title>Astralis · Lunar Site Navigator</title>
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.mjs?v=20261115-terrain-relief"></script>
+  <link rel="stylesheet" href="./style.css?v=continuous-camera-3">
+  <script type="module" src="./app.mjs?v=1.1.0"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
@@ -17,7 +18,7 @@
       <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
       <span>Lunar Site Navigator</span>
     </a>
-    <nav aria-label="App navigation"><a href="#map-heading">Moon map</a><a href="#assessment">Power &amp; comms</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
+    <nav aria-label="App navigation"><a href="#space" data-viewer-link="map">Moon map</a><a href="#assessment">Power &amp; comms</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
 
   <main>
@@ -112,13 +113,60 @@
           </form>
         </section>
 
-        <section class="panel space-panel" id="space" aria-labelledby="space-heading">
+        <section class="panel space-panel" id="space" aria-labelledby="space-heading" data-viewer-mode="orbit">
           <div class="panel-heading space-heading">
-            <h2 id="space-heading">Sun, Earth &amp; Moon</h2>
-            <div class="map-view" aria-label="Reference point">
-              <button type="button" id="space-earth-view" class="subtle" value="earth" aria-pressed="true" disabled>Around Earth</button>
-              <button type="button" id="space-sun-view" class="subtle" value="sun" aria-pressed="false" disabled>Around the Sun</button>
+            <h2 id="space-heading" tabindex="-1">Lunar mission viewer</h2>
+          </div>
+          <div class="viewer-stage" id="viewer-stage">
+            <canvas id="orbit-labels" aria-hidden="true"></canvas>
+            <div class="viewer-layer" id="viewer-orbit" aria-label="Orbital view">
+              <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
             </div>
+              <div id="globe-stage" class="globe-stage" inert>
+                <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." aria-describedby="globe-pole-note" role="img"></canvas>
+                <canvas id="globe-features" aria-hidden="true" hidden></canvas>
+                <div id="globe-markers"></div>
+                <span id="globe-pole-marker" hidden>South Pole · 90°S</span>
+                <div class="globe-directions" aria-label="Directions from the Moon at the viewer time">
+                  <span id="globe-sun-marker" class="globe-direction" hidden></span>
+                  <span id="globe-earth-marker" class="globe-direction" hidden></span>
+                </div>
+              </div>
+            <div class="viewer-layer" id="viewer-map" aria-label="Lunar map views" inert aria-hidden="true">
+              <div class="polar-map" id="polar-map" hidden>
+                <img id="relief" src="./data/polar-relief.webp" alt="Shaded elevation of the lunar south pole from NASA's LOLA data">
+                <svg id="graticule" viewBox="0 0 600 600" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div id="pins" class="pins"></div>
+                <span class="map-pole">90°S</span>
+                <div class="map-scale"><i></i>100 km at pole</div>
+              </div>
+              <figure class="coverage-figure" id="viewer-coverage" hidden>
+                <canvas id="coverage-canvas" role="img" aria-label="Whole-Moon map of sunlight and a direct view of Earth. West is left and east is right." aria-describedby="coverage-notes coverage-summary"></canvas>
+                <div class="coverage-axis" aria-hidden="true"><span>180°W</span><span>90°W</span><span>0°</span><span>90°E</span><span>180°E</span></div>
+              </figure>
+            </div>
+            <div class="viewer-layer" id="viewer-surface" aria-label="Lunar surface view" inert aria-hidden="true">
+              <div class="surface-stage">
+                  <canvas id="surface-sky" aria-hidden="true"></canvas>
+                  <canvas id="surface-canvas" tabindex="0" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-walk-help surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
+                  <canvas id="surface-labels" aria-hidden="true"></canvas>
+                  <span id="surface-heading" aria-label="Camera bearing"></span>
+                  <div class="surface-guides" aria-label="Off-screen objects">
+                    <button type="button" class="subtle" id="surface-guide-sun" hidden></button>
+                    <button type="button" class="subtle" id="surface-guide-earth" hidden></button>
+                  </div>
+                </div>
+              <div class="viewer-loading">
+                <p class="muted" id="surface-status" role="status"></p>
+                <button type="button" class="subtle" id="surface-retry" hidden>Reload terrain</button>
+              </div>
+            </div>
+          </div>
+          <p id="viewer-flight-status" class="muted" role="status" hidden></p>
+          <div class="viewer-tabs" role="group" aria-label="Lunar mission viewer modes">
+            <button type="button" class="subtle" data-viewer="orbit" aria-controls="viewer-orbit" aria-pressed="true">Orbit</button>
+            <button type="button" class="subtle" data-viewer="map" aria-controls="viewer-map" aria-pressed="false">Moon Map</button>
+            <button type="button" class="subtle" data-viewer="surface" aria-controls="viewer-surface" aria-pressed="false">Surface</button>
           </div>
           <p id="space-error" class="error" role="status" hidden></p>
           <p id="space-status" class="muted" role="status">Loading 3D positions…</p>
@@ -134,14 +182,48 @@
                 <label>Playback speed <select id="space-year-speed"><option value="15">15 days/sec</option><option value="5" selected>5 days/sec</option><option value="1">1 day/sec</option></select></label>
               </div>
             </div>
-            <div class="space-grid">
-              <div>
-                <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
-                <p id="space-scale" class="muted">The Sun follows its apparent annual path as seen from Earth. Sizes and the Sun’s distance are schematic.</p>
+            <div class="viewer-site">
+              <div class="space-readout">
+                <label for="space-site">Landing site</label>
+                <select id="space-site" disabled></select>
+                <p id="space-caption" class="muted"></p>
+                <p class="space-sun"><strong>Sun</strong> <span id="space-sun"></span></p>
+                <p class="space-earth"><strong>Earth</strong> <span id="space-earth"></span></p>
+              </div>
+            </div>
+            <div class="scrub space-scrub">
+              <button type="button" class="subtle" id="space-play" aria-label="Play mission viewer timeline" disabled>▶</button>
+              <label class="sr-only" id="space-time-label" for="space-time">3D view mission time</label>
+              <input id="space-time" type="range" min="0" max="24" step=".25" value="0" disabled>
+              <div id="space-month-scale" class="space-month-scale" aria-hidden="true" hidden></div>
+              <output id="space-clock" for="space-time"></output>
+            </div>
+            <p id="space-year-note" class="muted globe-help" hidden>All three views use this yearly preview time. Mission totals still use your selected landing date and duration.</p>
+          </div>
+          <div class="viewer-metrics" id="viewer-metrics" aria-label="Selected site mission summary">
+            <div><span>Sunlight in mission</span><strong id="viewer-sun-hours"></strong></div>
+            <div><span>Earth view in mission</span><strong id="viewer-earth-hours"></strong></div>
+            <div><span>Panel power now</span><strong id="viewer-power" title="Estimated electrical output per square meter of horizontal panel at 20% efficiency"></strong></div>
+            <a href="#compare-heading">Compare sites ↗</a>
+          </div>
+          <div class="viewer-events" id="viewer-events" hidden>
+            <p id="viewer-sun-event"></p><p id="viewer-earth-event"></p>
+          </div>
+          <div id="viewer-orbit-controls" class="viewer-orbit-controls">
+                <div class="map-view" aria-label="Reference point">
+              <button type="button" id="space-earth-view" class="subtle" value="earth" aria-pressed="true" disabled>Earth–Moon overview</button>
+              <button type="button" id="space-sun-view" class="subtle" value="sun" aria-pressed="false" disabled>Solar overview</button>
+              <label>Focus <select id="space-focus"><option value="">Overview</option><option value="earth">Earth close-up</option><option value="moon">Moon close-up</option><option value="sun">Sun close-up</option></select></label>
+              <button type="button" id="space-zoom-in" class="subtle" aria-label="Zoom orbital camera in" disabled>+</button>
+              <button type="button" id="space-zoom-out" class="subtle" aria-label="Zoom orbital camera out" disabled>−</button>
+            </div>
+                <p id="space-geometry-note" class="muted" role="status"></p>
+                <p id="space-scale" class="muted">True physical scale · Perspective camera. Small bodies appear tiny in an overview. Choose a close-up or scroll over the view to zoom.</p>
+                <details class="viewer-options"><summary>Orbit controls and data</summary>
                 <div class="orbit-layers" role="group" aria-label="Orbit diagram layers">
-                  <label><input type="checkbox" id="space-year-path" checked> <span id="space-year-label">Sun’s annual path</span></label>
+                  <label><input type="checkbox" id="space-year-path"> <span id="space-year-label">Sun’s annual path</span></label>
                   <label><input type="checkbox" id="space-moon-path" checked> Moon’s orbit</label>
-                  <label><input type="checkbox" id="space-links" checked> Body links</label>
+                  <label><input type="checkbox" id="space-links"> Body links</label>
                 </div>
                 <div class="globe-controls" aria-label="Rotate the view">
                   <button type="button" class="subtle" id="space-left" aria-label="Rotate view left" disabled>←</button>
@@ -150,179 +232,190 @@
                   <button type="button" class="subtle" id="space-down" aria-label="Tilt view down" disabled>↓</button>
                   <button type="button" class="subtle" id="space-reset" disabled>Reset view</button>
                 </div>
-              </div>
-              <div class="space-readout">
-                <h3>At the landing site</h3>
-                <label for="space-site">Site</label>
-                <select id="space-site" disabled></select>
-                <p id="space-caption" class="muted"></p>
-                <p class="space-sun"><strong>Sun</strong> <span id="space-sun"></span></p>
-                <p class="space-earth"><strong>Earth</strong> <span id="space-earth"></span></p>
                 <dl class="space-distance muted">
                   <dt>Earth to Moon</dt><dd id="space-lunar-km"></dd>
                   <dt>Earth to Sun</dt><dd id="space-solar-km"></dd>
                 </dl>
-                <p class="muted space-marker">The mint dot marks the selected site. A hollow dot marks the far side of the view.</p>
+                <p class="muted space-marker">The mint dot marks the selected landing site when it faces the camera.</p>
+                <p class="muted globe-help"><a href="https://svs.gsfc.nasa.gov/3615/">Earth imagery · NASA Blue Marble</a> · <a href="https://svs.gsfc.nasa.gov/4720/">Moon imagery · NASA LROC</a> · <a href="https://svs.gsfc.nasa.gov/4551/">Sun imagery · NASA SDO</a></p>
+                <p class="muted globe-help">All bodies use physical radii and JPL distances on one scale. Apparent size depends on distance from the camera; nearer bodies block farther ones. Earth’s clouds and the Sun’s disk are archival imagery. Solar colors and glow are adjusted for display.</p>
+                </details>
+              </div>
+          <section class="map-panel" id="viewer-map-controls" hidden aria-labelledby="map-heading">
+            <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
+              <div class="map-view" role="group" aria-label="Map view"><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-coverage" aria-pressed="false">Visibility map</button></div>
+            </div>
+            <details class="viewer-options" id="viewer-analysis">
+              <summary>Analyze landing conditions <span>Visibility, power and landing suggestions</span></summary>
+            <label class="map-scope"><input id="mission-heat-south" type="checkbox"> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
+            <div class="coverage-toolbar" id="coverage-toolbar">
+              <fieldset class="map-filters" id="coverage-filters">
+                <legend>Map layers</legend>
+                <label><input id="layer-overlap" type="checkbox"> Mission overlap</label>
+                <label><input id="layer-sun" type="checkbox"> Sunlight now</label>
+                <label><input id="layer-earth" type="checkbox"> Earth in view now</label>
+                <label><input id="layer-both" type="checkbox"> Both in view now</label>
+                <label><input id="layer-power" type="checkbox"> Solar power</label>
+                <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
+                <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox"> Landing Suggestions</label>
+              </fieldset>
+              <label id="mission-heat-period-label" hidden>Heat map period
+                <select id="mission-heat-period"></select>
+              </label>
+              <label id="map-color-metric-label" hidden>Color by
+                <select id="map-color-metric"><option value="overlap">Mission overlap hours</option><option value="power">Solar power now</option></select>
+              </label>
+              <time id="coverage-clock" class="muted" hidden></time>
+            </div>
+            <p id="coverage-intersection-note" class="muted mission-heat-key" hidden></p>
+            <p class="muted" id="mission-heat-models" hidden></p>
+            <p class="muted mission-heat-key" id="terrain-shadow-status" role="status" hidden></p>
+            <p id="mission-heat-detail-status" class="muted mission-heat-key" role="status" hidden></p>
+            <div id="mission-heat-details" hidden>
+              <p id="mission-heat-status" class="muted" role="status"></p>
+              <div id="mission-heat-results" hidden>
+                <div class="mission-heat-scale" id="mission-heat-scale" role="group" aria-label="Simultaneous visibility in hours" aria-describedby="mission-heat-scale-note">
+                  <div aria-hidden="true"></div>
+                  <span>0 h · No overlap</span><span id="mission-heat-mid"></span><span id="mission-heat-max"></span>
+                </div>
+                <p class="muted mission-heat-key" id="mission-heat-scale-note"></p>
+                <p id="mission-heat-best"></p>
+                <p id="mission-heat-site"></p>
+                <div id="mission-heat-site-details">
+                  <p class="muted" id="mission-heat-reference"></p>
+                  <div id="mission-heat-track"></div>
+                  <p class="muted mission-heat-key">The strip shows overlap in gold and gaps with hatching.</p>
+                  <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
+                </div>
               </div>
             </div>
-            <div class="scrub space-scrub">
-              <button type="button" class="subtle" id="space-play" aria-label="Play 3D timeline" disabled>▶</button>
-              <label class="sr-only" id="space-time-label" for="space-time">3D view mission time</label>
-              <input id="space-time" type="range" min="0" max="24" step=".25" value="0" disabled>
-              <div id="space-month-scale" class="space-month-scale" aria-hidden="true" hidden></div>
-              <output id="space-clock" for="space-time"></output>
+            <div id="coverage-details" hidden>
+              <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
+              <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
+              <p class="muted" id="coverage-summary"></p>
+              <div id="power-details" hidden>
+                <div class="power-scale" id="power-scale" role="group" aria-label="Estimated electrical power per square meter">
+                  <div id="power-gradient" aria-hidden="true"></div>
+                  <span>0 W/m²</span><span id="power-scale-mid"></span><span id="power-scale-max"></span>
+                </div>
+                <p class="muted" id="power-scale-note" hidden></p>
+                <p class="power-site"><strong id="power-output"></strong><span id="power-site-angle"></span></p>
+                <p class="muted" id="power-notes">Estimated electrical output for a flat panel at 20% efficiency. Map colors use a smooth lunar horizon. Sites use the chosen horizon model. Total eclipses give zero output.</p>
+              </div>
+              <p class="muted" id="coverage-overhead"></p>
             </div>
-            <p id="space-year-note" class="muted globe-help" hidden>The yearly preview has its own clock. Switch to Mission window to return to the mission timeline.</p>
-          </div>
+            </details>
+            <details id="named-features" class="named-features">
+              <summary>Explore named lunar features</summary>
+              <div class="feature-tools">
+                <label>Search the lunar gazetteer<input type="search" id="feature-search" placeholder="Try Tycho or Mare Imbrium" disabled></label>
+                <label class="feature-toggle"><input type="checkbox" id="feature-layer" checked> Show labels on the globe</label>
+              </div>
+              <p class="muted" id="feature-status" role="status"></p>
+              <button class="subtle" type="button" id="feature-retry" hidden>Reload feature catalog</button>
+              <ul id="feature-results" aria-label="Matching named features"></ul>
+              <div id="feature-detail" class="map-site" hidden>
+                <h3 id="feature-name"></h3><p id="feature-location" class="muted"></p>
+                <a id="feature-source" class="muted">Gazetteer entry</a>
+              </div>
+              <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
+            </details>
+            <p class="error" id="globe-error" hidden></p>
+            <div id="globe-view">
+              <div class="globe-controls" aria-label="3D Moon controls">
+                <button type="button" class="subtle" id="globe-left" aria-label="Rotate Moon west">←</button>
+                <button type="button" class="subtle" id="globe-right" aria-label="Rotate Moon east">→</button>
+                <button type="button" class="subtle" id="globe-north" aria-label="Rotate Moon toward north">↑</button>
+                <button type="button" class="subtle" id="globe-south" aria-label="Rotate Moon toward south">↓</button>
+                <button type="button" class="subtle" id="globe-zoom-in" aria-label="Zoom in">+</button>
+                <button type="button" class="subtle" id="globe-zoom-out" aria-label="Zoom out">−</button>
+                <button type="button" class="subtle" id="globe-focus">Center on site</button>
+                <button type="button" class="subtle" id="globe-reset">Near side</button>
+                <button type="button" class="subtle" id="globe-far">Far side</button>
+                <button type="button" class="subtle" id="globe-pole">South pole</button>
+              </div>
+              <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>84°S search boundary</strong>. The ring marks the northern edge of the six-degree search area. The geographic South Pole is at 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s exploration-zone definition</a> · <a href="https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/">NASA’s 2024 candidate-region map</a></p>
+              <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
+              <p class="muted globe-help">Sun and Earth arrows show their directions from the Moon. The shaded hemisphere is in lunar night.</p>
+            </div>
+            <div id="polar-view" hidden>
+            </div>
+            <section id="coverage-view" aria-label="Whole-Moon visibility" hidden>
+            </section>
+            <div class="map-caption" id="site-map-legend"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
+            <div class="map-site" aria-live="polite">
+              <h3 id="map-site-name"></h3>
+              <p class="muted" id="map-site-detail"></p>
+              <a id="map-site-source" class="muted" hidden>Coordinate source</a>
+              <div class="map-compare-actions">
+                <button type="button" class="subtle" id="pick-compare-a" disabled>Use as Site A</button>
+                <button type="button" class="subtle" id="pick-compare-b" disabled>Use as Site B</button>
+                <a href="#compare-heading">View comparison</a>
+              </div>
+              <p id="map-compare-pair" class="muted" role="status"></p>
+              <button type="button" id="remove-custom" class="subtle" hidden>Remove selected point</button>
+            </div>
+            <p class="muted" id="coordinate-status" role="status"></p>
+            <p class="error" id="coordinate-error" role="alert" hidden></p>
+            <details class="custom">
+              <summary>Add a coordinate</summary>
+              <form id="coordinates" novalidate>
+                <div class="limit-grid">
+                  <label>Latitude (°)<input id="latitude" type="number" min="-90" max="90" step="any" placeholder="-85.3" required></label>
+                  <label>East longitude (°)<input id="longitude" type="number" min="-180" max="360" step="any" placeholder="24.5" required></label>
+                </div>
+                <button type="submit" class="subtle">Add &amp; evaluate</button>
+              </form>
+            </details>
+          </section>
+          <div id="surface-view" hidden>
+              <div id="surface-scene" hidden>
+                <div class="surface-primary-controls">
+                  <button type="button" class="subtle" id="surface-primary-sun">Find Sun</button>
+                  <button type="button" class="subtle" id="surface-primary-earth">Find Earth</button>
+                  <span class="muted">Drag to look around · W A S D to walk</span>
+                </div>
+                <details class="viewer-options" id="surface-options"><summary>Camera, walking and terrain details</summary>
+                <div class="globe-controls" role="group" aria-label="Look around the landing site">
+                  <button type="button" class="subtle" id="surface-left" aria-label="Look left">←</button>
+                  <button type="button" class="subtle" id="surface-right" aria-label="Look right">→</button>
+                  <button type="button" class="subtle" id="surface-up" aria-label="Look up">↑</button>
+                  <button type="button" class="subtle" id="surface-down" aria-label="Look down">↓</button>
+                  <button type="button" class="subtle" id="surface-sun">Find Sun</button>
+                  <button type="button" class="subtle" id="surface-earth">Find Earth</button>
+                  <button type="button" class="subtle" id="surface-north">Face north</button>
+                  <label class="surface-crater" hidden>Look toward <select id="surface-crater"><option value="">Nearby crater</option></select></label>
+                  <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
+                  <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
+                  <label class="surface-zoom">View height <select id="surface-height"><option value="2">2 m · eye level</option><option value="30">30 m</option><option value="100">100 m · survey</option></select></label>
+                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths"> Show arcs and labels</label>
+                </div>
+                <div class="globe-controls surface-walk" role="group" aria-label="Move around the landing site">
+                  <button type="button" class="subtle" id="surface-walk-forward" aria-label="Walk forward 10 meters">Forward</button>
+                  <button type="button" class="subtle" id="surface-walk-backward" aria-label="Walk backward 10 meters">Back</button>
+                  <button type="button" class="subtle" id="surface-walk-left">Step left</button>
+                  <button type="button" class="subtle" id="surface-walk-right">Step right</button>
+                  <button type="button" class="subtle" id="surface-walk-reset">Return to landing point</button>
+                  <output id="surface-walk-offset" class="muted" aria-live="off">At landing point</output>
+                </div>
+                <p id="surface-walk-help" class="muted">Drag to look around. Press W, A, S, D while the view has focus to walk. Visibility readouts use the landing point.</p>
+                <p class="muted" id="surface-landmark" hidden></p>
+                <p class="muted" id="surface-caption"></p>
+                <p class="muted" id="surface-angles"></p>
+                <p class="muted" id="surface-light"></p>
+                <p class="muted surface-credit"><a id="surface-terrain-source" href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
+                <p class="muted surface-credit"><a href="https://svs.gsfc.nasa.gov/3615/">Earth imagery · NASA Blue Marble</a> <span>· satellite mosaic with estimated rotation and lighting for the selected UTC time</span></p>
+                </details>
+              </div>
+            </div>
         </section>
 
         <section class="panel public-answer" aria-labelledby="answer-title">
           <div class="answer-copy" aria-live="polite"><h2 id="answer-title">Finding the best match…</h2><p id="answer-body" class="muted"></p></div>
           <div id="answer-tracks"></div>
-          <nav class="answer-nav" aria-label="Explore results"><a href="#assessment">Check power and communications</a><a href="#compare">Compare a different date</a><a href="#map-heading">View map and sites</a><a href="#local-sky">See sky positions</a></nav>
+          <nav class="answer-nav" aria-label="Explore results"><a href="#assessment">Check power and communications</a><a href="#compare">Compare a different date</a><a href="#space" data-viewer-link="map">View map and sites</a><a href="#local-sky">See sky positions</a></nav>
         </section>
 
-        <section class="panel map-panel" aria-labelledby="map-heading">
-          <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
-            <div class="map-view" role="group" aria-label="Map view"><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-coverage" aria-pressed="false">Visibility map</button></div>
-          </div>
-          <details id="named-features" class="named-features">
-            <summary>Explore named lunar features</summary>
-            <div class="feature-tools">
-              <label>Search the lunar gazetteer<input type="search" id="feature-search" placeholder="Try Tycho or Mare Imbrium" disabled></label>
-              <label class="feature-toggle"><input type="checkbox" id="feature-layer" checked> Show labels on the globe</label>
-            </div>
-            <p class="muted" id="feature-status" role="status"></p>
-            <button class="subtle" type="button" id="feature-retry" hidden>Reload feature catalog</button>
-            <ul id="feature-results" aria-label="Matching named features"></ul>
-            <div id="feature-detail" class="map-site" hidden>
-              <h3 id="feature-name"></h3><p id="feature-location" class="muted"></p>
-              <a id="feature-source" class="muted">Gazetteer entry</a>
-            </div>
-            <button class="subtle" type="button" id="feature-evaluate" hidden>Evaluate this coordinate</button>
-          </details>
-          <p class="error" id="globe-error" hidden></p>
-          <label class="map-scope"><input id="mission-heat-south" type="checkbox"> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
-          <div class="coverage-toolbar" id="coverage-toolbar">
-            <fieldset class="map-filters" id="coverage-filters">
-              <legend>Map layers</legend>
-              <label><input id="layer-overlap" type="checkbox" checked> Mission overlap</label>
-              <label><input id="layer-sun" type="checkbox"> Sunlight now</label>
-              <label><input id="layer-earth" type="checkbox"> Earth in view now</label>
-              <label><input id="layer-both" type="checkbox"> Both in view now</label>
-              <label><input id="layer-power" type="checkbox"> Solar power</label>
-              <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
-              <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox"> Landing Suggestions</label>
-            </fieldset>
-            <label id="mission-heat-period-label" hidden>Heat map period
-              <select id="mission-heat-period"></select>
-            </label>
-            <label id="map-color-metric-label" hidden>Color by
-              <select id="map-color-metric"><option value="overlap">Mission overlap hours</option><option value="power">Solar power now</option></select>
-            </label>
-            <time id="coverage-clock" class="muted" hidden></time>
-          </div>
-          <p id="coverage-intersection-note" class="muted mission-heat-key" hidden></p>
-          <p class="muted" id="mission-heat-models" hidden></p>
-          <p class="muted mission-heat-key" id="terrain-shadow-status" role="status" hidden></p>
-          <p id="mission-heat-detail-status" class="muted mission-heat-key" role="status" hidden></p>
-          <div id="globe-view">
-            <div id="globe-stage" class="globe-stage">
-              <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." aria-describedby="globe-pole-note" role="img"></canvas>
-              <canvas id="globe-features" aria-hidden="true" hidden></canvas>
-              <div id="globe-markers"></div>
-              <span id="globe-pole-marker" hidden>South Pole · 90°S</span>
-            </div>
-            <div class="globe-controls" aria-label="3D Moon controls">
-              <button type="button" class="subtle" id="globe-left" aria-label="Rotate Moon west">←</button>
-              <button type="button" class="subtle" id="globe-right" aria-label="Rotate Moon east">→</button>
-              <button type="button" class="subtle" id="globe-north" aria-label="Rotate Moon toward north">↑</button>
-              <button type="button" class="subtle" id="globe-south" aria-label="Rotate Moon toward south">↓</button>
-              <button type="button" class="subtle" id="globe-zoom-in" aria-label="Zoom in">+</button>
-              <button type="button" class="subtle" id="globe-zoom-out" aria-label="Zoom out">−</button>
-              <button type="button" class="subtle" id="globe-focus">Center on site</button>
-              <button type="button" class="subtle" id="globe-reset">Near side</button>
-              <button type="button" class="subtle" id="globe-far">Far side</button>
-              <button type="button" class="subtle" id="globe-pole">South pole</button>
-            </div>
-            <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>84°S search boundary</strong>. The ring marks the northern edge of the six-degree search area. The geographic South Pole is at 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s exploration-zone definition</a> · <a href="https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/">NASA’s 2024 candidate-region map</a></p>
-            <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
-          </div>
-          <div id="polar-view" hidden>
-          <div class="polar-map" id="polar-map">
-            <img id="relief" src="./data/polar-relief.webp" alt="Shaded elevation of the lunar south pole from NASA's LOLA data">
-            <svg id="graticule" viewBox="0 0 600 600" preserveAspectRatio="none" aria-hidden="true"></svg>
-            <div id="pins" class="pins"></div>
-            <span class="map-pole">90°S</span>
-            <div class="map-scale"><i></i>100 km at pole</div>
-          </div>
-          </div>
-          <section id="coverage-view" aria-label="Whole-Moon visibility" hidden>
-            <figure class="coverage-figure">
-              <canvas id="coverage-canvas" role="img" aria-label="Whole-Moon map of sunlight and a direct view of Earth. West is left and east is right." aria-describedby="coverage-notes coverage-summary"></canvas>
-              <div class="coverage-axis" aria-hidden="true"><span>180°W</span><span>90°W</span><span>0°</span><span>90°E</span><span>180°E</span></div>
-            </figure>
-          </section>
-          <div id="mission-heat-details" hidden>
-            <p id="mission-heat-status" class="muted" role="status"></p>
-            <div id="mission-heat-results" hidden>
-              <div class="mission-heat-scale" id="mission-heat-scale" role="group" aria-label="Simultaneous visibility in hours" aria-describedby="mission-heat-scale-note">
-                <div aria-hidden="true"></div>
-                <span>0 h · No overlap</span><span id="mission-heat-mid"></span><span id="mission-heat-max"></span>
-              </div>
-              <p class="muted mission-heat-key" id="mission-heat-scale-note"></p>
-              <p id="mission-heat-best"></p>
-              <p id="mission-heat-site"></p>
-              <div id="mission-heat-site-details">
-                <p class="muted" id="mission-heat-reference"></p>
-                <div id="mission-heat-track"></div>
-                <p class="muted mission-heat-key">The strip shows overlap in gold and gaps with hatching.</p>
-                <details id="mission-heat-windows"><summary>Overlap and gap times (UTC)</summary><div id="mission-heat-window-list"></div></details>
-              </div>
-            </div>
-          </div>
-          <div id="coverage-details" hidden>
-            <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
-            <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
-            <p class="muted" id="coverage-summary"></p>
-            <div id="power-details" hidden>
-              <div class="power-scale" id="power-scale" role="group" aria-label="Estimated electrical power per square meter">
-                <div id="power-gradient" aria-hidden="true"></div>
-                <span>0 W/m²</span><span id="power-scale-mid"></span><span id="power-scale-max"></span>
-              </div>
-              <p class="muted" id="power-scale-note" hidden></p>
-              <p class="power-site"><strong id="power-output"></strong><span id="power-site-angle"></span></p>
-              <p class="muted" id="power-notes">Estimated electrical output for a flat panel at 20% efficiency. Map colors use a smooth lunar horizon. Sites use the chosen horizon model. Total eclipses give zero output.</p>
-            </div>
-            <p class="muted" id="coverage-overhead"></p>
-            <div class="scrub coverage-scrub"><button type="button" class="subtle" id="coverage-play" aria-label="Play map timeline">▶</button><label class="sr-only" for="coverage-time">Visibility map mission time</label><input id="coverage-time" type="range" min="0" max="24" step=".25" value="0"></div>
-          </div>
-          <div class="map-caption" id="site-map-legend"><span><i class="legend-dot"></i>Selected site</span><span><i class="legend-dot historical"></i>Historic landing</span><span><i class="legend-dot feature"></i>Study point or target region</span></div>
-          <div class="map-site" aria-live="polite">
-            <h3 id="map-site-name"></h3>
-            <p class="muted" id="map-site-detail"></p>
-            <a id="map-site-source" class="muted" hidden>Coordinate source</a>
-            <div class="map-compare-actions">
-              <button type="button" class="subtle" id="pick-compare-a" disabled>Use as Site A</button>
-              <button type="button" class="subtle" id="pick-compare-b" disabled>Use as Site B</button>
-              <a href="#compare-heading">View comparison</a>
-            </div>
-            <p id="map-compare-pair" class="muted" role="status"></p>
-            <button type="button" id="remove-custom" class="subtle" hidden>Remove selected point</button>
-          </div>
-          <p class="muted" id="coordinate-status" role="status"></p>
-          <p class="error" id="coordinate-error" role="alert" hidden></p>
-          <details class="custom">
-            <summary>Add a coordinate</summary>
-            <form id="coordinates" novalidate>
-              <div class="limit-grid">
-                <label>Latitude (°)<input id="latitude" type="number" min="-90" max="90" step="any" placeholder="-85.3" required></label>
-                <label>East longitude (°)<input id="longitude" type="number" min="-180" max="360" step="any" placeholder="24.5" required></label>
-              </div>
-              <button type="submit" class="subtle">Add &amp; evaluate</button>
-            </form>
-          </details>
-        </section>
 
         <section class="panel ranking" aria-labelledby="rank-heading">
           <section id="landing-suggestions" aria-labelledby="landing-suggestions-heading" hidden>
@@ -426,8 +519,7 @@
             <time id="local-sky-time"></time>
           </div>
           <div class="map-view sky-mode" role="group" aria-label="Local sky view">
-            <button type="button" class="subtle" id="show-skyline" aria-pressed="true">Skyline plot</button>
-            <button type="button" class="subtle" id="show-surface" aria-pressed="false">3D surface view</button>
+            <button type="button" class="subtle" id="show-surface">Open 3D surface</button>
             <label class="sky-path-toggle"><input type="checkbox" id="sky-paths"> Show paths over the mission</label>
           </div>
           <div class="sky-grid">
@@ -435,51 +527,6 @@
               <canvas id="sky-canvas" role="img" aria-label="Sun and Earth above or below the skyline, plotted by compass direction and elevation" aria-describedby="sky-caption sky-sun-position sky-earth-position"></canvas>
               <figcaption id="sky-caption">The shaded area is below the modeled skyline. Hollow markers show a blocked or eclipsed body.</figcaption>
             </figure>
-            <div id="surface-view" hidden>
-              <p class="muted" id="surface-status" role="status"></p>
-              <button type="button" class="subtle" id="surface-retry" hidden>Reload terrain</button>
-              <div id="surface-scene" hidden>
-                <div class="surface-stage">
-                  <canvas id="surface-sky" aria-hidden="true"></canvas>
-                  <canvas id="surface-canvas" tabindex="0" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-walk-help surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
-                  <canvas id="surface-labels" aria-hidden="true"></canvas>
-                  <span id="surface-heading" aria-label="Camera bearing"></span>
-                  <div class="surface-guides" aria-label="Off-screen objects">
-                    <button type="button" class="subtle" id="surface-guide-sun" hidden></button>
-                    <button type="button" class="subtle" id="surface-guide-earth" hidden></button>
-                  </div>
-                </div>
-                <div class="globe-controls" role="group" aria-label="Look around the landing site">
-                  <button type="button" class="subtle" id="surface-left" aria-label="Look left">←</button>
-                  <button type="button" class="subtle" id="surface-right" aria-label="Look right">→</button>
-                  <button type="button" class="subtle" id="surface-up" aria-label="Look up">↑</button>
-                  <button type="button" class="subtle" id="surface-down" aria-label="Look down">↓</button>
-                  <button type="button" class="subtle" id="surface-sun">Find Sun</button>
-                  <button type="button" class="subtle" id="surface-earth">Find Earth</button>
-                  <button type="button" class="subtle" id="surface-north">Face north</button>
-                  <label class="surface-crater" hidden>Look toward <select id="surface-crater"><option value="">Nearby crater</option></select></label>
-                  <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
-                  <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
-                  <label class="surface-zoom">View height <select id="surface-height"><option value="2">2 m · eye level</option><option value="30">30 m</option><option value="100">100 m · survey</option></select></label>
-                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show arcs and labels</label>
-                </div>
-                <div class="globe-controls surface-walk" role="group" aria-label="Move around the landing site">
-                  <button type="button" class="subtle" id="surface-walk-forward" aria-label="Walk forward 10 meters">Forward</button>
-                  <button type="button" class="subtle" id="surface-walk-backward" aria-label="Walk backward 10 meters">Back</button>
-                  <button type="button" class="subtle" id="surface-walk-left">Step left</button>
-                  <button type="button" class="subtle" id="surface-walk-right">Step right</button>
-                  <button type="button" class="subtle" id="surface-walk-reset">Return to landing point</button>
-                  <output id="surface-walk-offset" class="muted" aria-live="off">At landing point</output>
-                </div>
-                <p id="surface-walk-help" class="muted">Drag to look around. Press W, A, S, D while the view has focus to walk. Visibility readouts use the landing point.</p>
-                <p class="muted" id="surface-landmark" hidden></p>
-                <p class="muted" id="surface-caption"></p>
-                <p class="muted" id="surface-angles"></p>
-                <p class="muted" id="surface-light"></p>
-                <p class="muted surface-credit"><a id="surface-terrain-source" href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
-                <p class="muted surface-credit"><a href="https://eol.jsc.nasa.gov/Collections/EarthFromSpace/images.pl?photo=AS17-148-22727">Earth texture · NASA / Apollo 17</a> <span>· archival photo with time-dependent lighting</span></p>
-              </div>
-            </div>
             <div class="sky-readings">
               <div class="sky-body sky-sun">
                 <h4><span aria-hidden="true"></span>Sun</h4>
@@ -549,13 +596,13 @@
         <h2 id="methods-heading">Data &amp; methods</h2>
         <div class="method-grid">
           <div><h3>What the ranking means</h3><p>Astralis filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
-          <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive both views. The 3D scene uses hourly geometric positions. Surface operations use 15-minute apparent positions. The model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. January 2024 through December 2030 is supported.</p><p>Global LOLA terrain is sampled at 16 pixels per degree, about 1.9 km north to south. Eight default polar sites use the finer 80 and 240 m LOLA grids.</p></div>
+          <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive the mission viewer. Orbit interpolates hourly geometric positions. The Moon Map and Surface modes use 15-minute apparent positions for visibility and surface lighting. The model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. January 2024 through December 2030 is supported.</p><p>Global LOLA terrain is sampled at 16 pixels per degree, about 1.9 km north to south. Eight default polar sites use the finer 80 and 240 m LOLA grids.</p></div>
           <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
         </div>
-        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/ASTRALIS-HANDBOOK.md#implementation-and-data-provenance">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">Polar LOLA</a><a href="https://pgda.gsfc.nasa.gov/products/69">NASA polar illumination</a><a href="https://svs.gsfc.nasa.gov/4720/#section2">Global LOLA</a><a href="https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html">NASA landing archive</a></p>
+        <p class="sources"><a href="https://github.com/Debaprashad-Bhowmik/project-astralis/blob/main/REFERENCES.md">All dataset downloads and method</a><a href="https://naif.jpl.nasa.gov/naif/data_generic.html">JPL SPICE</a><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a><a href="https://pgda.gsfc.nasa.gov/products/90">Polar LOLA</a><a href="https://pgda.gsfc.nasa.gov/products/69">NASA polar illumination</a><a href="https://svs.gsfc.nasa.gov/4720/#section2">Global LOLA</a><a href="https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html">NASA landing archive</a></p>
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by The Astralis</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by The Astralis · v1.1.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>
