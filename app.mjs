@@ -888,8 +888,11 @@ function showCoverage() {
     globe?.setHeatDetail(heat?.patch ?? null)
     let scores = heat?.overlaps
     if (ready && colorByPower && siteValues) scores = new Map(siteValues.map(({ site, sample, watts }) => {
-        const number = formatPower(watts)
-        return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)} · ${number} estimated electrical output`,
+        // The pin uses the site's own skyline, so it can sit in a small shadow the surrounding map colors hide.
+        const shadowed = watts === 0 && !sample.eclipse && sample.sunEl > 0
+        const number = shadowed ? `${formatPower(watts)} · terrain shadow` : formatPower(watts)
+        const reason = shadowed ? ` · local skyline ${signedDegrees(sample.sunHorizon)} blocks the Sun` : sample.eclipse ? ' · total solar eclipse' : ''
+        return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)}${reason} · ${formatPower(watts)} estimated electrical output`,
           color: `rgb(${solarPowerColor(watts, powerMax).join(',')})`, nearZero: watts === 0 }]
     }))
     if (filtered && scores && siteValues) {
@@ -930,8 +933,8 @@ function showCoverage() {
     get('coverage-summary').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, horizonFor(active.site))}` : siteOutside
   }
   const overhead = [
-    (drawShadows || power || (visibility & 5)) && `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`,
-    (visibility & 6) && `Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`,
+    (drawShadows || power || (visibility & 1)) && `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`,
+    (visibility & 2) && `Earth overhead at ${siteCoordinates(subPoint(coverageFrame[1]))}`,
   ]
   get('coverage-overhead').textContent = overhead.filter(Boolean).join(' · ')
 }

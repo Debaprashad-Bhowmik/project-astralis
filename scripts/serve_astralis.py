@@ -128,6 +128,12 @@ class AstralisHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
 
+    def end_headers(self):
+        # Revalidate app files on each load so edited modules never mix with stale cached ones.
+        if urlsplit(self.path).path != "/api/terrain":
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def do_GET(self):
         url = urlsplit(self.path)
         if url.path != "/api/terrain":

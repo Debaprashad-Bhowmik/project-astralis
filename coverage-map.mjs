@@ -17,10 +17,11 @@ export function subPoint([x, y, z]) {
 }
 
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
-export const visibilityLayers = { sun: 1, earth: 2, both: 4 }
+export const visibilityLayers = { sun: 1, earth: 2 }
 
+// Checking Sun and Earth together requires both bodies in view.
 export function visibilityRequirements(visibility) {
-  return visibility & visibilityLayers.both ? 3 : visibility & 3
+  return visibility & 3
 }
 
 export function coverageColorIndex(point, visibility) {
@@ -265,8 +266,8 @@ export function createCoverageMap(canvas, onPoint) {
     }
     mark(site, 'Selected site', '#fff', 'site', site.lat > 75 ? 14 : -14)
     if (live) {
-      if (power || (visibility & 5)) mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
-      if (visibility & 6) mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
+      if (power || (visibility & 1)) mark(subPoint(frame[0]), 'Sun overhead', inks[1], 'point')
+      if (visibility & 2) mark(subPoint(frame[1]), 'Earth overhead', inks[2], 'point', 13)
     }
   }
 
