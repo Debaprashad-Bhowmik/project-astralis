@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { annualMissionHours, horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap } from './planner.mjs'
+import { gunzipSync } from 'node:zlib'
+import { annualMissionHours, horizonAt, visibility, summarize, rank, observer, localAngles, binaryFrames, frameAt, evaluate, skyCrossings, nextSkyCrossing, solarExposure, longestGap, radius } from './planner.mjs'
 import { artemisSouthLatitude, globeOrientation, projectSite, southPoleView } from './globe.mjs'
 import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, systemAt } from './space-view.mjs'
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
-import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
+import { earthDiskIncidence, earthIllumination, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, surfaceTerrainSampler, terrainGroundAt, terrainVertices } from './surface-view.mjs'
 import { coverageProject, coverageUnproject, createCoverageModel, coverageColorIndex, coverageMatches, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
 import { createSolarPowerModel } from './coverage-map.mjs'
@@ -137,11 +138,58 @@ test('polar shadows use the LOLA stereographic orientation and interpolate measu
   assert.equal(samplePolarGrid(grid, 30, 10), null)
 })
 
-test('illustrative impact relief has a depressed floor, raised rim and finite apron', () => {
-  assert.ok(craterRelief(0) < -.15)
-  assert.ok(craterRelief(.95) > .035)
-  assert.ok(craterRelief(1.37) > 0)
-  assert.equal(craterRelief(1.6), 0)
+test('surface terrain selects the local DEM by coordinates and blends its boundary', () => {
+  const grid = (spacing, meters) => ({
+    spacing, left: -20 * spacing, top: 20 * spacing, width: 40, height: 40,
+    values: new Uint16Array(1600).fill((meters + 10000) * 2),
+  })
+  const sampler = surfaceTerrainSampler(() => 0, [grid(100, 50), grid(10, 150)])
+  assert.equal(sampler.height(-90, 0), 150)
+  assert.equal(sampler.spacingAt(-90, 0), 10)
+  const latitudeAt = meters => 2 * Math.atan(meters / (2 * radius)) * 180 / Math.PI - 90
+  const transition = sampler.height(latitudeAt(160), 0)
+  assert.ok(transition > 50 && transition < 150)
+  assert.equal(sampler.height(latitudeAt(200), 0), 50)
+  assert.ok(Math.abs(sampler.height(latitudeAt(199), 0) - 50) < 2)
+  assert.equal(sampler.height(0, 0), 0)
+  assert.equal(sampler.spacingAt(0, 0), 1900)
+})
+
+test('walking uses triangle heights in every direction, with the landing point at ground level', () => {
+  const mesh = terrainVertices({ lat: 0, lon: 0, height: 0 },
+    lat => lat * Math.PI / 180 * radius / 10, [0, 10, 20, 40])
+  assert.equal(terrainGroundAt(mesh, 0, 0), -2)
+  assert.ok(Math.abs(terrainGroundAt(mesh, 8, 12) + .8) < .001)
+  assert.ok(Math.abs(terrainGroundAt(mesh, -1, 14) + .6) < .001)
+  assert.ok(Math.abs(terrainGroundAt(mesh, -8, -12) + 3.2) < .001)
+  assert.equal(terrainGroundAt(mesh, 0, 45), null)
+})
+
+test('Earth phases use the Sun direction from Earth, and the bright limb points toward the Sun', () => {
+  const sample = { earthAz: 0, earthEl: 0, earthRadius: Math.asin(6378137 / 384400000), sunEl: 0, sunDistance: 149597870700 }
+  assert.equal(earthIllumination({ ...sample, sunAz: 0 }).fraction, 0)
+  assert.equal(earthIllumination({ ...sample, sunAz: 180 }).fraction, 1)
+  const quarter = earthIllumination({ ...sample, sunAz: 90 })
+  assert.ok(quarter.fraction > .5 && quarter.fraction < .502)
+  const diskRadius = Math.sin(sample.earthRadius)
+  const axis = [0, 0, 1]
+  assert.ok(earthDiskIncidence(.5 * diskRadius, 0, axis, quarter.light, diskRadius) > .45)
+  assert.ok(earthDiskIncidence(-.5 * diskRadius, 0, axis, quarter.light, diskRadius) < -.45)
+  assert.equal(earthDiskIncidence(2 * diskRadius, 0, axis, quarter.light, diskRadius), null)
+})
+
+test('Chang’e 5 uses the registered 3 m stereo terrain and can aim toward Xu Guangqi', () => {
+  const descriptor = JSON.parse(readFileSync(new URL('./data/surface/change5-elevation.json', import.meta.url)))
+  const bytes = gunzipSync(readFileSync(new URL('./data/surface/change5-elevation.bin.gz', import.meta.url)))
+  const values = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2)
+  const sampler = surfaceTerrainSampler(() => -2545.5, [], [{ ...descriptor, values }])
+  const site = { lat: 43.0576, lon: -51.9161 }
+  const landingHeight = sampler.height(site.lat, site.lon)
+  assert.ok(Math.abs(landingHeight + 2539.25) < .35)
+  assert.ok(sampler.height(43.06478, -51.93185) < landingHeight - 50)
+  const [crater] = nearbyCraters(site, [{ id: 15995, name: 'Xu Guangqi', kind: 'Crater', lat: 43.06, lon: -51.93, diameter: .4 }], sampler.spacingAt)
+  assert.ok(crater.distance < 1)
+  assert.ok(crater.bearing > 270 && crater.bearing < 310)
 })
 
 test('the polar surface mesh resolves the measured Shackleton basin', () => {

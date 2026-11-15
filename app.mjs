@@ -1,9 +1,8 @@
 import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, siteSolarPower, skyCrossings, solarExposure } from './planner.mjs'
 import { createGlobe } from './globe.mjs'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
-import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
+import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=20261115-surface-blend'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
@@ -49,10 +48,14 @@ const futureClps = site => site.kind.startsWith('Future CLPS target')
 const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.location || site.kind
 const coordinate = (value, plus, minus, digits = 2) => Math.abs(value).toFixed(digits) + '°' + (value < 0 ? minus : plus)
 const terrainLabel = (site, model) => model === 'terrain' ? site.terrain : '0° reference plane'
-const siteCoordinates = site => coordinate(site.lat, 'N', 'S') + ', ' + coordinate(site.lon, 'E', 'W')
+const siteCoordinates = site => {
+  const digits = site.kind === 'Landing suggestion' ? 4 : 2
+  return coordinate(site.lat, 'N', 'S', digits) + ', ' + coordinate(site.lon, 'E', 'W', digits)
+}
 const searchText = value => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const siteSource = site => ({ nssdc: 'https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html',
-  'nasa-surface': 'https://ntrs.nasa.gov/citations/20250002845' }[site.source] ??
+  'nasa-surface': 'https://ntrs.nasa.gov/citations/20250002845',
+  'polar-lola': 'https://pgda.gsfc.nasa.gov/products/90' }[site.source] ??
   (/^\d+$/.test(site.source) ? `https://planetarynames.wr.usgs.gov/Feature/${site.source}` : null))
 const element = (tag, className, value) => {
   const node = document.createElement(tag)
@@ -139,9 +142,11 @@ let comparisonEdited = false
 let globe
 let landingWorker
 let landingRequest = 0
+let landingRevision = 0
 let landingKey
 let landingRows = []
-let selectedLanding
+const inspectedPatches = new Map()
+const refiningPatches = new Set()
 let updateSpace
 let spaceYearMode = false
 let spaceYearWindow
@@ -157,6 +162,7 @@ let fetchingFeatures = false
 let localSky
 let surfaceView
 let surfaceSite
+let surfaceTerrain
 let surfaceRequest = 0
 let drawCoverage
 let coverageFrame
@@ -253,7 +259,7 @@ function recalculate(reuseSettings = false) {
     siteEvaluations = { mission: missionFrames, horizon, rows: new Map() }
   }
   const { rows } = siteEvaluations
-  for (const site of rows.keys()) if (!sites.includes(site)) rows.delete(site)
+  for (const site of rows.keys()) if (!sites.includes(site) && inspectedPatches.get(site.id) !== site) rows.delete(site)
   for (const site of sites) {
     if (!rows.has(site)) rows.set(site, evaluate(site, missionFrames.frames, duration, horizon === 'terrain', { includeTimeline: !annual, includeEnergy: true }))
   }
@@ -261,7 +267,7 @@ function recalculate(reuseSettings = false) {
   for (const { layers } of heatMaps.values()) {
     for (const layer of layers.values()) layer.overlaps = undefined
   }
-  if (!inspectedSite || !ranked.some(row => row.site.id === selected)) selected = ranked[0].site.id
+  if (!inspectedSite || (!inspectedPatches.has(selected) && !ranked.some(row => row.site.id === selected))) selected = ranked[0].site.id
   elapsed = Math.min(elapsed, duration)
   get('time-slider').max = duration
   get('export').disabled = false
@@ -324,29 +330,44 @@ function resultNarrative(best, second) {
     formatHours(best.metrics.sun) + ' of sunlight and ' + formatHours(best.metrics.earth) + ' with Earth in view.'
 }
 
+const horizonFor = site => site.kind === 'Landing suggestion' ? 'terrain' : settings.horizon
+
+function missionResult(id) {
+  const site = inspectedPatches.get(id)
+  if (!site) return ranked.find(row => row.site.id === id)
+  const { weights, limits, duration, annual } = settings
+  const { rows } = siteEvaluations
+  if (!rows.has(site)) {
+    rows.set(site, evaluate(site, missionFrames.frames, duration, true, { includeTimeline: !annual, includeEnergy: true }))
+  }
+  return rank([rows.get(site)], weights, limits, duration)[0]
+}
+
+function inspectionOptions() {
+  const options = ranked.map(({ site }) => new Option(siteName(site), site.id))
+  for (const site of inspectedPatches.values()) options.push(new Option(`${siteName(site)} · ${siteCoordinates(site)}`, site.id))
+  return options
+}
+
 function withMissionTimeline(row) {
   if (row.timeline) return row
   if (row === activeRankedRow) return active
-  const sampleSky = siteSkyModel(row.site, settings.horizon === 'terrain')
+  const sampleSky = siteSkyModel(row.site, horizonFor(row.site) === 'terrain')
   return { ...row, timeline: missionFrames.frames.map(sampleSky) }
 }
 
 function showResult() {
-  const row = ranked.find(candidate => candidate.site.id === selected)
+  const row = missionResult(selected)
   active = withMissionTimeline(row)
   activeRankedRow = row
   if (localSky?.row !== active) prepareLocalSky()
   for (const siteControl of inputs('space-site', 'assessment-site')) {
-    siteControl.replaceChildren(...ranked.map(({ site }) => {
-      const option = element('option', '', siteName(site))
-      option.value = site.id
-      return option
-    }))
+    siteControl.replaceChildren(...inspectionOptions())
     siteControl.value = selected
   }
   showAssessment()
   const [best, second] = ranked
-  const alternative = active.site.id === best.site.id ? second : active
+  const alternative = active.site.id === best.site.id || inspectedPatches.has(selected) ? second : active
   const tied = ranked.filter(row => row.place === 1)
   let title = siteName(best.site) + ' fits this mission best'
   let body = resultNarrative(best, alternative)
@@ -388,8 +409,9 @@ function windowList(windows, start) {
 }
 
 function showAssessment() {
-  const { start, duration, horizon, limits } = settings
+  const { start, duration, limits } = settings
   const { site, timeline: samples, sun, earth, metrics, unmet } = active
+  const horizon = horizonFor(site)
   void showNasaIllumination(site)
   const landing = samples[0]
   const { beamHours, peak, energyKwh } = solarExposure(samples, sun, duration)
@@ -507,7 +529,7 @@ function selectSite(id, focus, center = false) {
 function showMap() {
   const { site } = active
   get('map-site-name').textContent = siteName(site)
-  const details = [siteCoordinates(site), site.kind, terrainLabel(site, settings.horizon)]
+  const details = [siteCoordinates(site), site.kind, terrainLabel(site, horizonFor(site))]
   if (futureClps(site)) details.splice(1, 0, site.location)
   get('map-site-detail').textContent = details.join(' · ')
   const source = siteSource(site)
@@ -544,73 +566,150 @@ function showMap() {
 }
 
 function showGlobeSites() {
+  for (const button of get('landing-suggestions-list').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.site === selected))
+  }
   if (!globe) return
   const sites = ranked.map(({ site }) => ({ ...site, displayName: siteName(site) }))
-  globe.setSites([...sites, ...landingRows], selectedLanding ?? selected)
+  const selectedPatch = inspectedPatches.get(selected)
+  if (selectedPatch && !landingRows.some(site => site.id === selected)) sites.push(selectedPatch)
+  globe.setSites([...sites, ...landingRows], selected)
 }
 
 function focusLandingSuggestion(site) {
-  selectedLanding = site.id
-  for (const button of get('landing-suggestions-list').querySelectorAll('button')) {
-    button.setAttribute('aria-pressed', String(button.dataset.site === site.id))
+  if (!inspectedPatches.has(site.id)) {
+    const { id, lat, lon, height, horizon, displayName } = site
+    inspectedPatches.set(id, {
+      id, lat, lon, height, horizon, displayName, name: displayName,
+      kind: 'Landing suggestion', terrain: 'NASA LOLA polar horizon', source: 'polar-lola',
+    })
+    updateComparisonOptions()
   }
-  showGlobeSites()
-  globe?.center(site)
+  get('surface-height').value = '2'
+  surfaceView?.setHeight(2)
+  selectSite(site.id, false, true)
+  if (get('surface-view').hidden) void useSkyView(true)
+  get('ops-heading').focus({ preventScroll: true })
+  get('ops-heading').scrollIntoView({ behavior: 'instant' })
+  void refineLandingSuggestion(inspectedPatches.get(site.id))
 }
 
-function showLandingSuggestions({ result, solarWeight, step, sampled }) {
+async function refineLandingSuggestion(site) {
+  if (site.detailed || refiningPatches.has(site)) return
+  refiningPatches.add(site)
+  try {
+    const terrain = await surfaceHorizon(site.lat, site.lon)
+    if (!terrain.detailed) return
+    Object.assign(site, terrain)
+    siteEvaluations.rows.delete(site)
+    if (active?.site === site) showResult()
+    if (inputs('compare-a', 'compare-b').some(select => select.value === site.id)) compare()
+  } catch {
+    // The suggestion retains its precomputed horizon when the local terrain cannot load.
+  } finally {
+    refiningPatches.delete(site)
+  }
+}
+
+const landingRankLabels = { earth: 'Comms', solar: 'Solar', balanced: 'Balance' }
+const landingPatchName = id => `Patch ${id.slice('landing-patch-'.length)}`
+
+function showLandingSuggestions({ result, preference, step, sampled }) {
   const status = get('landing-suggestions-status')
   if (!result.evaluated) {
     status.textContent = 'No sampled patch meets this slope limit.'
     return
   }
-  const { rows, flattest, evaluated } = result
+  const { rows, flattest, evaluated, qualified, minimumHours, summaries } = result
+  const { mode, body } = preference
+  for (const [key, summary] of Object.entries(summaries)) {
+    const patch = landingPatchName(summary.id)
+    const earthView = `${formatHours(summary.longestEarthHours)} continuous Earth view`
+    const noMatch = {
+      earth: `No full-mission Earth view. Closest · ${patch} · ${earthView}`,
+      solar: 'No patch meets the solar scenario.',
+      balanced: 'No patch offers both solar energy and Earth view.',
+    }[key]
+    get(`landing-${key}-winner`).textContent = summary.qualified ? `${patch} · ${formatEnergy(summary.energyKwh)} · ${earthView}` : noMatch
+  }
   const stepLabel = step < 1 ? `${Math.round(step * 60)} min` : formatHours(step)
   const countLabel = `${evaluated.toLocaleString()} of ${sampled.toLocaleString()} sampled patches meet the slope limit. ${stepLabel} time samples.`
-  const priority = solarWeight === 0 ? 'Earth visibility' : solarWeight === 1 ? 'solar output' : 'both solar output and Earth visibility'
-  status.textContent = rows[0].score > 0 ? countLabel : `No qualifying patch has ${priority}. ${countLabel}`
-  const bestLabel = solarWeight === 0 ? 'Most Earth view' : solarWeight === 1 ? 'Most solar energy' :
-    solarWeight === .5 ? 'Best balance' : 'Best fit for priorities'
+  const requirement = mode === 'earth' ? 'keeps Earth in view for the full mission' :
+    mode === 'balanced' ? 'offers both solar energy and a continuous Earth-view window' :
+      minimumHours ? `produces solar energy and has ${formatHours(minimumHours)} of uninterrupted ${body === 'earth' ? 'Earth view' : 'sunlight'}` :
+        'produces solar energy in this mission window'
+  const fit = qualified ? `${qualified.toLocaleString()} ${qualified === 1 ? 'patch matches' : 'patches match'} this scenario.` :
+    `No sampled patch ${requirement}. Showing the closest alternatives.`
+  status.textContent = fit + ' ' + countLabel
   const shown = rows.some(row => row.id === flattest.id) ? rows : [...rows, flattest]
-  landingRows = shown.map((row, index) => ({
-    ...row, kind: 'Landing suggestion', displayName: index < rows.length ? `Patch ${index + 1}` : 'Flattest patch',
+  landingRows = shown.map(row => ({
+    ...row, kind: 'Landing suggestion', displayName: landingPatchName(row.id),
   }))
-  if (!landingRows.some(site => site.id === selectedLanding)) selectedLanding = undefined
+  get('landing-rank-note').hidden = false
   const list = get('landing-suggestions-list')
-  list.replaceChildren(...landingRows.map((site, index) => {
+  list.replaceChildren(...landingRows.map(site => {
     const item = element('li', '')
     const button = element('button', 'rank-row landing-row')
     button.type = 'button'
     button.dataset.site = site.id
-    button.setAttribute('aria-pressed', String(site.id === selectedLanding))
+    button.setAttribute('aria-pressed', String(site.id === selected))
     button.addEventListener('click', () => focusLandingSuggestion(site))
     const notes = [site.displayName]
-    if (!index && site.score > 0) notes.push(bestLabel)
-    if (site.id === flattest.id && index < rows.length) notes.push('Flattest')
-    const position = `${coordinate(site.lat, 'N', 'S', 4)}, ${coordinate(site.lon, 'E', 'W', 4)}`
+    if (site.id === flattest.id) notes.push('Flattest')
+    if (!site.qualifies) notes.push('Misses scenario')
     const metrics = element('span', 'landing-metrics')
     metrics.append(element('span', '', `${formatEnergy(site.energyKwh)} total`),
       element('span', '', `${formatPower(site.averageWatts)} avg`))
-    button.append(element('strong', 'site-name', notes.join(' · ')), metrics,
+    const ranks = element('span', 'landing-ranks')
+    for (const [key, label] of Object.entries(landingRankLabels)) {
+      const rank = site.scenarioRanks[key]
+      const column = element('span', key === mode ? 'current' : '')
+      const rankText = element('strong', '', rank ? `#${rank.toLocaleString()}` : '—')
+      column.append(element('small', '', label), rankText)
+      if (!rank) {
+        rankText.setAttribute('aria-hidden', 'true')
+        column.append(element('span', 'sr-only', 'No qualifying rank'))
+      }
+      ranks.append(column)
+    }
+    button.append(element('strong', 'site-name', notes.join(' · ')), ranks, metrics,
       element('span', 'landing-terrain', `Earth view ${formatHours(site.earthHours)} (${formatPercent.format(site.earthFraction)}) · Sunlight ${formatHours(site.sunHours)} (${formatPercent.format(site.sunFraction)})`),
+      element('span', 'landing-terrain', `Longest Earth view ${formatHours(site.longestEarthHours)} · Longest outage ${formatHours(site.longestEarthGap)}`),
+      element('span', 'landing-terrain', `Longest sunlight ${formatHours(site.longestSunHours)}`),
       element('span', 'landing-terrain', `Slope ${site.slope.toFixed(2)}° · Roughness ${site.roughness.toFixed(2)} m`),
-      element('span', 'landing-terrain', position))
+      element('span', 'landing-terrain', siteCoordinates(site)),
+      element('span', 'landing-terrain', 'Open first-person view'))
     item.append(button)
     return item
   }))
   showGlobeSites()
 }
 
-const landingSolarWeight = () => get('landing-priority').valueAsNumber / 100
+function landingPreference() {
+  const mode = get('landing-scenarios').querySelector('input:checked').value
+  const input = get('landing-window-share')
+  const share = Number.isFinite(input.valueAsNumber) ? Math.round(input.valueAsNumber) : 0
+  return { mode, body: get('landing-window-body').value, minimumShare: Math.min(100, Math.max(0, share)) / 100, revision: landingRevision }
+}
 
-function updateLandingPriority(event) {
-  const slider = event.currentTarget
-  const solar = slider.valueAsNumber
-  const communication = 100 - solar
-  get('landing-communication-weight').value = `${communication}%`
-  get('landing-energy-weight').value = `${solar}%`
-  slider.setAttribute('aria-valuetext', `${communication}% communication, ${solar}% solar energy`)
-  if (landingKey) landingWorker?.postMessage({ request: landingRequest, rankOnly: true, solarWeight: solar / 100 })
+function showLandingScenarioRule({ mode, body, minimumShare }) {
+  get('landing-solar-requirement').hidden = mode !== 'solar'
+  const minimum = formatHours(settings.duration * minimumShare)
+  get('landing-scenario-rule').textContent = {
+    earth: `Require Earth in view from landing until mission end (${formatHours(settings.duration)}), then rank by solar energy.`,
+    balanced: 'Reward sites with both high solar energy and a long continuous Earth-view window.',
+    solar: minimumShare ? `Rank by solar energy among patches with at least ${minimum} of uninterrupted ${body === 'earth' ? 'Earth view' : 'sunlight'}.` :
+      'Rank by total solar energy. A longer uninterrupted Earth view breaks an energy tie.',
+  }[mode]
+}
+
+function updateLandingScenario() {
+  if (!settings) return
+  landingRevision++
+  const preference = landingPreference()
+  get('landing-window-share').value = Math.round(100 * preference.minimumShare)
+  showLandingScenarioRule(preference)
+  if (landingKey) landingWorker?.postMessage({ request: landingRequest, rankOnly: true, preference })
 }
 
 function syncLandingSuggestions() {
@@ -618,6 +717,8 @@ function syncLandingSuggestions() {
   toggle.hidden = !globe || get('globe-view').hidden
   const enabled = !toggle.hidden && get('layer-landing-suggestions').checked && Boolean(settings)
   get('landing-suggestions').hidden = !enabled
+  const preference = landingPreference()
+  if (enabled) showLandingScenarioRule(preference)
   const slope = get('landing-max-slope')
   const key = enabled && slope.validity.valid ? `${settings.start}/${settings.duration}/${slope.valueAsNumber}` : ''
   if (enabled && !slope.validity.valid) get('landing-suggestions-status').textContent = 'Enter a slope limit from 0.1° to 45° in 0.1° steps.'
@@ -625,7 +726,8 @@ function syncLandingSuggestions() {
   landingKey = key
   const request = ++landingRequest
   landingRows = []
-  selectedLanding = undefined
+  for (const key of Object.keys(landingRankLabels)) get(`landing-${key}-winner`).textContent = ''
+  get('landing-rank-note').hidden = true
   get('landing-suggestions-list').replaceChildren()
   showGlobeSites()
   if (!key) {
@@ -642,12 +744,12 @@ function syncLandingSuggestions() {
   }
   try {
     if (!landingWorker) {
-      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs', import.meta.url), { type: 'module' })
+      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs?v=20261115-shortlist', import.meta.url), { type: 'module' })
       landingWorker.addEventListener('message', ({ data }) => {
         if (data.request !== landingRequest) return
         if (data.error) fail(data.error)
         else if (data.result) {
-          if (data.solarWeight === landingSolarWeight()) showLandingSuggestions(data)
+          if (data.preference.revision === landingRevision) showLandingSuggestions(data)
         }
         else get('landing-suggestions-status').textContent = `Evaluating mission power and Earth view · ${data.done.toLocaleString()} / ${data.total.toLocaleString()}`
       })
@@ -658,7 +760,7 @@ function syncLandingSuggestions() {
       })
     }
     landingWorker.postMessage({ request, ephemeris, first: (start - catalog.startMs) / (catalog.step * 1000),
-      frameHours: catalog.step / 3600, duration, maxSlope: slope.valueAsNumber, solarWeight: landingSolarWeight() })
+      frameHours: catalog.step / 3600, duration, maxSlope: slope.valueAsNumber, preference })
   } catch (reason) {
     fail(reason.message)
   }
@@ -821,11 +923,11 @@ function showCoverage() {
   const sun = sample.eclipse ? 'Total solar eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun in view' : 'Sun blocked by skyline'
   if (power) {
     get('power-output').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${formatPower(siteSolarPower(sample))}` : siteOutside
-    get('power-site-angle').textContent = inMapRegion(active.site) ? `Sun elevation ${signedDegrees(sample.sunEl)} · ${sun} · ${terrainLabel(active.site, settings.horizon)}` : ''
+    get('power-site-angle').textContent = inMapRegion(active.site) ? `Sun elevation ${signedDegrees(sample.sunEl)} · ${sun} · ${terrainLabel(active.site, horizonFor(active.site))}` : ''
   }
   if (visibility) {
     const earth = sample.earthEl > sample.earthHorizon ? 'Earth in view' : 'Earth blocked by skyline'
-    get('coverage-summary').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, settings.horizon)}` : siteOutside
+    get('coverage-summary').textContent = inMapRegion(active.site) ? `${siteName(active.site)} · ${sun} · ${earth} · ${terrainLabel(active.site, horizonFor(active.site))}` : siteOutside
   }
   const overhead = [
     (drawShadows || power || (visibility & 5)) && `Sun overhead at ${siteCoordinates(subPoint(coverageFrame[0]))}`,
@@ -978,7 +1080,7 @@ function showMissionHeat() {
       return [site.id, { number, hours, overlap: true, label: `${number} of simultaneous sunlight and Earth visibility using the ${model}` }]
     }))
   }
-  const { overlaps, best } = layer
+  const { best } = layer
   const local = detail?.periods[period]
   const maxHours = Math.max(gridPeriod.maxHours, local?.maxHours ?? 0, best?.hours ?? 0)
   if (!layer.globeRaster || layer.colorMax !== maxHours || layer.detail !== detail) {
@@ -1018,8 +1120,8 @@ function showMissionHeat() {
     get('mission-heat-site').textContent = `${siteName(site)} is outside the 84°S to 90°S region. Pick a point inside the boundary.`
     return layer
   }
-  const siteOverlap = overlaps.get(site.id).hours
-  get('mission-heat-site').textContent = `${siteName(site)} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteOverlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizon)}`
+  const siteOverlap = windowHours(metrics.both, from, to)
+  get('mission-heat-site').textContent = `${siteName(site)} · Sun ${formatHours(windowHours(sun, from, to))} · Earth ${formatHours(windowHours(earth, from, to))} · Both ${formatHours(siteOverlap)} of ${formatHours(hours)} · ${terrainLabel(site, horizonFor(site))}`
   const detailHours = detail ? detailHoursAt(site, detail, period) : null
   const mapHours = detailHours ?? overviewHoursAt(site, heatGrid, period)
   get('mission-heat-reference').textContent = `Map estimate at these coordinates · ${formatHours(mapHours)} of ${formatHours(hours)} · ${detailHours !== null && detail.terrain ? 'LOLA close-up' : 'Smooth horizon'}`
@@ -1074,7 +1176,7 @@ function installGlobe() {
     error('globe-error', message)
   }
   try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), get('globe-pole-marker'), catalog.mapExtent, id => {
-    const suggestion = landingRows.find(site => site.id === id)
+    const suggestion = landingRows.find(site => site.id === id) ?? inspectedPatches.get(id)
     if (suggestion) focusLandingSuggestion(suggestion)
     else selectSite(id, false)
   }, evaluateMapPoint, feature => {
@@ -1343,7 +1445,8 @@ function setSpaceMode(year) {
 }
 
 function prepareLocalSky() {
-  const { start, duration, horizon } = settings
+  const { start, duration } = settings
+  const horizon = horizonFor(active.site)
   const profile = horizon === 'terrain' ? active.site.horizon : null
   const reach = Math.min(duration + skyLookahead, (catalog.endMs - start) / hour)
   const extension = Math.floor((reach - duration) * 4 + 1e-8) / 4
@@ -1362,7 +1465,7 @@ function prepareLocalSky() {
     endsAt: duration + extension, crossings: skyCrossings([...active.timeline, ...ahead], .25), paths: null, chartRange }
   get('tracks').replaceChildren(...timeline(active, duration, elapsed))
   showMissionEvents()
-  get('ops-subtitle').textContent = siteName(active.site) + ' · ' + siteCoordinates(active.site) + ' · ' + terrainLabel(active.site, horizon)
+  get('ops-subtitle').textContent = `${siteName(active.site)} · ${siteCoordinates(active.site)} · Sky calculations use ${terrainLabel(active.site, horizon)}`
   const gaps = element('dl')
   gaps.append(element('dt', '', 'Longest gaps in this mission'),
     element('dd', '', 'Darkness ' + formatHours(active.metrics.darkness)),
@@ -1458,12 +1561,13 @@ function updateSurface(sample) {
   if (showPaths && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
   surfaceView?.update(sample, showPaths ? localSky.surfacePaths : null)
   const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
-  get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)}`
+  const { fraction } = earthIllumination(sample)
+  get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)} · Earth’s visible disk ${formatPercent.format(fraction)} sunlit`
   const condition = sample.eclipse ? 'Total eclipse' : sample.sunEl > sample.sunHorizon ? 'Sun above the selected skyline' : 'Sun below the selected skyline'
   get('surface-light').textContent = `${condition} · Sun elevation ${signedDegrees(sample.sunEl)}`
 }
 
-async function showNearbyCraters(site) {
+async function showNearbyCraters(site, terrain) {
   const control = get('surface-crater')
   const description = get('surface-landmark')
   control.parentElement.hidden = true
@@ -1471,7 +1575,8 @@ async function showNearbyCraters(site) {
   try {
     const gazetteer = await readGazetteer()
     if (surfaceSite !== site || active.site !== site) return
-    surfaceCraters = nearbyCraters(site, gazetteer)
+    const craters = terrain.crater ? [...gazetteer, terrain.crater] : gazetteer
+    surfaceCraters = nearbyCraters(site, craters, terrain.spacingAt)
     control.replaceChildren(new Option('Nearby crater', ''), ...surfaceCraters.map(crater => new Option(crater.name, crater.id)))
     control.parentElement.hidden = !surfaceCraters.length
   } catch {
@@ -1481,17 +1586,26 @@ async function showNearbyCraters(site) {
   }
 }
 
+function showSurfaceCaption() {
+  const height = get('surface-height').value
+  const detail = surfaceTerrain.coarse ? 'This grid can miss nearby craters and slopes.' : 'Crater relief comes from NASA elevations.'
+  get('surface-caption').textContent = `${surfaceTerrain.source} · Camera ${height} m above the modeled ground. ${detail} Fine dust is illustrative.` +
+    (horizonFor(active.site) === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
+  const sourceLink = get('surface-terrain-source')
+  sourceLink.href = surfaceTerrain.sourceUrl ?? 'https://svs.gsfc.nasa.gov/4720/'
+  sourceLink.textContent = surfaceTerrain.sourceUrl ? 'Elevation data source' : 'Surface imagery · NASA LROC / LOLA'
+}
+
 async function showSurface() {
   if (!active) return
   const { site } = active
   const request = ++surfaceRequest
   const sample = active.timeline[Math.round(elapsed * 4)]
-  get('surface-caption').textContent = 'NASA ' + site.terrain + ' · Camera 2 m above the modeled surface. Small foreground pits and dust texture are illustrative.' +
-    (settings.horizon === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   if (surfaceSite === site) {
     get('surface-scene').hidden = false
     get('surface-retry').hidden = true
     get('surface-status').textContent = ''
+    showSurfaceCaption()
     updateSurface(sample)
     return
   }
@@ -1499,8 +1613,11 @@ async function showSurface() {
   get('surface-scene').hidden = true
   get('surface-status').textContent = 'Loading NASA terrain…'
   try {
-    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-sky'), get('surface-labels'), (angle, targets) => {
+    surfaceView ??= createSurfaceView(get('surface-canvas'), get('surface-sky'), get('surface-labels'), (angle, targets, distance) => {
       get('surface-heading').textContent = `${angle}° ${compass[Math.round(angle / 45) % compass.length]}`
+      const offset = get('surface-walk-offset')
+      const label = distance < .05 ? 'At landing point' : `${Number(distance.toFixed(1))} m from landing point`
+      if (offset.value !== label) offset.value = label
       for (const [key, target] of Object.entries(targets)) {
         const button = get(`surface-guide-${key}`)
         const name = key === 'sun' ? 'Sun' : 'Earth'
@@ -1511,17 +1628,21 @@ async function showSurface() {
         button.hidden = target.inView
       }
     })
-    const mesh = await loadSurfaceMesh(site)
+    const terrain = await loadSurfaceMesh(site)
     if (request !== surfaceRequest) return
-    surfaceSite = site
     get('surface-scene').hidden = false
     get('surface-status').textContent = ''
     const current = active.timeline[Math.round(elapsed * 4)]
-    surfaceView.setTerrain(mesh, site, current.sunAz)
+    surfaceView.setTerrain(terrain.mesh, terrain.site, current.sunAz)
+    surfaceView.setStyle(get('surface-style').value)
+    surfaceSite = site
+    surfaceTerrain = terrain
+    showSurfaceCaption()
     updateSurface(current)
-    void showNearbyCraters(site)
+    await showNearbyCraters(site, terrain)
   } catch (reason) {
     if (request !== surfaceRequest) return
+    get('surface-scene').hidden = true
     get('surface-status').textContent = reason.message
     get('surface-retry').hidden = false
   }
@@ -1533,23 +1654,37 @@ function useSkyView(surface) {
   get('show-skyline').setAttribute('aria-pressed', String(!surface))
   get('show-surface').setAttribute('aria-pressed', String(surface))
   get('sky-paths').parentElement.hidden = surface
-  if (surface) void showSurface()
-  else {
-    surfaceRequest++
-    redrawLocalSky()
+  if (surface) return showSurface()
+  surfaceRequest++
+  redrawLocalSky()
+}
+
+async function openSurfaceLink() {
+  const params = new URLSearchParams(location.search)
+  const id = params.get('surface')
+  if (!ranked.some(({ site }) => site.id === id)) return
+  const epoch = Date.parse(params.get('at'))
+  if (epoch >= catalog.startMs && epoch + settings.duration * hour <= catalog.endMs) setMissionTime(epoch)
+  selectSite(id, false)
+  await useSkyView(true)
+  if (active.site.id !== id || surfaceSite !== active.site || get('surface-view').hidden) return
+  for (const [parameter, control] of [['height', 'surface-height'], ['crater', 'surface-crater']]) {
+    const value = params.get(parameter)
+    const select = get(control)
+    if (value === null || !Array.from(select.options).some(option => option.value === value)) continue
+    select.value = value
+    select.dispatchEvent(new Event('change'))
   }
+  get('local-sky').scrollIntoView({ behavior: 'instant' })
 }
 
 function updateComparisonOptions() {
   const ids = inputs('compare-a', 'compare-b')
   const previous = ids.map(select => select.value)
   for (const [index, select] of ids.entries()) {
-    select.replaceChildren(...ranked.map(({ site }) => {
-      const option = element('option', '', siteName(site))
-      option.value = site.id
-      return option
-    }))
-    select.value = ranked.some(row => row.site.id === previous[index]) ? previous[index] : ranked[index].site.id
+    const options = inspectionOptions()
+    select.replaceChildren(...options)
+    select.value = options.some(option => option.value === previous[index]) ? previous[index] : ranked[index].site.id
   }
 }
 
@@ -1635,12 +1770,12 @@ function showComparisonTime() {
 function compare() {
   if (!settings) return
   const startB = Date.parse(get('compare-time').value + 'Z')
-  const { start, duration, annual, horizon, weights, limits } = settings
+  const { start, duration, annual, weights, limits } = settings
   const durationB = annual ? annualMissionHours(startB) : duration
   const result = get('compare-result')
   const windowDetail = get('window-detail')
-  const siteA = ranked.find(row => row.site.id === get('compare-a').value)
-  const rowB = ranked.find(row => row.site.id === get('compare-b').value)
+  const siteA = missionResult(get('compare-a').value)
+  const rowB = missionResult(get('compare-b').value)
   get('map-compare-pair').textContent = `A · ${siteName(siteA.site)}  |  B · ${siteName(rowB.site)}`
   if (!Number.isFinite(startB) || startB < catalog.startMs || startB + durationB * hour > catalog.endMs) {
     error('compare-error', 'Choose a UTC time for B that keeps its full mission inside the supported dates.')
@@ -1652,7 +1787,7 @@ function compare() {
   error('compare-error')
   const a = withMissionTimeline(siteA)
   const b = startB === start ? withMissionTimeline(rowB) :
-    rank([evaluate(rowB.site, framesFor(startB, durationB), durationB, horizon === 'terrain')], weights, limits, durationB)[0]
+    rank([evaluate(rowB.site, framesFor(startB, durationB), durationB, horizonFor(rowB.site) === 'terrain')], weights, limits, durationB)[0]
   const scenarios = [[a, start, duration], [b, startB, durationB]]
   comparisonScenarios = scenarios
   comparisonViews ??= createComparisonViews()
@@ -1668,8 +1803,9 @@ function compare() {
     view.coordinates.textContent = siteCoordinates(row.site)
     view.canvas.setAttribute('aria-label', `3D Moon centered on ${siteName(row.site)}`)
     const power = solarExposure(row.timeline, row.sun, duration)
+    const terrain = terrainLabel(row.site, horizonFor(row.site))
     view.tracks.replaceChildren(element('h4', '', 'Mission totals'), element('p', 'muted', `Starts ${dateLabel(epoch)}`),
-      element('p', 'muted', annual ? `${duration / 24} days · Ends ${dateLabel(epoch + duration * hour)} · ${terrainLabel(row.site, horizon)}` : terrainLabel(row.site, horizon)),
+      element('p', 'muted', annual ? `${duration / 24} days · Ends ${dateLabel(epoch + duration * hour)} · ${terrain}` : terrain),
       element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
       row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
     axis(duration), ...timeline(row, duration, Math.min(elapsed, duration)), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
@@ -1719,7 +1855,7 @@ async function addCoordinate(event, feature = null) {
   }
   get('coordinate-status').textContent = 'Calculating the terrain horizon…'
   try {
-    const terrain = await terrainAt(lat, lon)
+    const terrain = await surfaceHorizon(lat, lon)
     if (request !== pendingCoordinate) return
     const label = ++customCount
     const site = { id: `custom-${label}`, name: feature?.name ?? `Custom site ${label}`, kind: 'Custom coordinates', lat, lon,
@@ -1813,10 +1949,11 @@ function play() {
 
 function exportCsv() {
   const header = 'utc,site_id,latitude_deg,east_longitude_deg,horizon_model,sun_az_deg,sun_elev_deg,sun_horizon_deg,earth_az_deg,earth_elev_deg,earth_horizon_deg,total_solar_eclipse,sun_visible,earth_visible,terrain_source,flat_panel_20pct_power_w_m2'
+  const horizon = horizonFor(active.site)
   const rows = active.timeline.map((entry, index) => [
-    new Date(settings.start + index * hour / 4).toISOString(), active.site.id, active.site.lat, active.site.lon, settings.horizon,
+    new Date(settings.start + index * hour / 4).toISOString(), active.site.id, active.site.lat, active.site.lon, horizon,
     entry.sunAz, entry.sunEl, entry.sunHorizon, entry.earthAz, entry.earthEl, entry.earthHorizon, entry.eclipse,
-    availableAt(active.sun, index / 4, settings.duration), availableAt(active.earth, index / 4, settings.duration), terrainLabel(active.site, settings.horizon),
+    availableAt(active.sun, index / 4, settings.duration), availableAt(active.earth, index / 4, settings.duration), terrainLabel(active.site, horizon),
     siteSolarPower(entry).toFixed(3),
   ].join(','))
   const url = URL.createObjectURL(new Blob([[header, ...rows].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' }))
@@ -1853,6 +1990,7 @@ async function start() {
       requestAnimationFrame(() => get('map-heading').scrollIntoView({ behavior: 'instant' }))
     }
     if (['#local-sky', '#assessment'].includes(location.hash)) requestAnimationFrame(() => get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' }))
+    void openSurfaceLink()
     void startSpace()
   } catch (reason) {
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
@@ -1963,6 +2101,9 @@ get('show-surface').addEventListener('click', () => useSkyView(true))
 get('surface-retry').addEventListener('click', showSurface)
 const surfaceTurns = { left: [-15, 0], right: [15, 0], up: [0, 10], down: [0, -10] }
 for (const [id, angles] of Object.entries(surfaceTurns)) get(`surface-${id}`).addEventListener('click', () => surfaceView?.turn(...angles))
+const surfaceSteps = { forward: [1, 0], backward: [-1, 0], left: [0, -1], right: [0, 1] }
+for (const [id, step] of Object.entries(surfaceSteps)) get(`surface-walk-${id}`).addEventListener('click', () => surfaceView?.walk(...step))
+get('surface-walk-reset').addEventListener('click', () => surfaceView?.returnToLanding())
 for (const body of ['sun', 'earth']) {
   function findBody(event) {
     if (!active) return
@@ -1977,22 +2118,38 @@ get('sky-paths').addEventListener('change', redrawLocalSky)
 get('surface-paths').addEventListener('change', redrawLocalSky)
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
+function aimAtSurfaceCrater(crater) {
+  const height = Number(get('surface-height').value)
+  const aimDistance = Math.max(25, 1000 * (crater.inside ? crater.diameter / 2 : crater.distance))
+  const bearing = crater.bearing * Math.PI / 180
+  const pitch = height > 2 ? undefined : crater.inside ? 9 : crater.distance < 1 ? -2 : -5
+  surfaceView.aimAtGround(Math.sin(bearing) * aimDistance, Math.cos(bearing) * aimDistance, pitch)
+}
+get('surface-height').addEventListener('change', event => {
+  if (!surfaceTerrain) return
+  surfaceView.setHeight(Number(event.target.value))
+  const crater = surfaceCraters.find(item => String(item.id) === get('surface-crater').value)
+  if (crater) aimAtSurfaceCrater(crater)
+  showSurfaceCaption()
+})
 get('surface-crater').addEventListener('change', event => {
   const crater = surfaceCraters.find(item => String(item.id) === event.target.value)
   const description = get('surface-landmark')
   description.hidden = !crater
   if (!crater) return
   const azimuth = Math.round(crater.bearing) % 360
-  const width = Math.round(crater.diameter)
-  const distance = crater.distance < 10 ? crater.distance.toFixed(1) : Math.round(crater.distance)
+  const craterLength = km => km < 1 ? `${Math.round(km * 1000)} m` :
+    `${km < 10 ? km.toFixed(1) : Math.round(km)} km`
+  const width = craterLength(crater.diameter)
+  const distance = craterLength(crater.distance)
   const label = crater.inside
-    ? `Within ${crater.name}’s mapped diameter · ${width} km across`
-    : `${crater.name} · ${distance} km to center at ${azimuth}° · ${width} km across`
+    ? `Within ${crater.name}’s mapped diameter · ${width} across`
+    : `${crater.name} · ${distance} to mapped center at ${azimuth}° · ${width} across`
   description.textContent = label
   const zoom = get('surface-zoom')
   zoom.value = '1'
   surfaceView.setZoom(1)
-  surfaceView.aim(crater.bearing, crater.distance < 1 ? 9 : -5)
+  aimAtSurfaceCrater(crater)
 })
 get('timeline-back').addEventListener('click', () => active && seekTime(elapsed - timelineStep(settings.duration)))
 get('timeline-forward').addEventListener('click', () => active && seekTime(elapsed + timelineStep(settings.duration)))
@@ -2047,7 +2204,9 @@ get('layer-landing-suggestions').addEventListener('change', event => {
   syncLandingSuggestions()
 })
 get('landing-max-slope').addEventListener('change', syncLandingSuggestions)
-get('landing-priority').addEventListener('input', updateLandingPriority)
+for (const input of inputs('landing-scenarios', 'landing-window-body', 'landing-window-share')) {
+  input.addEventListener('change', updateLandingScenario)
+}
 get('mission-heat-south').addEventListener('change', event => {
   southOnly = event.currentTarget.checked
   get('map-scope').hidden = !southOnly

@@ -123,18 +123,15 @@ details p{margin:7px 0}
 #landing-suggestions{display:grid;gap:8px;padding-bottom:14px;margin-bottom:12px;border-bottom:1px solid var(--line)}
 #landing-suggestions p{margin:0}
 #landing-suggestions-window,#landing-suggestions-status,#landing-suggestions details,.landing-rule{font-size:.8rem}
-.landing-priority{display:grid;gap:2px;padding:8px 0}
-.landing-priority label{font-size:.93rem;font-weight:700}
-#landing-priority{appearance:none;height:44px;background:transparent}
-#landing-priority::-webkit-slider-runnable-track{height:9px;border-radius:9px;background:linear-gradient(90deg,var(--earth),var(--line) 50%,var(--sun))}
-#landing-priority::-moz-range-track{height:9px;border-radius:9px;background:linear-gradient(90deg,var(--earth),var(--line) 50%,var(--sun))}
-#landing-priority::-webkit-slider-thumb{appearance:none;width:24px;height:24px;margin-top:-7.5px;border-radius:50%;border:2px solid var(--panel);background:var(--text)}
-#landing-priority::-moz-range-thumb{width:20px;height:20px;border-radius:50%;border:2px solid var(--panel);background:var(--text)}
-.landing-priority-labels{display:flex;justify-content:space-between;gap:12px;font-size:.83rem}
-.landing-priority-labels span:last-child{text-align:right}
-#landing-communication-weight,#landing-energy-weight{font-weight:700;font-variant-numeric:tabular-nums}
-#landing-communication-weight{color:var(--earth)}
-#landing-energy-weight{color:var(--sun)}
+.landing-scenarios{display:grid;gap:4px;margin:0;padding:0;border:0}
+.landing-scenarios legend{padding:0;margin-bottom:5px;font-size:.93rem;font-weight:700}
+.landing-scenarios label{display:flex;align-items:center;gap:8px;min-height:34px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.landing-scenarios label:has(input:checked){border-color:var(--sun);color:var(--sun)}
+.landing-scenarios input{width:auto;min-height:0;margin:0}
+.landing-scenario-text{display:grid;gap:3px;min-width:0;padding:2px 0}
+.landing-scenario-winner{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.landing-scenario-winner:empty{display:none}
+#landing-solar-requirement label{font-size:.8rem}
 .landing-slope{display:grid;grid-template-columns:1fr 74px;align-items:center;gap:10px}
 #landing-suggestions-list{padding:0;margin:0;list-style:none}
 #landing-suggestions-list:empty{display:none}
@@ -142,6 +139,12 @@ details p{margin:7px 0}
 .landing-row.rank-row{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;text-align:left;padding:8px}
 .landing-row .landing-metrics{display:flex;gap:5px 12px;flex-wrap:wrap;font-size:.84rem}
 .landing-row .landing-terrain{font-size:.76rem;color:var(--muted)}
+.landing-ranks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:4px 0}
+.landing-ranks > span{display:grid;gap:3px;padding:3px 6px;border-inline-start:1px solid var(--line)}
+.landing-ranks .current{border-color:var(--sun)}
+.landing-ranks small{font-size:.73rem;color:var(--muted)}
+.landing-ranks strong{font-size:.85rem}
+.landing-ranks .current strong{color:var(--sun)}
 .globe-pin.landing-pin{color:var(--both);z-index:2}
 .globe-pin.landing-pin.selected{color:var(--sun);z-index:3}
 .rank-summary{font-size:.89rem;line-height:1.35;margin:8px 0 10px;min-height:2.7em;color:#dce6f2}
@@ -459,6 +462,7 @@ canvas{display:block;width:100%;height:190px}
 .surface-stage{position:relative;height:clamp(340px,38vw,510px);overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#020205}
 #surface-sky,#surface-canvas,#surface-labels{position:absolute;inset:0;width:100%;height:100%}
 #surface-canvas{touch-action:none;cursor:grab}
+#surface-canvas:focus-visible{outline:2px solid var(--sun);outline-offset:-3px}
 #surface-canvas:active{cursor:grabbing}
 #surface-sky,#surface-labels{pointer-events:none}
 #surface-heading{position:absolute;bottom:9px;left:9px;padding:3px 7px;border-radius:4px;background:#0a0a0ee8;font-size:.8rem;pointer-events:none}
@@ -468,6 +472,8 @@ canvas{display:block;width:100%;height:190px}
 #surface-guide-sun{color:var(--sun)}
 #surface-guide-earth{color:var(--earth)}
 #surface-caption{margin-top:5px;font-size:.82rem}
+#surface-walk-help,#surface-walk-offset{font-size:.82rem}
+#surface-walk-offset{font-variant-numeric:tabular-nums}
 #surface-angles,#surface-light,#surface-landmark,.surface-credit{font-size:.82rem;font-variant-numeric:tabular-nums}
 #surface-landmark{margin-top:6px;color:var(--text)}
 .surface-zoom,.surface-crater{display:flex;align-items:center;gap:5px;color:var(--muted)}

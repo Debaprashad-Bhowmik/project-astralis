@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#050507">
   <title>Astralis · Lunar Site Navigator</title>
   <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.mjs"></script>
+  <script type="module" src="./app.mjs?v=20261115-surface-blend"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
@@ -328,22 +328,37 @@
           <section id="landing-suggestions" aria-labelledby="landing-suggestions-heading" hidden>
             <h2 id="landing-suggestions-heading">Landing Suggestions</h2>
             <p id="landing-suggestions-window" class="muted"></p>
-            <div class="landing-priority">
-              <label for="landing-priority">Mission priority</label>
-              <input id="landing-priority" type="range" min="0" max="100" value="50" aria-valuetext="50% communication, 50% solar energy">
-              <div class="landing-priority-labels">
-                <span>Communication <output id="landing-communication-weight" for="landing-priority">50%</output></span>
-                <span>Solar energy <output id="landing-energy-weight" for="landing-priority">50%</output></span>
-              </div>
+            <fieldset id="landing-scenarios" class="landing-scenarios" aria-describedby="landing-scenario-rule">
+              <legend>Rank patches by</legend>
+              <label>
+                <input type="radio" name="landing-scenario" value="earth" aria-labelledby="landing-earth-label" aria-describedby="landing-earth-winner">
+                <span class="landing-scenario-text"><strong id="landing-earth-label">Best communications</strong><span id="landing-earth-winner" class="landing-scenario-winner"></span></span>
+              </label>
+              <label>
+                <input type="radio" name="landing-scenario" value="solar" aria-labelledby="landing-solar-label" aria-describedby="landing-solar-winner">
+                <span class="landing-scenario-text"><strong id="landing-solar-label">Best solar power</strong><span id="landing-solar-winner" class="landing-scenario-winner"></span></span>
+              </label>
+              <label>
+                <input type="radio" name="landing-scenario" value="balanced" checked aria-labelledby="landing-balanced-label" aria-describedby="landing-balanced-winner">
+                <span class="landing-scenario-text"><strong id="landing-balanced-label">Best balance</strong><span id="landing-balanced-winner" class="landing-scenario-winner"></span></span>
+              </label>
+            </fieldset>
+            <div id="landing-solar-requirement" class="limit-grid" hidden>
+              <label>Required window<select id="landing-window-body"><option value="earth">Earth view</option><option value="sun">Sunlight</option></select></label>
+              <label>Minimum uninterrupted share (%)<input id="landing-window-share" type="number" min="0" max="100" step="1" value="0"></label>
             </div>
+            <p id="landing-scenario-rule" class="landing-rule muted"></p>
             <label class="landing-slope">Maximum slope (°)<input id="landing-max-slope" type="number" min=".1" max="45" step=".1" value="10" aria-describedby="landing-slope-reference" required></label>
             <p id="landing-slope-reference" class="landing-rule muted">The reference threshold is <strong>under 10° across 100 m</strong>. <a href="https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf">NASA Artemis study</a></p>
             <p id="landing-suggestions-status" role="status"></p>
+            <p id="landing-rank-note" class="landing-rule muted" hidden>Ranks are among all sampled patches. A dash means the patch misses that scenario.</p>
             <ol id="landing-suggestions-list"></ol>
             <details>
               <summary>Search coverage and ranking</summary>
               <p>One flat 100 m patch sampled per 4 km square across 84°S–90°S, using <a href="https://pgda.gsfc.nasa.gov/products/90">NASA LOLA slope and roughness</a>. This is a terrain screen. Smaller hazards can fall below the data resolution.</p>
-              <p>The slider sets the weights for total solar energy and Earth visibility. Each is scaled to the best value among eligible patches. At either end, the ranking uses that metric alone. Crater shadows count as zero power. Earth visibility models a direct line of sight.</p>
+              <p>Ranking uses precomputed terrain. Opening a patch lets Surface operations recalculate its visibility with finer terrain when available.</p>
+              <p>Best balance uses the geometric mean of the share of maximum solar energy and the share of the mission in one continuous Earth-view window. The other scenarios first apply a continuity requirement, then rank matching patches by total solar energy.</p>
+              <p>Crater shadows count as zero power. Earth visibility models a direct line of sight. Actual communications also depend on ground stations, antennas, and relays.</p>
             </details>
           </section>
           <div class="panel-heading"><h2 id="rank-heading">Site ranking</h2><span id="site-count" class="tag"></span></div>
@@ -404,7 +419,7 @@
       </section>
 
       <section class="panel operations" aria-labelledby="ops-heading">
-        <div class="panel-heading operations-title"><h2 id="ops-heading">Surface operations</h2><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
+        <div class="panel-heading operations-title"><h2 id="ops-heading" tabindex="-1">Surface operations</h2><div class="chart-controls"><button type="button" class="subtle" id="export" disabled>Export CSV</button></div></div>
         <section class="local-sky" id="local-sky" aria-labelledby="local-sky-heading" hidden>
           <div class="sky-heading">
             <div><h3 id="local-sky-heading">Sky from the landing site</h3><p class="muted" id="ops-subtitle"></p></div>
@@ -426,7 +441,7 @@
               <div id="surface-scene" hidden>
                 <div class="surface-stage">
                   <canvas id="surface-sky" aria-hidden="true"></canvas>
-                  <canvas id="surface-canvas" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
+                  <canvas id="surface-canvas" tabindex="0" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-walk-help surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
                   <span id="surface-heading" aria-label="Camera bearing"></span>
                   <div class="surface-guides" aria-label="Off-screen objects">
@@ -445,14 +460,24 @@
                   <label class="surface-crater" hidden>Look toward <select id="surface-crater"><option value="">Nearby crater</option></select></label>
                   <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
                   <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
+                  <label class="surface-zoom">View height <select id="surface-height"><option value="2">2 m · eye level</option><option value="30">30 m</option><option value="100">100 m · survey</option></select></label>
                   <label class="sky-path-toggle"><input type="checkbox" id="surface-paths" checked> Show arcs and labels</label>
                 </div>
+                <div class="globe-controls surface-walk" role="group" aria-label="Move around the landing site">
+                  <button type="button" class="subtle" id="surface-walk-forward" aria-label="Walk forward 10 meters">Forward</button>
+                  <button type="button" class="subtle" id="surface-walk-backward" aria-label="Walk backward 10 meters">Back</button>
+                  <button type="button" class="subtle" id="surface-walk-left">Step left</button>
+                  <button type="button" class="subtle" id="surface-walk-right">Step right</button>
+                  <button type="button" class="subtle" id="surface-walk-reset">Return to landing point</button>
+                  <output id="surface-walk-offset" class="muted" aria-live="off">At landing point</output>
+                </div>
+                <p id="surface-walk-help" class="muted">Drag to look around. Press W, A, S, D while the view has focus to walk. Visibility readouts use the landing point.</p>
                 <p class="muted" id="surface-landmark" hidden></p>
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>
                 <p class="muted" id="surface-light"></p>
-                <p class="muted surface-credit"><a href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
-                <p class="muted surface-credit"><a href="https://eol.jsc.nasa.gov/Collections/EarthFromSpace/images.pl?photo=AS17-148-22727">Earth photo · NASA / Apollo 17</a> <span>· fixed archival image</span></p>
+                <p class="muted surface-credit"><a id="surface-terrain-source" href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
+                <p class="muted surface-credit"><a href="https://eol.jsc.nasa.gov/Collections/EarthFromSpace/images.pl?photo=AS17-148-22727">Earth texture · NASA / Apollo 17</a> <span>· archival photo with time-dependent lighting</span></p>
               </div>
             </div>
             <div class="sky-readings">

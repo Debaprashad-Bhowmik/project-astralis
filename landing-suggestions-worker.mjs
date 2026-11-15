@@ -1,15 +1,15 @@
 import { frameAt } from './planner.mjs'
-import { evaluateLandingPatches, rankLandingSuggestions } from './landing-suggestions.mjs'
+import { evaluateLandingPatches, rankLandingScenarios } from './landing-suggestions.mjs?v=20261115-shortlist'
 
 let patchesPromise
 let currentRequest
-let solarWeight
+let preference
 let evaluatedMission
 
 function postRanking() {
-  const { rows, step, sampled } = evaluatedMission
-  const result = rankLandingSuggestions(rows, solarWeight)
-  self.postMessage({ request: currentRequest, result, solarWeight, step, sampled })
+  const { rows, duration, step, sampled } = evaluatedMission
+  const result = rankLandingScenarios(rows, { duration, ...preference })
+  self.postMessage({ request: currentRequest, result, preference, step, sampled })
 }
 
 function loadPatches() {
@@ -32,12 +32,12 @@ self.addEventListener('message', async ({ data }) => {
   const { request, ephemeris, first, frameHours, duration, maxSlope } = data
   if (data.rankOnly) {
     if (request !== currentRequest) return
-    solarWeight = data.solarWeight
+    preference = data.preference
     if (evaluatedMission) postRanking()
     return
   }
   currentRequest = request
-  solarWeight = data.solarWeight
+  preference = data.preference
   evaluatedMission = undefined
   if (!ephemeris) return
 
@@ -53,7 +53,7 @@ self.addEventListener('message', async ({ data }) => {
       return currentRequest === request
     })
     if (rows && currentRequest === request) {
-      evaluatedMission = { rows, step, sampled: patches.length }
+      evaluatedMission = { rows, duration, step, sampled: patches.length }
       postRanking()
     }
   } catch (error) {
