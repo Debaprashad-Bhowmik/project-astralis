@@ -418,7 +418,8 @@ canvas{display:block;width:100%;height:190px}
 .space-panel{grid-column:1/-1;order:0}
 .space-heading{align-items:center;flex-wrap:wrap}
 .space-date-controls,#space-year-controls{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:end}
-.space-date-controls{margin-top:8px}
+.space-date-controls{margin-left:auto;justify-content:flex-end}
+#space-year-controls{justify-content:flex-end;margin-top:8px}
 #space-year-controls label{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:.78rem}
 #space-year-controls select{min-height:30px;width:auto;padding:3px 5px;font-size:.78rem}
 #space-canvas{height:285px;background:radial-gradient(ellipse at 55% 50%,#121218,#060608 75%);border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:grab}
@@ -526,8 +527,9 @@ canvas{display:block;width:100%;height:190px}
 }
 
 /* All three camera modes occupy the same stage at every viewport size. */
-.space-panel{scroll-margin-top:16px;min-width:0}
-.viewer-stage{position:relative;height:clamp(355px,43vw,625px);margin-top:12px;overflow:hidden;isolation:isolate;border:1px solid var(--line);border-radius:10px;background:#050507}
+.space-panel{--viewer-control-space:550px;scroll-margin-top:16px;min-width:0}
+.space-panel:has(#space-year-controls:not([hidden])){--viewer-control-space:640px}
+.viewer-stage{--viewer-height:clamp(280px,min(43vw,calc(100dvh - var(--viewer-control-space))),625px);position:relative;height:var(--viewer-height);margin-top:12px;overflow:hidden;isolation:isolate;border:1px solid var(--line);border-radius:10px;background:#050507}
 .viewer-layer{position:absolute;inset:0;opacity:1;z-index:1}
 .viewer-layer[inert]{opacity:0;z-index:0;pointer-events:none}
 .viewer-stage :is(#space-canvas,.globe-stage,.surface-stage){position:absolute;inset:0;height:100%;width:100%;border:0;border-radius:0}
@@ -544,30 +546,35 @@ canvas{display:block;width:100%;height:190px}
 .mission-tools .subtle,.mission-tools>label{min-height:38px;display:inline-flex;align-items:center;gap:8px;margin:0;padding:7px 10px;font-size:.85rem}
 .mission-tools>label{border:1px solid #8a77a9;border-radius:6px;background:#211b2c;cursor:pointer;font-weight:650}
 .mission-tools>label:has(:checked){background:#342744;border-color:#c8a9f1}
-.mission-tools input{width:auto;margin:0;accent-color:#c8a9f1}
+.mission-tools input{width:16px;height:16px;min-height:0;margin:0;accent-color:#c8a9f1}
 #landing-suggestions{scroll-margin-top:20px}
 .primary-grid>.ranking{grid-column:1/-1;order:2}
 .viewer-site{margin-top:10px}
-.viewer-site .space-readout{border:0;padding:0;display:grid;grid-template-columns:auto minmax(140px,240px) 1fr 1fr;gap:5px 13px;align-items:center}
+.viewer-site .space-readout{border:0;padding:0;display:flex;flex-wrap:wrap;gap:5px 13px;align-items:center}
+.viewer-site #space-site{width:210px;max-width:100%;flex:0 1 210px}
 .viewer-site label{margin:0}
-.viewer-site #space-caption{grid-column:2;grid-row:2}
+.viewer-site #space-caption{flex:1 0 auto;white-space:nowrap}
 .viewer-site :is(.space-sun,.space-earth){white-space:normal}
 .viewer-orbit-controls{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .viewer-orbit-controls .space-distance{width:min(100%,420px);margin-top:8px}
 #viewer-map-controls,#surface-view{margin-top:15px;padding-top:12px;border-top:1px solid var(--line)}
 #viewer-map .polar-map{position:absolute;inset:0;margin:auto;height:100%;max-width:100%;width:auto;min-height:0;aspect-ratio:1;border:0}
-#viewer-coverage{position:absolute;inset:0;margin:auto;width:min(100%,calc(2 * (clamp(355px,43vw,625px) - 28px)));height:max-content}
+#viewer-coverage{position:absolute;inset:0;margin:auto;width:min(100%,calc(2 * (var(--viewer-height) - 28px)));height:max-content}
 .viewer-stage .coverage-axis{margin-inline:10px}
 .globe-directions{position:absolute;inset:0;pointer-events:none}
 .globe-direction{position:absolute;left:calc(50% + var(--direction-x));translate:-50% -50%;border:1px solid currentColor;border-radius:4px;background:#090910ec;padding:2px 6px;font-size:.73rem;font-weight:650;white-space:nowrap}
 #globe-sun-marker{color:var(--sun)}
 #globe-earth-marker{color:var(--earth)}
 @media(max-width:700px){
-  .viewer-stage{height:clamp(305px,75vw,440px)}
+  .viewer-stage{--viewer-height:clamp(305px,75vw,440px)}
   .viewer-tabs{width:100%}
   .viewer-tabs .subtle{min-width:0;flex:1}
-  .viewer-site .space-readout{grid-template-columns:auto minmax(0,1fr);gap:5px 10px}
-  .viewer-site :is(.space-sun,.space-earth){grid-column:1/-1}
+  .viewer-site .space-readout{gap:5px 10px}
+  .viewer-site #space-site{width:auto;flex:1 1 160px}
+  .viewer-site #space-caption{flex:1 1 100%;white-space:normal}
+  .viewer-site :is(.space-sun,.space-earth){flex:1 1 100%}
+  .space-date-controls{margin-left:0}
+  #space-year-controls{justify-content:flex-start}
 }
 @media(prefers-reduced-motion:reduce){
   #viewer-surface[data-ready=true] .surface-stage{transition:none}

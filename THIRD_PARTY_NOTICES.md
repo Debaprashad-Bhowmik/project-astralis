@@ -1,6 +1,6 @@
 # Credits and third-party notices
 
-Project: **Lunar Landing Site Navigator**, team **Astralis**. Release **v1.3.1 — Deb**.
+Project: **Lunar Landing Site Navigator**, team **Astralis**. Release **v1.3.2 — Deb**.
 
 ## Scientific data and imagery
 

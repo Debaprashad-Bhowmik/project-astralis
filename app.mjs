@@ -2417,6 +2417,7 @@ async function startSpace() {
     const lastYear = new Date(catalog.endMs - 1).getUTCFullYear()
     get('space-year').replaceChildren(...Array.from({ length: lastYear - firstYear + 1 }, (_, i) => new Option(firstYear + i, firstYear + i)))
     get('space-content').hidden = false
+    get('space-timescale').hidden = false
     for (const button of Object.values(controls)) if (button?.tagName === 'BUTTON') button.disabled = false
     for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
     get('space-status').hidden = true
@@ -2426,6 +2427,7 @@ async function startSpace() {
     get('space-status').hidden = true
     error('space-error', reason.message + ' Site rankings and surface operations are available below.')
     get('space-content').hidden = false
+    get('space-timescale').hidden = false
     for (const input of inputs('space-site', 'space-play', 'space-time')) input.disabled = false
     showTime()
   }

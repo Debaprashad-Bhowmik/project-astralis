@@ -1,5 +1,14 @@
 # Version history
 
+## v1.3.2 — Deb · Compact viewer controls (2026-11-15)
+
+- Move **Mission window / Whole year** to the right end of the mission-tools row. Keep annual year, month, and playback controls together below it when enabled.
+- Put the full coordinates and terrain-source/resolution label inline beside the landing-site selector on desktop, including **NASA LOLA South Pole · 10 m/pixel** where supplied by the terrain service.
+- Align the Landing Suggestions checkbox with the other buttons. Adapt viewer height to the desktop viewport and reserve room for annual controls; narrow screens retain readable wrapping.
+- Check desktop and mobile layouts, whole-year month selection and playback, mission mode, and all three camera modes. The Surface viewer and its primary controls fit at 1440×900 and 1920×1080 with the detail sections closed. Smaller screens or expanded analysis panels can still scroll.
+
+Release prepared by **Deb**, team **Astralis**. Calculations, datasets, terrain geometry, and camera journeys are unchanged. See the [setup guide](README.md) and [references](REFERENCES.md).
+
 ## v1.3.1 — Deb · Viewer-first landing suggestions (2026-11-15)
 
 - Hide the old best-fit headline/timelines, the “What matters most?” presets, and Advanced settings in Mission setup. Date, UTC time, duration, and the three-day shift remain visible.
