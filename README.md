@@ -2,6 +2,8 @@
 
 The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
+[Windows setup](#run-astralis-on-windows) · [macOS setup](#run-astralis-on-macos)
+
 ## Run Astralis on Windows
 
 Accept your invitation to the private repository. Open **Windows PowerShell** in the folder where you want Astralis, use the copy button on the code block below, paste the whole block, and press Enter. If Git opens a sign-in window, use the GitHub account that accepted the invite. [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
@@ -97,6 +99,72 @@ The block uses WinGet to install Git and x64 Python 3.13 if needed. It then down
 If WinGet is missing or your computer blocks it, install or update App Installer, or install Git and the **64-bit Windows installer for Python 3.13** directly. Open a new PowerShell window and paste the block again. [Microsoft App Installer](https://learn.microsoft.com/en-us/windows/package-manager/winget/) · [Git for Windows](https://git-scm.com/install/win) · [Python for Windows](https://www.python.org/downloads/windows/)
 
 Paste the same block from the same folder to reopen Astralis. To update an existing `main` checkout first, open PowerShell in the repository and run `git pull --ff-only`.
+
+## Run Astralis on macOS
+
+Accept your invitation to the private repository. Open **Terminal**, go to the folder where you want Astralis, and paste the whole block below. The block uses Homebrew when a tool is missing. During the first clone, sign in through the browser with the GitHub account that accepted the invite. [Homebrew](https://brew.sh/) · [GitHub CLI sign-in](https://cli.github.com/manual/gh_auth_login)
+
+```sh
+(
+    set -eu
+
+    astralis_fail() {
+        printf 'Astralis setup stopped. %s\n' "$1" >&2
+        exit 1
+    }
+
+    astralis_brew="$(command -v brew || true)"
+    if [ -z "$astralis_brew" ]; then
+        for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+            if [ -x "$candidate" ]; then
+                astralis_brew="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ -n "$astralis_brew" ]; then
+        astralis_brew_prefix="$("$astralis_brew" --prefix)"
+        export PATH="$astralis_brew_prefix/bin:$PATH"
+    fi
+
+    astralis_install() {
+        [ -n "$astralis_brew" ] || astralis_fail "$1 is missing. Install it using the links below, then paste the block again."
+        "$astralis_brew" install "$1" || astralis_fail "Homebrew could not install $1. Check the message above and retry."
+    }
+
+    astralis_folder="$PWD"
+    if [ ! -f "$astralis_folder/scripts/serve_astralis.py" ]; then
+        astralis_folder="$PWD/project-astralis"
+    fi
+    if [ ! -e "$astralis_folder" ]; then
+        git --version >/dev/null 2>&1 || astralis_install git
+        command -v gh >/dev/null 2>&1 || astralis_install gh
+        if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+            gh auth login --hostname github.com --git-protocol https --web ||
+                astralis_fail 'GitHub sign-in was interrupted. Sign in and retry.'
+        fi
+        gh repo clone https://github.com/Debaprashad-Bhowmik/project-astralis.git "$astralis_folder" ||
+            astralis_fail 'Clone failed. Check your connection and the GitHub account that accepted the invite.'
+    fi
+
+    astralis_server="$astralis_folder/scripts/serve_astralis.py"
+    [ -f "$astralis_server" ] || astralis_fail 'The project folder is missing the server. Update that checkout or choose a different parent folder.'
+
+    astralis_python="$astralis_folder/.venv/bin/python"
+    if [ ! -x "$astralis_python" ]; then
+        command -v python3.13 >/dev/null 2>&1 || astralis_install python@3.13
+        python3.13 -m venv "$astralis_folder/.venv" ||
+            astralis_fail 'Could not create the Python environment. Check that you can write to the project folder.'
+    fi
+    "$astralis_python" -m pip install --disable-pip-version-check numpy rasterio ||
+        astralis_fail 'Could not install the terrain packages. Check the pip message above and retry.'
+    "$astralis_python" "$astralis_server" --port 0 --open
+)
+```
+
+The terminal prints the localhost link and opens your default browser. Keep Terminal open while using Astralis. Press **Control+C** to stop the server. Paste the same block from the same folder to reopen it.
+
+For a Mac without Homebrew, follow the installation links for any missing tools and paste the block again. Apple's Command Line Tools provide Git, and the Python 3.13 macOS installer is listed on Python.org. [Apple Command Line Tools](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools) · [GitHub CLI](https://cli.github.com/) · [Python for macOS](https://www.python.org/downloads/macos/)
 
 ## Explore the app
 

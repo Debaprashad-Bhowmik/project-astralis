@@ -258,7 +258,7 @@ For a later iteration, model the Sun's finite disk and eclipses where the projec
 
 The repository is private. The owner invites teammates by GitHub username, and each teammate accepts from their own account. Each person can use their own editor. Codex use follows the account or workspace that runs it. [Astralis repository](https://github.com/Debaprashad-Bhowmik/project-astralis) · [Collaborator settings](https://github.com/Debaprashad-Bhowmik/project-astralis/settings/access) · [GitHub invitation guide](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/repository-access-and-collaboration/inviting-collaborators-to-a-personal-repository)
 
-On Windows, paste the setup block in the README to clone the repository and open the local website. If you used the block, continue at `cd project-astralis` below to start a branch. [PowerShell setup](README.md#run-astralis-on-windows)
+Paste the setup block for your operating system to clone the repository and open the local website. If you used the block, continue at `cd project-astralis` below to start a branch. [Windows PowerShell setup](README.md#run-astralis-on-windows) · [macOS Terminal setup](README.md#run-astralis-on-macos)
 
 ```sh
 git clone https://github.com/Debaprashad-Bhowmik/project-astralis.git
