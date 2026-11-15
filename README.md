@@ -34,6 +34,14 @@ Turn on **South Pole only** in the map controls to focus every surface layer on 
 
 From the repository root, run `python -m http.server 4173` and open [localhost:4173](http://localhost:4173). The web app loads its data from this repository and needs no API keys or build step. Run `node --test planner.test.mjs` to verify the ranking and reference calculations.
 
+### South Pole landing suggestions
+
+Turn on **Landing Suggestions** in the 3D Moon’s map layers and set the landing time and operating window. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
+
+The terrain inventory selects the lowest-slope 100 m-baseline measurement with roughness data in each 4 km square of the 84°S–90°S region. Candidate skylines use the bundled LOLA elevation grids at 3° bearing intervals. The mission is sampled every 15 minutes through 30 days and every two hours for longer windows. The mission priority slider starts at 50/50. Scores use the weighted geometric mean of average power and Earth visibility, each scaled to the highest value within the slope limit. At either endpoint, the ranking uses the selected metric alone. [NASA LOLA slope and roughness](https://pgda.gsfc.nasa.gov/products/90)
+
+To regenerate the inventory, download the `LDRM_80S_50MPP_ADJ_SLP_100M.TIF` and `LDRM_80S_50MPP_ADJ_ROUGH_100M.TIF` GeoTIFFs from the NASA source above. Run `python scripts/prepare_landing_patches.py SLOPE.TIF ROUGHNESS.TIF patches.json` with NumPy and Rasterio installed, then `node scripts/prepare_landing_horizons.mjs patches.json`. Run `node --test planner.test.mjs landing-suggestions.test.mjs` to verify the models.
+
 ## Working together
 
 Clone the repo, create a branch from `main` for your task, and open a pull request when your work is ready for review. Use GitHub Issues to share questions and track tasks.

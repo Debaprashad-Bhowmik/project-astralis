@@ -47,7 +47,7 @@ const lessons = {
 const siteName = site => site.id === 'athena' ? 'Mons Mouton' : site.id === 'odysseus' ? 'Malapert A' : site.id === 'mouton' ? 'Mons Mouton Plateau' : site.name
 const futureClps = site => site.kind.startsWith('Future CLPS target')
 const siteDetail = site => ['odysseus', 'athena'].includes(site.id) ? site.name + ' · Historic landing site' : site.location || site.kind
-const coordinate = (value, plus, minus) => Math.abs(value).toFixed(2) + '°' + (value < 0 ? minus : plus)
+const coordinate = (value, plus, minus, digits = 2) => Math.abs(value).toFixed(digits) + '°' + (value < 0 ? minus : plus)
 const terrainLabel = (site, model) => model === 'terrain' ? site.terrain : '0° reference plane'
 const siteCoordinates = site => coordinate(site.lat, 'N', 'S') + ', ' + coordinate(site.lon, 'E', 'W')
 const searchText = value => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -137,6 +137,11 @@ let settings
 let playing = null
 let comparisonEdited = false
 let globe
+let landingWorker
+let landingRequest = 0
+let landingKey
+let landingRows = []
+let selectedLanding
 let updateSpace
 let spaceYearMode = false
 let spaceYearWindow
@@ -264,6 +269,7 @@ function recalculate(reuseSettings = false) {
   updateComparisonOptions()
   if (!comparisonEdited) get('compare-time').value = controlDate(start)
   compare()
+  syncLandingSuggestions()
 }
 
 function availableAt(windows, at, duration) {
@@ -511,7 +517,7 @@ function showMap() {
   for (const key of ['a', 'b']) get(`pick-compare-${key}`).disabled = false
   const pins = get('pins')
   pins.replaceChildren()
-  globe?.setSites(ranked.map(({ site }) => ({ ...site, displayName: siteName(site) })), selected)
+  showGlobeSites()
   const extent = catalog.mapExtent
   const radians = Math.PI / 180
   for (const { site } of ranked) {
@@ -537,6 +543,127 @@ function showMap() {
   }
 }
 
+function showGlobeSites() {
+  if (!globe) return
+  const sites = ranked.map(({ site }) => ({ ...site, displayName: siteName(site) }))
+  globe.setSites([...sites, ...landingRows], selectedLanding ?? selected)
+}
+
+function focusLandingSuggestion(site) {
+  selectedLanding = site.id
+  for (const button of get('landing-suggestions-list').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.site === site.id))
+  }
+  showGlobeSites()
+  globe?.center(site)
+}
+
+function showLandingSuggestions({ result, solarWeight, step, sampled }) {
+  const status = get('landing-suggestions-status')
+  if (!result.evaluated) {
+    status.textContent = 'No sampled patch meets this slope limit.'
+    return
+  }
+  const { rows, flattest, evaluated } = result
+  const stepLabel = step < 1 ? `${Math.round(step * 60)} min` : formatHours(step)
+  const countLabel = `${evaluated.toLocaleString()} of ${sampled.toLocaleString()} sampled patches meet the slope limit. ${stepLabel} time samples.`
+  const priority = solarWeight === 0 ? 'Earth visibility' : solarWeight === 1 ? 'solar output' : 'both solar output and Earth visibility'
+  status.textContent = rows[0].score > 0 ? countLabel : `No qualifying patch has ${priority}. ${countLabel}`
+  const bestLabel = solarWeight === 0 ? 'Most Earth view' : solarWeight === 1 ? 'Most solar energy' :
+    solarWeight === .5 ? 'Best balance' : 'Best fit for priorities'
+  const shown = rows.some(row => row.id === flattest.id) ? rows : [...rows, flattest]
+  landingRows = shown.map((row, index) => ({
+    ...row, kind: 'Landing suggestion', displayName: index < rows.length ? `Patch ${index + 1}` : 'Flattest patch',
+  }))
+  if (!landingRows.some(site => site.id === selectedLanding)) selectedLanding = undefined
+  const list = get('landing-suggestions-list')
+  list.replaceChildren(...landingRows.map((site, index) => {
+    const item = element('li', '')
+    const button = element('button', 'rank-row landing-row')
+    button.type = 'button'
+    button.dataset.site = site.id
+    button.setAttribute('aria-pressed', String(site.id === selectedLanding))
+    button.addEventListener('click', () => focusLandingSuggestion(site))
+    const notes = [site.displayName]
+    if (!index && site.score > 0) notes.push(bestLabel)
+    if (site.id === flattest.id && index < rows.length) notes.push('Flattest')
+    const position = `${coordinate(site.lat, 'N', 'S', 4)}, ${coordinate(site.lon, 'E', 'W', 4)}`
+    const metrics = element('span', 'landing-metrics')
+    metrics.append(element('span', '', `${formatEnergy(site.energyKwh)} total`),
+      element('span', '', `${formatPower(site.averageWatts)} avg`))
+    button.append(element('strong', 'site-name', notes.join(' · ')), metrics,
+      element('span', 'landing-terrain', `Earth view ${formatHours(site.earthHours)} (${formatPercent.format(site.earthFraction)}) · Sunlight ${formatHours(site.sunHours)} (${formatPercent.format(site.sunFraction)})`),
+      element('span', 'landing-terrain', `Slope ${site.slope.toFixed(2)}° · Roughness ${site.roughness.toFixed(2)} m`),
+      element('span', 'landing-terrain', position))
+    item.append(button)
+    return item
+  }))
+  showGlobeSites()
+}
+
+const landingSolarWeight = () => get('landing-priority').valueAsNumber / 100
+
+function updateLandingPriority(event) {
+  const slider = event.currentTarget
+  const solar = slider.valueAsNumber
+  const communication = 100 - solar
+  get('landing-communication-weight').value = `${communication}%`
+  get('landing-energy-weight').value = `${solar}%`
+  slider.setAttribute('aria-valuetext', `${communication}% communication, ${solar}% solar energy`)
+  if (landingKey) landingWorker?.postMessage({ request: landingRequest, rankOnly: true, solarWeight: solar / 100 })
+}
+
+function syncLandingSuggestions() {
+  const toggle = get('landing-suggestions-toggle')
+  toggle.hidden = !globe || get('globe-view').hidden
+  const enabled = !toggle.hidden && get('layer-landing-suggestions').checked && Boolean(settings)
+  get('landing-suggestions').hidden = !enabled
+  const slope = get('landing-max-slope')
+  const key = enabled && slope.validity.valid ? `${settings.start}/${settings.duration}/${slope.valueAsNumber}` : ''
+  if (enabled && !slope.validity.valid) get('landing-suggestions-status').textContent = 'Enter a slope limit from 0.1° to 45° in 0.1° steps.'
+  if (key === landingKey) return
+  landingKey = key
+  const request = ++landingRequest
+  landingRows = []
+  selectedLanding = undefined
+  get('landing-suggestions-list').replaceChildren()
+  showGlobeSites()
+  if (!key) {
+    landingWorker?.postMessage({ request })
+    return
+  }
+
+  const { start, duration } = settings
+  get('landing-suggestions-window').textContent = `${dateLabel(start)} → ${dateLabel(start + duration * hour)}`
+  get('landing-suggestions-status').textContent = 'Loading NASA LOLA terrain…'
+  const fail = message => {
+    get('landing-suggestions-status').textContent = message + ' Toggle Landing Suggestions to try again.'
+    landingKey = undefined
+  }
+  try {
+    if (!landingWorker) {
+      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs', import.meta.url), { type: 'module' })
+      landingWorker.addEventListener('message', ({ data }) => {
+        if (data.request !== landingRequest) return
+        if (data.error) fail(data.error)
+        else if (data.result) {
+          if (data.solarWeight === landingSolarWeight()) showLandingSuggestions(data)
+        }
+        else get('landing-suggestions-status').textContent = `Evaluating mission power and Earth view · ${data.done.toLocaleString()} / ${data.total.toLocaleString()}`
+      })
+      landingWorker.addEventListener('error', () => {
+        landingWorker.terminate()
+        landingWorker = undefined
+        fail('The landing suggestions calculation stopped.')
+      })
+    }
+    landingWorker.postMessage({ request, ephemeris, first: (start - catalog.startMs) / (catalog.step * 1000),
+      frameHours: catalog.step / 3600, duration, maxSlope: slope.valueAsNumber, solarWeight: landingSolarWeight() })
+  } catch (reason) {
+    fail(reason.message)
+  }
+}
+
 function useMap(view) {
   for (const [mode, button] of [['polar', 'show-map'], ['globe', 'show-globe'], ['coverage', 'show-coverage']]) {
     get(`${mode}-view`).hidden = view !== mode
@@ -550,6 +677,7 @@ function useMap(view) {
   }
   showCoverageLegend()
   showCoverage()
+  syncLandingSuggestions()
 }
 
 function evaluateMapPoint({ lat, lon }) {
@@ -922,7 +1050,11 @@ function installGlobe() {
     useMap('polar')
     error('globe-error', message)
   }
-  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), get('globe-pole-marker'), catalog.mapExtent, id => selectSite(id, false), evaluateMapPoint, feature => {
+  try { globe = createGlobe(canvas, get('globe-markers'), get('globe-features'), get('globe-pole-marker'), catalog.mapExtent, id => {
+    const suggestion = landingRows.find(site => site.id === id)
+    if (suggestion) focusLandingSuggestion(suggestion)
+    else selectSite(id, false)
+  }, evaluateMapPoint, feature => {
     chooseFeature(feature)
     get('feature-search').value = feature.name
     showFeatureMatches()
@@ -1886,6 +2018,12 @@ get('coverage-filters').addEventListener('change', event => {
   showComparisonTime()
 })
 get('mission-heat-period').addEventListener('change', showCoverage)
+get('layer-landing-suggestions').addEventListener('change', event => {
+  if (event.currentTarget.checked) globe?.southPole()
+  syncLandingSuggestions()
+})
+get('landing-max-slope').addEventListener('change', syncLandingSuggestions)
+get('landing-priority').addEventListener('input', updateLandingPriority)
 get('mission-heat-south').addEventListener('change', event => {
   southOnly = event.currentTarget.checked
   get('map-scope').hidden = !southOnly

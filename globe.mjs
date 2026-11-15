@@ -588,6 +588,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
           const marker = document.createElement('button')
           marker.type = 'button'
           marker.className = 'pin globe-pin' + (site.kind.includes('Historic') ? '' : ' feature')
+          if (site.kind === 'Landing suggestion') marker.classList.add('landing-pin')
           const label = document.createElement('span')
           label.className = 'pin-text'
           marker.append(label)

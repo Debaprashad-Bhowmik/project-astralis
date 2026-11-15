@@ -120,6 +120,30 @@ details p{margin:7px 0}
 .legend-dot.feature{color:#e3e8f1}
 .custom form{padding-top:7px}
 .ranking{display:flex;flex-direction:column}
+#landing-suggestions{display:grid;gap:8px;padding-bottom:14px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+#landing-suggestions p{margin:0}
+#landing-suggestions-window,#landing-suggestions-status,#landing-suggestions details,.landing-rule{font-size:.8rem}
+.landing-priority{display:grid;gap:2px;padding:8px 0}
+.landing-priority label{font-size:.93rem;font-weight:700}
+#landing-priority{appearance:none;height:44px;background:transparent}
+#landing-priority::-webkit-slider-runnable-track{height:9px;border-radius:9px;background:linear-gradient(90deg,var(--earth),var(--line) 50%,var(--sun))}
+#landing-priority::-moz-range-track{height:9px;border-radius:9px;background:linear-gradient(90deg,var(--earth),var(--line) 50%,var(--sun))}
+#landing-priority::-webkit-slider-thumb{appearance:none;width:24px;height:24px;margin-top:-7.5px;border-radius:50%;border:2px solid var(--panel);background:var(--text)}
+#landing-priority::-moz-range-thumb{width:20px;height:20px;border-radius:50%;border:2px solid var(--panel);background:var(--text)}
+.landing-priority-labels{display:flex;justify-content:space-between;gap:12px;font-size:.83rem}
+.landing-priority-labels span:last-child{text-align:right}
+#landing-communication-weight,#landing-energy-weight{font-weight:700;font-variant-numeric:tabular-nums}
+#landing-communication-weight{color:var(--earth)}
+#landing-energy-weight{color:var(--sun)}
+.landing-slope{display:grid;grid-template-columns:1fr 74px;align-items:center;gap:10px}
+#landing-suggestions-list{padding:0;margin:0;list-style:none}
+#landing-suggestions-list:empty{display:none}
+#landing-suggestions-list li+li{border-top:1px solid var(--line)}
+.landing-row.rank-row{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;text-align:left;padding:8px}
+.landing-row .landing-metrics{display:flex;gap:5px 12px;flex-wrap:wrap;font-size:.84rem}
+.landing-row .landing-terrain{font-size:.76rem;color:var(--muted)}
+.globe-pin.landing-pin{color:var(--both);z-index:2}
+.globe-pin.landing-pin.selected{color:var(--sun);z-index:3}
 .rank-summary{font-size:.89rem;line-height:1.35;margin:8px 0 10px;min-height:2.7em;color:#dce6f2}
 .rank-summary strong{color:var(--sun)}
 .rank-legend,.rank-row{display:grid;grid-template-columns:minmax(83px,1fr) repeat(3,minmax(37px,57px));align-items:center;gap:3px;text-align:right}

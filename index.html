@@ -212,6 +212,7 @@
               <label><input id="layer-both" type="checkbox"> Both in view now</label>
               <label><input id="layer-power" type="checkbox"> Solar power</label>
               <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
+              <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox"> Landing Suggestions</label>
             </fieldset>
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
@@ -240,7 +241,7 @@
               <button type="button" class="subtle" id="globe-far">Far side</button>
               <button type="button" class="subtle" id="globe-pole">South pole</button>
             </div>
-            <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>Artemis exploration zone</strong> · 84°S to 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s six-degree definition</a></p>
+            <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>84°S search boundary</strong>. The ring marks the northern edge of the six-degree search area. The geographic South Pole is at 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s exploration-zone definition</a> · <a href="https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/">NASA’s 2024 candidate-region map</a></p>
             <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
           </div>
           <div id="polar-view" hidden>
@@ -321,6 +322,27 @@
         </section>
 
         <section class="panel ranking" aria-labelledby="rank-heading">
+          <section id="landing-suggestions" aria-labelledby="landing-suggestions-heading" hidden>
+            <h2 id="landing-suggestions-heading">Landing Suggestions</h2>
+            <p id="landing-suggestions-window" class="muted"></p>
+            <div class="landing-priority">
+              <label for="landing-priority">Mission priority</label>
+              <input id="landing-priority" type="range" min="0" max="100" value="50" aria-valuetext="50% communication, 50% solar energy">
+              <div class="landing-priority-labels">
+                <span>Communication <output id="landing-communication-weight" for="landing-priority">50%</output></span>
+                <span>Solar energy <output id="landing-energy-weight" for="landing-priority">50%</output></span>
+              </div>
+            </div>
+            <label class="landing-slope">Maximum slope (°)<input id="landing-max-slope" type="number" min=".1" max="45" step=".1" value="10" aria-describedby="landing-slope-reference" required></label>
+            <p id="landing-slope-reference" class="landing-rule muted">The reference threshold is <strong>under 10° across 100 m</strong>. <a href="https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf">NASA Artemis study</a></p>
+            <p id="landing-suggestions-status" role="status"></p>
+            <ol id="landing-suggestions-list"></ol>
+            <details>
+              <summary>Search coverage and ranking</summary>
+              <p>One flat 100 m patch sampled per 4 km square across 84°S–90°S, using <a href="https://pgda.gsfc.nasa.gov/products/90">NASA LOLA slope and roughness</a>. This is a terrain screen. Smaller hazards can fall below the data resolution.</p>
+              <p>The slider sets the weights for total solar energy and Earth visibility. Each is scaled to the best value among eligible patches. At either end, the ranking uses that metric alone. Crater shadows count as zero power. Earth visibility models a direct line of sight.</p>
+            </details>
+          </section>
           <div class="panel-heading"><h2 id="rank-heading">Site ranking</h2><span id="site-count" class="tag"></span></div>
           <p id="rank-summary" class="rank-summary" aria-live="polite">Loading lunar data…</p>
           <div class="site-filters">
