@@ -217,8 +217,12 @@
             <label id="mission-heat-period-label" hidden>Heat map period
               <select id="mission-heat-period"></select>
             </label>
+            <label id="map-color-metric-label" hidden>Color by
+              <select id="map-color-metric"><option value="overlap">Mission overlap hours</option><option value="power">Solar power now</option></select>
+            </label>
             <time id="coverage-clock" class="muted" hidden></time>
           </div>
+          <p id="coverage-intersection-note" class="muted mission-heat-key" hidden></p>
           <p class="muted" id="mission-heat-models" hidden></p>
           <p class="muted mission-heat-key" id="terrain-shadow-status" role="status" hidden></p>
           <p id="mission-heat-detail-status" class="muted mission-heat-key" role="status" hidden></p>
@@ -279,11 +283,10 @@
           </div>
           <div id="coverage-details" hidden>
             <ul class="coverage-legend" id="coverage-legend" aria-label="Map legend"></ul>
-            <p id="coverage-overlay-note" class="muted coverage-overlay-note" hidden>Colored dots show the selected visibility conditions at the current time.</p>
             <p class="muted" id="coverage-notes">Colors use a smooth lunar horizon. The selected-site readout uses your chosen horizon model.</p>
             <p class="muted" id="coverage-summary"></p>
             <div id="power-details" hidden>
-              <div class="power-scale" role="group" aria-label="Estimated electrical power per square meter">
+              <div class="power-scale" id="power-scale" role="group" aria-label="Estimated electrical power per square meter">
                 <div id="power-gradient" aria-hidden="true"></div>
                 <span>0 W/m²</span><span id="power-scale-mid"></span><span id="power-scale-max"></span>
               </div>

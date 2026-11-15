@@ -7,7 +7,7 @@ import { calendarSpaceWindow, readSpaceSamples, siteDirection, spaceStep, system
 import { pointOnGlobe } from './globe.mjs'
 import { horizonProfile, nearestTiles } from './terrain.mjs'
 import { craterRelief, nearbyCraters, surfaceCamera, surfaceTarget, solarShadowFrame, terrainVertices } from './surface-view.mjs'
-import { coverageProject, coverageUnproject, createCoverageModel, coverageColorIndex, southPolePowerMax, subPoint } from './coverage-map.mjs'
+import { coverageProject, coverageUnproject, createCoverageModel, coverageColorIndex, coverageMatches, southPolePowerMax, subPoint } from './coverage-map.mjs'
 import { missionCrossings, siteSkyModel, siteSolarPower } from './planner.mjs'
 import { createSolarPowerModel } from './coverage-map.mjs'
 import { skyPathSegments } from './sky-view.mjs'
@@ -277,17 +277,27 @@ test('global map coordinates round-trip and wrap the longitude seam', () => {
   assert.equal(coverageUnproject(1, .5).lon, -180)
 })
 
-test('visibility checkboxes independently display Sun, Earth, and both', () => {
+test('visibility checkboxes require all selected conditions and use one color', () => {
   assert.equal(coverageColorIndex(3, 1), 1)
   assert.equal(coverageColorIndex(3, 2), 2)
   assert.equal(coverageColorIndex(1, 4), 0)
   assert.equal(coverageColorIndex(2, 4), 0)
   assert.equal(coverageColorIndex(3, 4), 3)
-  assert.equal(coverageColorIndex(3, 3, false), 1)
-  assert.equal(coverageColorIndex(3, 3, true), 2)
+  assert.equal(coverageColorIndex(1, 3), 0)
+  assert.equal(coverageColorIndex(2, 3), 0)
+  assert.equal(coverageColorIndex(3, 3), 3)
   assert.equal(coverageColorIndex(3, 7), 3)
-  assert.equal(coverageColorIndex(1, 7), 1)
-  assert.equal(coverageColorIndex(2, 7), 2)
+  assert.equal(coverageColorIndex(1, 7), 0)
+  assert.equal(coverageColorIndex(2, 7), 0)
+})
+
+test('combined map filters require the live conditions, positive overlap, and positive power', () => {
+  assert.equal(coverageMatches(3, 7, 12, 16), true)
+  assert.equal(coverageMatches(2, 7, 12, 16), false)
+  assert.equal(coverageMatches(3, 7, 0, 16), false)
+  assert.equal(coverageMatches(3, 7, 12, 0), false)
+  assert.equal(coverageMatches(2, 2, undefined, 16), true)
+  assert.equal(coverageMatches(0, 0, 12, undefined), true)
 })
 
 test('polar map coordinates span only the selected latitude band', () => {

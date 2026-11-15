@@ -18,12 +18,20 @@ export function subPoint([x, y, z]) {
 
 export const coveragePalette = [[60, 63, 74], [224, 174, 97], [125, 160, 231], [112, 210, 184]]
 export const visibilityLayers = { sun: 1, earth: 2, both: 4 }
-export const powerContourLevels = [.25, .5, .75]
 
-export function coverageColorIndex(point, visibility, alternate = false) {
-  if (point === 3 && (visibility & visibilityLayers.both)) return 3
-  const selected = point & visibility & 3
-  return selected === 3 ? (alternate ? 2 : 1) : selected
+export function visibilityRequirements(visibility) {
+  return visibility & visibilityLayers.both ? 3 : visibility & 3
+}
+
+export function coverageColorIndex(point, visibility) {
+  const required = visibilityRequirements(visibility)
+  return (point & required) === required ? required : 0
+}
+
+export function coverageMatches(point, visibility, overlapHours, watts) {
+  return (!visibility || coverageColorIndex(point, visibility) !== 0) &&
+    (overlapHours === undefined || overlapHours > 0) &&
+    (watts === undefined || watts > 0)
 }
 export const solarPowerScaleMax = 300
 export const solarPowerPalette = [[28, 40, 74], [50, 137, 151], [250, 232, 155]]
@@ -100,14 +108,16 @@ export function createCoverageMap(canvas, onPoint) {
   let site
   let visibility = 0
   let power = false
-  let heatRaster
+  let overlap
+  let overlapSamples
+  let colorByPower = false
   let northLatitude = 90
   let powerMax = solarPowerScaleMax
   let dirty = true
-  let cosLat, sinLat
-  const east = Array.from({ length: rasterWidth }, (_, col) => ((col + .5) * 360 / rasterWidth - 180) * radians)
-  const cosLon = east.map(Math.cos)
-  const sinLon = east.map(Math.sin)
+  let latitudes, cosLat, sinLat
+  const longitudes = Array.from({ length: rasterWidth }, (_, col) => (col + .5) * 360 / rasterWidth - 180)
+  const cosLon = longitudes.map(lon => Math.cos(lon * radians))
+  const sinLon = longitudes.map(lon => Math.sin(lon * radians))
 
   const texture = new Image()
   texture.addEventListener('load', () => {
@@ -124,40 +134,49 @@ export function createCoverageMap(canvas, onPoint) {
 
   function tint() {
     if (basemapDirty) {
-      const latitudes = Array.from({ length: rasterHeight }, (_, row) => (northLatitude - (row + .5) * (northLatitude + 90) / rasterHeight) * radians)
-      cosLat = latitudes.map(Math.cos)
-      sinLat = latitudes.map(Math.sin)
+      latitudes = Array.from({ length: rasterHeight }, (_, row) => northLatitude - (row + .5) * (northLatitude + 90) / rasterHeight)
+      cosLat = latitudes.map(lat => Math.cos(lat * radians))
+      sinLat = latitudes.map(lat => Math.sin(lat * radians))
       if (texture.naturalWidth) {
         drawTerrain(rasterCtx, rasterWidth, rasterHeight)
         basemap = rasterCtx.getImageData(0, 0, rasterWidth, rasterHeight).data
       }
       basemapDirty = false
     }
+    if (overlap && !overlapSamples) {
+      const hours = new Float32Array(rasterWidth * rasterHeight)
+      const colors = new Uint8Array(hours.length * 3)
+      for (let row = 0; row < rasterHeight; row++) {
+        for (let col = 0; col < rasterWidth; col++) {
+          const index = row * rasterWidth + col
+          hours[index] = overlap.hoursAt(latitudes[row], longitudes[col]) ?? -1
+          if (hours[index] >= 0) colors.set(overlap.color(hours[index]), index * 3)
+        }
+      }
+      overlapSamples = { hours, colors }
+    }
     const visibilityAt = visibility ? createCoverageModel(...frame) : null
     const powerAt = power ? createSolarPowerModel(...frame) : null
+    const filtered = Boolean(overlap && (visibility || power) || visibility && power)
+    const visibilityInk = coveragePalette[visibilityRequirements(visibility)]
     for (let row = 0; row < rasterHeight; row++) {
       for (let col = 0; col < rasterWidth; col++) {
         const x = cosLat[row] * cosLon[col]
         const y = cosLat[row] * sinLon[col]
         const z = sinLat[row]
-        const key = visibilityAt ? coverageColorIndex(visibilityAt(x, y, z), visibility, (col + row) % 14 >= 7) : 0
-        const offset = 4 * (row * rasterWidth + col)
-        const shade = basemap ? .56 + basemap[offset] / 360 : .83
-        const fraction = powerAt && powerMax > 0 ? clamp(powerAt(x, y, z) / powerMax, 0, 1) : 0
-        const dotted = key && col % 7 < 2 && row % 7 < 2
-        const contour = heatRaster && power && fraction > .2 && fraction < .8 && powerContourLevels.some(level => Math.abs(fraction - level) < .008)
-        pixels.data[offset + 3] = 255
-        if (contour) {
-          pixels.data[offset] = 255
-          pixels.data[offset + 1] = 249
-          pixels.data[offset + 2] = 221
-          pixels.data[offset + 3] = 245
-        } else if ((power || heatRaster) && dotted) {
-          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel]
-          pixels.data[offset + 3] = 240
-        } else if (heatRaster) {
+        const point = visibilityAt?.(x, y, z) ?? 0
+        const watts = powerAt?.(x, y, z)
+        const index = row * rasterWidth + col
+        const offset = 4 * index
+        const hours = overlapSamples?.hours[index]
+        if (hours < 0 || !coverageMatches(point, visibility, filtered ? hours : undefined, filtered ? watts : undefined)) {
           pixels.data[offset + 3] = 0
-        } else if (power) {
+          continue
+        }
+        const shade = basemap ? .56 + basemap[offset] / 360 : .83
+        pixels.data[offset + 3] = 255
+        if (colorByPower) {
+          const fraction = powerMax > 0 ? clamp(watts / powerMax, 0, 1) : 0
           const scaled = Math.sqrt(fraction) * 2
           const segment = scaled < 1 ? 0 : 1
           const low = solarPowerPalette[segment]
@@ -165,8 +184,11 @@ export function createCoverageMap(canvas, onPoint) {
           for (let channel = 0; channel < 3; channel++) {
             pixels.data[offset + channel] = (low[channel] + (high[channel] - low[channel]) * (scaled - segment)) * shade
           }
+        } else if (overlap) {
+          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = overlapSamples.colors[3 * index + channel]
+          pixels.data[offset + 3] = 212
         } else {
-          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = coveragePalette[key][channel] * shade
+          for (let channel = 0; channel < 3; channel++) pixels.data[offset + channel] = visibilityInk[channel] * shade
         }
       }
     }
@@ -178,7 +200,7 @@ export function createCoverageMap(canvas, onPoint) {
     const { clientWidth: width, clientHeight: height } = canvas
     if (!width || !height || !site) return
     const live = frame && (visibility || power)
-    if (live && dirty) tint()
+    if ((live || overlap) && dirty) tint()
     const pixel = Math.min(2, devicePixelRatio || 1)
     const pw = Math.round(width * pixel)
     const ph = Math.round(height * pixel)
@@ -187,18 +209,10 @@ export function createCoverageMap(canvas, onPoint) {
       canvas.height = ph
     }
     ctx.setTransform(pixel, 0, 0, pixel, 0, 0)
-    if (heatRaster || !live) {
-      ctx.fillStyle = '#111116'
-      ctx.fillRect(0, 0, width, height)
-      if (texture.naturalWidth) drawTerrain(ctx, width, height)
-      if (heatRaster) {
-        const rowHeight = height / (heatRaster.height - 1)
-        ctx.globalAlpha = .83
-        ctx.drawImage(heatRaster, 0, -rowHeight / 2, width, height + rowHeight)
-        ctx.globalAlpha = 1
-      }
-    }
-    if (live) ctx.drawImage(raster, 0, 0, width, height)
+    ctx.fillStyle = '#111116'
+    ctx.fillRect(0, 0, width, height)
+    if (texture.naturalWidth) drawTerrain(ctx, width, height)
+    if (live || overlap) ctx.drawImage(raster, 0, 0, width, height)
     ctx.font = '600 11px DM Sans, sans-serif'
     ctx.textBaseline = 'middle'
     ctx.lineWidth = 1
@@ -263,14 +277,18 @@ export function createCoverageMap(canvas, onPoint) {
     onPoint(coverageUnproject((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height, northLatitude))
   })
 
-  return (nextFrame, nextSite, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster: nextHeatRaster, northLatitude: nextNorthLatitude = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) => {
+  return (nextFrame, nextSite, { visibility: nextVisibility = 0, power: nextPower = false, overlap: nextOverlap,
+    colorByPower: nextColorByPower = nextPower && !nextOverlap, northLatitude: nextNorthLatitude = 90, powerMax: nextPowerMax = solarPowerScaleMax } = {}) => {
     if (northLatitude !== nextNorthLatitude) basemapDirty = true
-    if (frame !== nextFrame || visibility !== nextVisibility || power !== nextPower || Boolean(heatRaster) !== Boolean(nextHeatRaster) || basemapDirty || powerMax !== nextPowerMax) dirty = true
+    if (overlap !== nextOverlap || basemapDirty) overlapSamples = undefined
+    if (frame !== nextFrame || visibility !== nextVisibility || power !== nextPower || overlap !== nextOverlap ||
+        colorByPower !== nextColorByPower || basemapDirty || powerMax !== nextPowerMax) dirty = true
     frame = nextFrame
     site = nextSite
     visibility = nextVisibility
     power = nextPower
-    heatRaster = nextHeatRaster
+    overlap = nextOverlap
+    colorByPower = nextColorByPower
     northLatitude = nextNorthLatitude
     powerMax = nextPowerMax
     draw()

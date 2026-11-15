@@ -1,5 +1,5 @@
 import { astronomicalUnit, earthRadius, radius, referencePanelPower, sunRadius } from './planner.mjs'
-import { coveragePalette, powerContourLevels, solarPowerPalette, solarPowerScaleMax, totalityPossible } from './coverage-map.mjs'
+import { coveragePalette, solarPowerPalette, solarPowerScaleMax, totalityPossible, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, overlapColors } from './mission-heat.mjs'
 import { loadPolarGrids, polarShadowShader, polarUniforms, uploadPolarGrids } from './polar-shadows.mjs'
 export { artemisSouthLatitude } from './mission-heat.mjs'
@@ -61,16 +61,16 @@ uniform vec3 east;
 uniform vec3 north;
 uniform vec3 front;
 uniform vec3 sun, earth;
-uniform vec3 visibility;
-uniform bool showPower, showHeat;
+uniform vec2 visibility;
+uniform bool showPower, showHeat, colorByPower;
 uniform bool possibleEclipse;
 const float pi = 3.14159265359;
 ${polarShadowShader}
-void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFraction, out bool craterShadow) {
+void conditions(vec3 normal, out bool sunlight, out bool earthView, out float powerFraction, out bool craterShadow) {
   vec3 toSun = sun - normal;
   vec3 toEarth = earth - normal;
-  bool sunlight = dot(normal, toSun) > 0.0;
-  bool earthView = dot(normal, toEarth) > 0.0;
+  sunlight = dot(normal, toSun) > 0.0;
+  earthView = dot(normal, toEarth) > 0.0;
   if (sunlight && earthView && possibleEclipse) {
     vec3 s = normalize(toSun);
     vec3 e = normalize(toEarth);
@@ -92,7 +92,7 @@ void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFrac
         asin(${(sunRadius / radius).toFixed(8)} / length(toSun)) <= asin(${(earthRadius / radius).toFixed(8)} / length(toEarth));
       sunlight = !totality && dot(normal, solarDirection) > -.20 && clearOfTerrain(start, solarDirection, spacing);
       craterShadow = smoothSun && !sunlight && !totality;
-      if (visibility.y > 0.0 || visibility.z > 0.0) {
+      if (visibility.y > 0.0) {
         earthView = dot(normal, earthDirection) > -.20 && clearOfTerrain(start, earthDirection, spacing);
       }
     }
@@ -104,21 +104,13 @@ void conditions(vec3 normal, out vec3 ink, out bool visible, out float powerFrac
     float power = ${referencePanelPower.toFixed(2)} * incidence / (distanceAu * distanceAu);
     powerFraction = clamp(power / powerMax, 0.0, 1.0);
   }
-  bool both = sunlight && earthView && visibility.z > 0.0;
-  bool showSun = sunlight && visibility.x > 0.0;
-  bool showEarth = earthView && visibility.y > 0.0;
-  visible = both || showSun || showEarth;
-  bool alternate = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0) >= 7.0;
-  ink = both ? ${coverageInk(3)} : showSun && (!showEarth || !alternate) ? ${coverageInk(1)} : showEarth ? ${coverageInk(2)} : ${coverageInk(0)};
 }
 vec3 powerInk(float fraction) {
   float scaled = sqrt(fraction) * 2.0;
   if (scaled < 1.0) return mix(${glslColor(solarPowerPalette[0])}, ${glslColor(solarPowerPalette[1])}, scaled);
   return mix(${glslColor(solarPowerPalette[1])}, ${glslColor(solarPowerPalette[2])}, scaled - 1.0);
 }
-vec3 overlapInk(vec4 sampleValue) {
-  // Decode after filtering, so the interpolation is in hours rather than color space.
-  float value = dot(sampleValue.rg, vec2(65280.0, 255.0)) / 65535.0;
+vec3 overlapInk(float value) {
   float lo = heatContrast.x;
   float hi = heatContrast.y;
   float start = lo > 0.0 ? .15 : 0.0;
@@ -161,10 +153,11 @@ void main() {
   float shading = 0.50 + 0.50 * max(0.0, dot(vec3(p, depth), normalize(vec3(-0.5, 0.7, 1.0))));
   vec3 surface = reflectance * shading * 1.21;
   if (latitude <= northLatitude) {
+    vec4 heat = vec4(0.0);
     if (showHeat) {
       float fraction = (northLatitude - latitude) / (northLatitude + pi * .5);
       float heatLat = (fraction * (heatHeight - 1.0) + .5) / heatHeight;
-      vec4 heat = texture2D(missionHeat, vec2(uv.x, heatLat));
+      heat = texture2D(missionHeat, vec2(uv.x, heatLat));
       if (showDetail && dot(normal, detailFront) > 0.0) {
         vec2 local = vec2(dot(normal, detailEast), -dot(normal, detailNorth)) / detailSize.xy;
         float distanceFromEdge = max(abs(local.x), abs(local.y));
@@ -174,25 +167,27 @@ void main() {
           if (detail.a > .99) heat = detail;
         }
       }
-      surface = mix(surface, overlapInk(heat), .83 * heat.a);
     }
-    bool showVisibility = any(greaterThan(visibility, vec3(0.0)));
-    if (showPower || showVisibility || (polarShadows && !showHeat && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)})) {
-      vec3 ink;
-      bool visible;
-      bool craterShadow;
-      float powerFraction;
-      conditions(normal, ink, visible, powerFraction, craterShadow);
+    bool needsSun = visibility.x > 0.0;
+    bool needsEarth = visibility.y > 0.0;
+    bool showVisibility = needsSun || needsEarth;
+    bool live = showPower || showVisibility;
+    bool sunlight = false, earthView = false, craterShadow = false;
+    float powerFraction = 0.0;
+    if (live || (polarShadows && !showHeat && normal.z <= ${Math.sin(artemisSouthLatitude * rad).toFixed(8)})) {
+      conditions(normal, sunlight, earthView, powerFraction, craterShadow);
+    }
+    // Decode the sampled hours before masking them by the live conditions.
+    float overlap = dot(heat.rg, vec2(65280.0, 255.0)) / 65535.0;
+    bool matches = (!needsSun || sunlight) && (!needsEarth || earthView) &&
+      (!showHeat || !live || overlap > 0.0) &&
+      (!showPower || !(showHeat || showVisibility) || powerFraction > 0.0);
+    if (matches) {
       float shade = .56 + reflectance.r * (255.0 / 360.0);
-      if (showPower && !showHeat) surface = powerInk(powerFraction) * shade;
-      if (!showHeat && !showPower && showVisibility) surface = ink * shade;
-      if (craterShadow && !showHeat && !showPower && !showVisibility) surface = mix(surface, vec3(.20, .18, .47), .78);
-      if ((showHeat || showPower) && visible && all(lessThan(mod(gl_FragCoord.xy, 7.0), vec2(2.0)))) surface = ink;
-      if (showHeat && showPower) {
-        float delta = ${powerContourLevels.reduce((expr, level) => expr ? `min(${expr}, abs(powerFraction - ${level.toFixed(2)}))` : `abs(powerFraction - ${level.toFixed(2)})`, '')};
-        float width = clamp(fwidth(powerFraction), .001, .045);
-        surface = mix(surface, vec3(1.0, .98, .87), 1.0 - smoothstep(width * .35, width * 1.1, delta));
-      }
+      if (colorByPower) surface = powerInk(powerFraction) * shade;
+      else if (showHeat) surface = mix(surface, overlapInk(overlap), .83 * heat.a);
+      else if (showVisibility) surface = (needsSun && needsEarth ? ${coverageInk(3)} : needsSun ? ${coverageInk(1)} : ${coverageInk(2)}) * shade;
+      else if (craterShadow) surface = mix(surface, vec3(.20, .18, .47), .78);
     }
   }
   float edge = abs(latitude - ${(artemisSouthLatitude * rad).toFixed(10)});
@@ -234,7 +229,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.enableVertexAttribArray(point)
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'east', 'north', 'front',
-    'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
+    'sun', 'earth', 'visibility', 'showPower', 'showHeat', 'colorByPower', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
     'polarExtent', 'reliefMix', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
@@ -284,6 +279,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   let scoresDirty = false
   let visibility = 0
   let power = false
+  let powerColors = false
   let heatVisible = false
   let selected
   let drag
@@ -521,19 +517,23 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     zoom: changeZoom,
     center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
-    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1], northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax, terrainShadows = false } = {}) {
-      if (overlayFrame === frame && visibility === nextVisibility && power === nextPower && heatVisible === Boolean(heatRaster) &&
+    setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1],
+      colorByPower = nextPower && !heatRaster, northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax, terrainShadows = false } = {}) {
+      if (overlayFrame === frame && visibility === nextVisibility && power === nextPower && powerColors === colorByPower && heatVisible === Boolean(heatRaster) &&
           (!heatRaster || heatImage === heatRaster) && northLatitude === nextNorth && powerMax === nextPowerMax && shadowRequested === terrainShadows) return
       overlayFrame = frame
       visibility = nextVisibility
       power = nextPower
+      powerColors = colorByPower
       heatVisible = Boolean(heatRaster)
       shadowRequested = terrainShadows
       northLatitude = nextNorth
       powerMax = nextPowerMax
-      gl.uniform3f(uniforms.visibility, visibility & 1, visibility & 2, visibility & 4)
+      const required = visibilityRequirements(visibility)
+      gl.uniform2f(uniforms.visibility, required & 1, required & 2)
       gl.uniform1i(uniforms.showPower, Number(power))
       gl.uniform1i(uniforms.showHeat, Number(heatVisible))
+      gl.uniform1i(uniforms.colorByPower, Number(powerColors))
       gl.uniform2fv(uniforms.heatContrast, heatContrast)
       gl.uniform1f(uniforms.northLatitude, northLatitude * rad)
       gl.uniform1f(uniforms.powerMax, powerMax)

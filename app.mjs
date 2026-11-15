@@ -4,7 +4,7 @@ import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } fro
 import { terrainAt } from './terrain.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, loadSurfaceMesh, nearbyCraters, surfacePaths } from './surface-view.mjs'
-import { createCoverageMap, powerContourLevels, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers } from './coverage-map.mjs'
+import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
 import { polarIlluminationAt } from './polar-shadows.mjs'
@@ -694,16 +694,29 @@ function showCoverage() {
   const visibility = available ? getVisibilityFilters() : 0
   const mission = available && get('layer-overlap').checked
   const power = available && get('layer-power').checked
+  const colorByPower = power && (!mission || get('map-color-metric').value === 'power')
   const live = Boolean(visibility || power)
+  const filtered = Boolean(mission && live || power && visibility)
   const shadows = available && settings.horizon === 'terrain'
   const drawShadows = shadows && onGlobe && (live || !mission)
   const northLatitude = southOnly ? artemisSouthLatitude : 90
   get('mission-heat-details').hidden = !mission
   get('mission-heat-period-label').hidden = !mission
   get('mission-heat-models').hidden = !mission
+  get('mission-heat-scale').hidden = colorByPower
+  get('mission-heat-scale-note').hidden = colorByPower
+  get('mission-heat-best').hidden = filtered
+  get('map-color-metric-label').hidden = !(mission && power)
+  const intersection = get('coverage-intersection-note')
+  intersection.hidden = !filtered && !(visibility && (visibility & (visibility - 1)))
+  intersection.textContent = colorByPower ? 'Colors show current solar power where every selected filter matches.' :
+    mission ? 'Colors show mission overlap hours where every selected filter matches.' :
+      'Color marks terrain where every selected visibility condition is true at the displayed time.'
   get('coverage-details').hidden = !live && !drawShadows
   get('power-details').hidden = !power
-  for (const id of ['coverage-legend', 'coverage-notes', 'coverage-summary']) get(id).hidden = !visibility
+  get('power-scale').hidden = !colorByPower
+  get('coverage-legend').hidden = !visibility || power || mission
+  for (const id of ['coverage-notes', 'coverage-summary']) get(id).hidden = !visibility
   get('coverage-clock').hidden = !live && !drawShadows
   const shadowStatus = get('terrain-shadow-status')
   shadowStatus.hidden = !shadows
@@ -724,41 +737,46 @@ function showCoverage() {
   queueHeatDetail()
   if (!available) return
   const heat = mission ? showMissionHeat() : null
+  const ready = !mission || Boolean(heat)
+  if (heat) {
+    get('mission-heat-scale-note').textContent = filtered
+      ? 'Colors use the overlap range for the selected region and period. Areas in color meet every selected filter.'
+      : 'Deep blue shows zero overlap. Pale gold marks the highest estimate for this period. Pins show site estimates.'
+  }
   const epoch = settings.start + elapsed * hour
   if ((live || drawShadows) && coverageEpoch !== epoch) {
     coverageEpoch = epoch
     coverageFrame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
   }
-  let powerScores
+  let siteValues
   let powerMax = solarPowerScaleMax
-  if (power && (!flat || southOnly)) {
+  if ((power || filtered) && (!flat || (power && southOnly))) {
     const frameIndex = Math.round(elapsed * 4)
-    powerScores = ranked.filter(({ site }) => inMapRegion(site)).map(({ site, timeline }) => {
+    siteValues = ranked.filter(({ site }) => inMapRegion(site)).map(({ site, timeline }) => {
       const sample = timeline?.[frameIndex] ?? siteSkyModel(site, settings.horizon === 'terrain')(coverageFrame)
       return { site, sample, watts: siteSolarPower(sample) }
     })
-    if (southOnly) {
+    if (power && southOnly) {
       if (powerFrame !== coverageFrame) {
         regionalPowerMax = southPolePowerMax(...coverageFrame, artemisSouthLatitude)
         powerFrame = coverageFrame
       }
-      powerMax = Math.max(regionalPowerMax, ...powerScores.map(score => score.watts))
+      powerMax = Math.max(regionalPowerMax, ...siteValues.map(score => score.watts))
     }
   }
   if (power) {
     const gradient = get('power-gradient')
     gradient.classList.toggle('no-power', powerMax === 0)
-    gradient.classList.toggle('contours', Boolean(heat))
     get('power-scale-mid').textContent = powerMax > 0 ? formatPower(powerMax / 2) : ''
     get('power-scale-max').textContent = powerMax > 0 ? formatPower(powerMax) : ''
     const scaleNote = get('power-scale-note')
-    scaleNote.hidden = !southOnly && !heat
-    const contours = heat && powerMax > 0 ? `Power contours · ${powerContourLevels.map(level => formatPower(level * powerMax)).join(', ')}.` : ''
-    const regional = southOnly ? powerMax > 0 ? 'Scale uses the estimated South Pole upper bound at this time.' : 'Zero modeled solar power in this region at this time.' : ''
-    scaleNote.textContent = [contours, regional].filter(Boolean).join(' ')
+    scaleNote.hidden = !colorByPower || !southOnly
+    scaleNote.textContent = powerMax > 0 ? 'Scale uses the estimated South Pole upper bound at this time.' :
+      'Zero modeled solar power in this region at this time.'
   }
-  const options = { northLatitude, powerMax, visibility, power, terrainShadows: drawShadows,
-    heatRaster: flat ? heat?.colors : heat?.globeRaster, heatContrast: heat?.contrast }
+  const options = { northLatitude, powerMax, visibility: ready ? visibility : 0, power: ready && power,
+    colorByPower: ready && colorByPower, terrainShadows: ready && drawShadows,
+    overlap: heat?.flatHeat, heatRaster: heat?.globeRaster, heatContrast: heat?.contrast }
   const frame = live || drawShadows ? coverageFrame : null
   if (flat) {
     drawCoverage ??= createCoverageMap(get('coverage-canvas'), evaluateMapPoint)
@@ -766,15 +784,25 @@ function showCoverage() {
   } else {
     globe?.setLayers(frame, options)
     globe?.setHeatDetail(heat?.patch ?? null)
-    const scores = heat?.overlaps ?? (powerScores ? new Map(powerScores.map(({ site, sample, watts }) => {
+    let scores = heat?.overlaps
+    if (ready && colorByPower && siteValues) scores = new Map(siteValues.map(({ site, sample, watts }) => {
         const number = formatPower(watts)
         return [site.id, { number, label: `Sun ${signedDegrees(sample.sunEl)} · ${number} estimated electrical output`,
           color: `rgb(${solarPowerColor(watts, powerMax).join(',')})`, nearZero: watts === 0 }]
-    })) : undefined)
+    }))
+    if (filtered && scores && siteValues) {
+      const matching = siteValues.filter(({ site, sample, watts }) => {
+        const point = Number(!sample.eclipse && sample.sunEl > sample.sunHorizon) +
+          2 * Number(sample.earthEl > sample.earthHorizon)
+        return coverageMatches(point, visibility, mission ? heat?.overlaps.get(site.id)?.hours ?? 0 : undefined,
+          power ? watts : undefined)
+      })
+      scores = new Map(matching.map(({ site }) => [site.id, scores.get(site.id)]))
+    }
     globe?.setSiteScores(scores)
   }
   const type = [mission && 'mission overlap', visibility && 'visibility', power && 'solar power'].filter(Boolean).join(', ') || 'terrain'
-  const description = ['map-scope', shadows && 'terrain-shadow-status', mission && 'mission-heat-models mission-heat-status mission-heat-site mission-heat-reference',
+  const description = ['map-scope', !intersection.hidden && 'coverage-intersection-note', shadows && 'terrain-shadow-status', mission && 'mission-heat-models mission-heat-status mission-heat-site mission-heat-reference',
     visibility && 'coverage-notes coverage-summary', power && 'power-notes power-scale-note power-output power-site-angle'].filter(Boolean).join(' ')
   get('coverage-canvas').setAttribute('aria-label', `${southOnly ? 'South Pole' : 'Whole-Moon'} ${type} map`)
   get('coverage-canvas').setAttribute('aria-describedby', description)
@@ -888,7 +916,7 @@ function queueHeatDetail() {
   }, 220)
 }
 
-function paintOverlap(values, width, height, maxHours, contrast, encodeHours = false) {
+function paintOverlap(values, width, height, maxHours) {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -896,12 +924,10 @@ function paintOverlap(values, width, height, maxHours, contrast, encodeHours = f
   const image = ctx.createImageData(width, height)
   values.forEach((value, index) => {
     if (value < 0) return
-    if (encodeHours) {
-      const scaled = maxHours > 0 ? Math.round(Math.min(1, value / maxHours) * 65535) : 0
-      image.data[index * 4] = scaled >> 8
-      image.data[index * 4 + 1] = scaled & 255
-      image.data[index * 4 + 3] = 255
-    } else image.data.set([...overlapRgb(value, maxHours, contrast), 255], index * 4)
+    const scaled = maxHours > 0 ? Math.round(Math.min(1, value / maxHours) * 65535) : 0
+    image.data[index * 4] = scaled >> 8
+    image.data[index * 4 + 1] = scaled & 255
+    image.data[index * 4 + 3] = 255
   })
   ctx.putImageData(image, 0, 0)
   return canvas
@@ -955,14 +981,17 @@ function showMissionHeat() {
   const { overlaps, best } = layer
   const local = detail?.periods[period]
   const maxHours = Math.max(gridPeriod.maxHours, local?.maxHours ?? 0, best?.hours ?? 0)
-  if (!layer.colors || layer.colorMax !== maxHours || layer.detail !== detail) {
+  if (!layer.globeRaster || layer.colorMax !== maxHours || layer.detail !== detail) {
     const values = local?.values.filter(value => value > 0).sort()
     const low = values?.[Math.floor(values.length * .1)] / maxHours
     const high = values?.[Math.floor(values.length * .9)] / maxHours
     layer.contrast = high > low && high - low < .7 ? [low, high] : undefined
-    layer.colors = paintOverlap(gridPeriod.values, heatGrid.width, heatGrid.height, maxHours, layer.contrast)
-    layer.globeRaster = paintOverlap(gridPeriod.values, heatGrid.width, heatGrid.height, maxHours, layer.contrast, true)
-    layer.patch = local ? { ...detail, image: paintOverlap(local.values, detail.size, detail.size, maxHours, layer.contrast, true) } : null
+    layer.flatHeat = {
+      hoursAt: (lat, lon) => overviewHoursAt({ lat, lon }, heatGrid, period),
+      color: hours => overlapRgb(hours, maxHours, layer.contrast),
+    }
+    layer.globeRaster = paintOverlap(gridPeriod.values, heatGrid.width, heatGrid.height, maxHours)
+    layer.patch = local ? { ...detail, image: paintOverlap(local.values, detail.size, detail.size, maxHours) } : null
     layer.colorMax = maxHours
     layer.detail = detail
   }
@@ -979,7 +1008,6 @@ function showMissionHeat() {
   scale.setAttribute('aria-label', `Overlap from zero to a maximum of ${maxLabel} in the full mission`)
   get('mission-heat-mid').textContent = maxHours > 0 ? formatHours(maxHours / 2) : ''
   get('mission-heat-max').textContent = maxLabel
-  get('mission-heat-scale-note').textContent = 'Deep blue shows zero overlap. Pale gold marks the highest estimate for this period. Pins show site estimates.'
   status.textContent = `${period ? 'Quarter ' + period : 'Entire mission'} · ${dateLabel(start + from * hour)} → ${dateLabel(start + to * hour)} · ${formatHours(hours)}`
   get('mission-heat-best').textContent = best?.hours > 0
     ? `${southOnly ? 'Best evaluated South Pole site' : 'Best evaluated site'} · ${siteName(best.site)} · ${formatHours(best.hours)} of ${formatHours(hours)}`
@@ -1029,15 +1057,10 @@ function showHeatWindows(windows, from, to) {
 }
 
 function showCoverageLegend() {
-  const visibility = getVisibilityFilters()
-  const layered = get('layer-overlap').checked || get('layer-power').checked
-  const entries = [
-    (visibility & 1) && ['sun', 'Sunlight'], (visibility & 2) && ['earth', 'Earth in view'], (visibility & 4) && ['both', 'Both in view'],
-    (visibility & 3) === 3 && !(visibility & 4) && ['split', 'Sun and Earth in view'],
-    visibility && !layered && ['none', 'Selected conditions absent'],
-  ].filter(Boolean)
-  get('coverage-legend').replaceChildren(...entries.map(([color, name]) => element('li', `coverage-${color}`, name)))
-  get('coverage-overlay-note').hidden = !visibility || !layered
+  const condition = [null, ['sun', 'Sunlight'], ['earth', 'Earth in view'], ['both', 'Sun and Earth both in view']][visibilityRequirements(getVisibilityFilters())]
+  const legend = get('coverage-legend')
+  if (condition) legend.replaceChildren(element('li', `coverage-${condition[0]}`, condition[1]))
+  else legend.replaceChildren()
 }
 
 const powerStops = Array.from({ length: 21 }, (_, index) => `rgb(${solarPowerColor(index / 20, 1).join(',')}) ${index * 5}%`)
@@ -2018,6 +2041,7 @@ get('coverage-filters').addEventListener('change', event => {
   showComparisonTime()
 })
 get('mission-heat-period').addEventListener('change', showCoverage)
+get('map-color-metric').addEventListener('change', showCoverage)
 get('layer-landing-suggestions').addEventListener('change', event => {
   if (event.currentTarget.checked) globe?.southPole()
   syncLandingSuggestions()
