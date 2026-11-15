@@ -57,7 +57,7 @@ uniform vec3 detailEast, detailNorth, detailFront;
 uniform vec3 detailSize;
 uniform bool showDetail;
 uniform vec2 heatContrast;
-uniform float northLatitude, heatHeight, powerMax;
+uniform float northLatitude, heatHeight, powerMax, regionNorthLatitude;
 uniform float polarExtent;
 uniform vec2 viewport;
 uniform float sphereRadius;
@@ -174,6 +174,7 @@ void main() {
   }
   float longitude = atan(normal.y, normal.x);
   float latitude = asin(clamp(normal.z, -1.0, 1.0));
+  if (latitude > regionNorthLatitude) discard;
   vec2 uv = vec2(longitude / (2.0 * pi) + 0.5, 0.5 - latitude / pi);
   vec3 reflectance = texture2D(lunarMap, uv).rgb;
   vec2 tileUv=(uv-imageBounds.xy)/imageBounds.zw;
@@ -276,7 +277,7 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onCameraChange, onTerrainStatus, directions } = {}) {
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onCameraChange, onTerrainStatus, directions, regionNorthLatitude = 90 } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer:true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
@@ -299,7 +300,8 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.vertexAttribPointer(point, 2, gl.FLOAT, false, 0, 0)
   const uniforms = Object.fromEntries(['viewport', 'sphereRadius', 'sphereCenter', 'foregroundBody', 'orbitMoon', 'orbitEarth', 'orbitSun', 'orbitLens', 'orbitMapBlend', 'annotations', 'analysis', 'terrainAnalysis', 'east', 'north', 'front',
     'sun', 'earth', 'dayNight', 'visibility', 'showPower', 'showHeat', 'colorByPower', 'possibleEclipse', 'lunarMap', 'polarRelief', 'missionHeat', 'northLatitude', 'heatHeight', 'powerMax',
-    'globalElevation','elevationReady','tileReady','imageBounds','polarExtent', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
+    'globalElevation','elevationReady','tileReady','imageBounds','polarExtent', 'detailHeat', 'detailEast', 'detailNorth', 'detailFront', 'detailSize', 'showDetail', 'heatContrast', 'regionNorthLatitude', ...polarUniforms].map(name => [name, gl.getUniformLocation(program, name)]))
+  gl.uniform1f(uniforms.regionNorthLatitude, regionNorthLatitude * rad)
   const texture = gl.createTexture()
   gl.bindTexture(gl.TEXTURE_2D, texture)
   for (const parameter of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, parameter, gl.CLAMP_TO_EDGE)
@@ -330,9 +332,9 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   gl.uniform1f(uniforms.polarExtent, polarExtent / radius)
 
   let flightCamera = null
-  let latitude = -12
+  let latitude = Math.min(-12, regionNorthLatitude)
   let longitude = 17
-  let zoom = 1
+  let zoom = regionNorthLatitude < 0 ? 7.6 : 1
   let sites = []
   let labels = []
   let feature
@@ -584,7 +586,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
   }
 
   function rotate(north, east) {
-    latitude = clamp(latitude + north, -90, 90)
+    latitude = clamp(latitude + north, -90, regionNorthLatitude)
     longitude = (longitude + east) % 360
     draw()
   }
@@ -637,7 +639,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     pointers.delete(event.pointerId)
     if (drag?.pointer === event.pointerId) drag = null
   })
-  function changeZoom(factor) { zoom = clamp(zoom * factor, .7, detail ? 120 : 12); draw() }
+  function changeZoom(factor) { zoom = clamp(zoom * factor, regionNorthLatitude < 0 ? 7.6 : .7, detail ? 120 : 12); draw() }
   canvas.addEventListener('wheel', event => {
     if (!event.ctrlKey) return
     event.preventDefault()
@@ -702,7 +704,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
       draw()
     },
     zoom: changeZoom,
-    center(site) { latitude = clamp(site.lat, -90, 90); longitude = site.lon; draw() },
+    center(site) { latitude = clamp(site.lat, -90, regionNorthLatitude); longitude = site.lon; draw() },
     southPole() { latitude = southPoleView.lat; longitude = southPoleView.lon; zoom = 7.6; draw() },
     setLayers(frame, { visibility: nextVisibility = 0, power: nextPower = false, heatRaster, heatContrast = [0, 1],
       colorByPower = nextPower && !heatRaster, northLatitude: nextNorth = 90, powerMax: nextPowerMax = solarPowerScaleMax, terrainShadows = false } = {}) {

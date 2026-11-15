@@ -1,6 +1,6 @@
 # Working on Lunar Landing Site Navigator
 
-Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.4.0 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
+Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.5.0 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
 
 ## Access and setup
 
@@ -41,7 +41,7 @@ This starts a temporary local server and checks the real bundled data, landing s
 
 ## Publish a named version
 
-Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.4.0 release is credited to Deb.
+Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.5.0 release is credited to Deb.
 
 After review and tests, commit the intended files on `main`. For example, the *next fix release* could use:
 

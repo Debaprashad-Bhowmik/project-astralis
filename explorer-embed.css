@@ -1,0 +1,7 @@
+/* The existing viewer is embedded, with the planner controls retained in its
+   DOM for shared behavior but hidden from the Explorer's focused visit. */
+html.explorer-embed,html.explorer-embed body{height:100%;margin:0;overflow:hidden}
+.explorer-embed body>:not(#space){display:none!important}
+.explorer-embed #space{display:block;position:fixed;inset:0;margin:0;padding:0;border:0;border-radius:0;width:100%;height:100%;background:#030305}
+.explorer-embed #space>:not(#viewer-stage){display:none!important}
+.explorer-embed #viewer-stage{height:100%!important;width:100%;border:0;border-radius:0;margin:0}

@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.4.0 · Release prepared by Deb**
+**Team: Astralis · v1.5.0 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
@@ -11,7 +11,7 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.4.0 release notes](CHANGELOG.md) |
+| Review what changed | [v1.5.0 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
@@ -238,7 +238,7 @@ For a Mac without Homebrew, follow the installation links for any missing tools 
 
 **Visual landing suggestions.** In the main viewer, enable **Landing Suggestions**. Three compact recommendations show total solar energy on a shared scale, the longest uninterrupted Earth-view window, actual Sun/Earth timelines, and terrain slope. **Exact values & ranks** reveals average power, all visibility totals, gaps, roughness, coordinates, and cross-scenario ranks. **More patches and visual trade-offs** opens the remaining shortlist and an energy-versus-continuous-Earth plot. Every patch still opens Surface through the existing camera journey. The three Moon-map comparison panels use the same visual summaries and retain their independent site/date selections.
 
-**[Trade-off Explorer](http://localhost:4173/explore.html).** The separate catalog explorer from [vnk11's contribution](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57) offers progressively deeper views: mission presets, visibility requirements, date heatmaps, a trade-off plot, CSV export, and links to JPL Horizons. It compares catalog sites for missions from 6 hours to 60 days. Its adaptive score emphasizes sunlight duration and Earth visibility; it is a different exploration tool from the main planner's energy/continuous-communications patch ranking. Its **South polar (60°S–90°S)** catalog group is broader than the main planner's **84°S–90°S** patch-search area. The URL retains the catalog Explorer's choices.
+**[Trade-off Explorer](http://localhost:4173/explore.html).** The separate catalog explorer from [vnk11's contribution](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57) offers progressively deeper views: mission presets, visibility requirements, date heatmaps, a trade-off plot, CSV export, and links to JPL Horizons. It compares catalog sites for missions from 6 hours to 60 days. Its adaptive score emphasizes sunlight duration and Earth visibility; it is a different exploration tool from the main planner's energy/continuous-communications patch ranking. Every detail tab includes three comparison maps restricted to **84°S–90°S**, matching the main planner's South Pole search region. Shared checkboxes intersect mission overlap, sunlight, Earth view, solar power and crater-shadow layers on those same Moon renderers. The time scrubber sets one instant for all three; mission overlap covers the full selected duration, with a shared hours scale. Select a site name or map pin to follow the existing camera descent into its first-person Surface view, then return to the comparison. There is no whole-Moon scope switch in the Explorer. The URL retains the catalog Explorer's choices.
 
 Choose a landing date, mission length, and priority to rank 39 landing and study locations. In Site ranking, choose **Site type → Future CLPS targets** to compare planned mission regions. Rotate the Moon to see sites on both hemispheres, search the 9,087 IAU-approved feature names, and click anywhere on the globe to evaluate the terrain horizon, daylight, and Earth visibility. Compare independently dated scenarios or scrub the Sun–Earth–Moon view in 3D.
 

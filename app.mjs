@@ -11,6 +11,11 @@ import { polarIlluminationAt } from './polar-shadows.mjs'
 import { metricBar, missionStrip, terrainSlope, tradeoffPlot } from './mission-visuals.mjs'
 
 const get = id => document.getElementById(id)
+const explorerEmbed = window.parent !== window && new URLSearchParams(location.search).get('embed') === 'explorer'
+if (explorerEmbed) {
+  document.documentElement.classList.add('explorer-embed')
+  document.body.append(get('space'))
+}
 const inputs = (...ids) => ids.map(get)
 const hour = 3_600_000
 const day = 24 * hour
@@ -2445,14 +2450,80 @@ async function start() {
       requestAnimationFrame(() => get('map-heading').scrollIntoView({ behavior: 'instant' }))
     }
     if (['#local-sky', '#assessment'].includes(location.hash)) requestAnimationFrame(() => get(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant' }))
-    void openSurfaceLink()
-    void startSpace()
+    if (explorerEmbed) {
+      await startSpace()
+      setupExplorerJourney()
+    } else {
+      void openSurfaceLink()
+      void startSpace()
+    }
   } catch (reason) {
+    if (explorerEmbed) parent.postMessage({ type: 'astralis-explorer-error', message: reason.message }, location.origin)
     error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open the navigator through a local web server.' : ''))
     get('answer-title').textContent = 'Lunar data could not be loaded'
     get('rank-summary').textContent = 'Reload to try again.'
     get('explore-conclusion').textContent = 'Lunar data could not load. Reload to try again.'
   }
+}
+
+// Same camera flight and first-person renderer as the planner. Only same-origin
+// Explorer messages can change this embedded instance; the normal page is untouched.
+function setupExplorerJourney() {
+  let pending = null
+  let running = false
+  let latest = 0
+  southOnly = true
+  get('mission-heat-south').checked = true
+  useMap('globe')
+  displayViewerMode('map')
+  globe?.southPole()
+  async function drain() {
+    if (running) return
+    running = true
+    try {
+      while (pending) {
+        const message = pending
+        pending = null
+        const reply = data => parent.postMessage({ ...data, request: message.request }, location.origin)
+        try {
+          await setViewerMode('map')
+          if (message.request !== latest || message.type === 'astralis-explorer-return') continue
+          const site = catalog.catalog.find(site => site.id === message.id && site.lat <= artemisSouthLatitude)
+          if (!site || !Number.isFinite(message.start) || !Number.isFinite(message.hours) ||
+              message.hours < 6 || message.hours > 1440 || message.start < catalog.startMs ||
+              message.start + message.hours * hour > catalog.endMs) throw new Error('This site or mission is outside the available South Pole data.')
+          const stamp = new Date(message.start).toISOString()
+          get('landing-date').value = stamp.slice(0, 10)
+          get('landing-time').value = stamp.slice(11, 16)
+          const duration = get('duration')
+          for (const option of duration.querySelectorAll('[data-explorer-duration]')) option.remove()
+          if (![...duration.options].some(option => Number(option.value) === message.hours)) {
+            const option = new Option(`${message.hours} hours`, message.hours)
+            option.dataset.explorerDuration = 'true'
+            duration.append(option)
+          }
+          duration.value = String(message.hours)
+          get('model').value = message.terrain ? 'terrain' : 'reference'
+          recalculate()
+          seekTime(Number.isFinite(message.elapsed) ? message.elapsed : 0)
+          await setViewerMode('surface', site)
+          if (message.request === latest) {
+            if (viewerMode !== 'surface') throw new Error('The surface could not load. Return to the comparison and try again.')
+            reply({ type: 'astralis-explorer-arrived' })
+          }
+        } catch (error) { reply({ type: 'astralis-explorer-error', message: error.message }) }
+      }
+    } finally { running = false }
+  }
+  window.addEventListener('message', event => {
+    if (event.source !== parent || event.origin !== location.origin) return
+    const message = event.data
+    if (!['astralis-explorer-visit', 'astralis-explorer-return'].includes(message?.type) || !Number.isInteger(message.request)) return
+    latest = message.request
+    pending = message
+    void drain()
+  })
+  parent.postMessage({ type: 'astralis-explorer-ready' }, location.origin)
 }
 
 async function startSpace() {

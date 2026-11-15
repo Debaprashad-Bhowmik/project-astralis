@@ -1,5 +1,15 @@
 # Version history
 
+## v1.5.0 — Deb · South Pole Explorer viewers (2026-11-15)
+
+- Add three persistent comparison maps to every Trade-off Explorer detail tab, using the original Moon renderer. Restrict both catalog candidates and map rendering to 84°S–90°S, with no whole-Moon option.
+- Add one shared checkbox row for mission overlap, sunlight, Earth view, both in view, solar power, and crater shadows. Layers intersect; all three maps share the selected epoch and colour scale. Recompute terrain-aware mission overlap on zoom and mission changes, with explicit loading and error states.
+- Select a site name, map marker, list entry, plot point, or table row to use the existing camera descent and first-person Surface renderer inline. Carry the exact start, duration, terrain setting and scrubbed time into the visit; return to the same comparison without duplicating the viewer.
+- Preserve progressive detail, mission controls, date comparison, sources, exports, and the main planner's rendering and calculation rules. Reuse WebGL contexts across tab changes and discard obsolete heat jobs.
+- Extend browser regressions across all five tabs, South Pole shader clipping, layer intersections, actual terrain-overlap textures, a shared hours legend, keyboard selection, repeated Surface visits, and mobile layout.
+
+Release prepared by **Deb**, team **Astralis**. Original Trade-off Explorer by **vnk11**. See the [setup guide](README.md), [references](REFERENCES.md), and [credits](THIRD_PARTY_NOTICES.md).
+
 ## v1.4.0 — Deb · Visual landing comparisons and Explorer merge (2026-11-15)
 
 - Merge **vnk11's Trade-off Explorer, commit e81fb40**, preserving its Git ancestry and original authorship. Add the catalog Explorer link, date heatmap, adaptive detail levels, trade-off plot, CSV and JPL query links.

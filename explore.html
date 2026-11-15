@@ -7,7 +7,7 @@
   <meta name="description" content="Compare lunar landing sites and dates by sunlight and Earth contact, with as much detail as you need.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23d3a9ff'/%3E%3Ccircle cx='21' cy='12' r='4' fill='%23050507'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./explore.css">
-  <link rel="stylesheet" href="./mission-visuals.css?v=1.4.0">
+  <link rel="stylesheet" href="./mission-visuals.css?v=1.5.0">
   <script type="module" src="./explore.mjs"></script>
 </head>
 <body>
@@ -33,9 +33,7 @@
       </section>
 
       <section>
-        <h2>Where</h2>
-        <div class="chips" id="regions" role="group" aria-label="Site groups"></div>
-        <label class="switch" data-min-level="5"><input id="terrain" type="checkbox" checked> LOLA terrain horizon <small>Off uses a 0° reference plane</small></label>
+        <h2>South Pole · 84°S–90°S</h2>
       </section>
 
       <section>
@@ -59,6 +57,24 @@
       <div class="progress" id="progress" hidden><span></span></div>
       <p class="level-line"><strong id="level-name"></strong> <span class="muted" id="level-criteria"></span></p>
       <p class="note" id="note" aria-live="polite" hidden></p>
+      <section id="explorer-map-tools" class="explorer-map-tools" aria-label="Comparison map layers">
+        <fieldset class="explorer-layers">
+          <legend>South Pole comparisons</legend>
+          <label><input id="explorer-overlap" type="checkbox"> Mission overlap</label>
+          <label><input id="explorer-sun" type="checkbox"> Sunlight now</label>
+          <label><input id="explorer-earth" type="checkbox"> Earth in view now</label>
+          <label><input id="explorer-both" type="checkbox" checked> Both in view now</label>
+          <label><input id="explorer-power" type="checkbox"> Solar power</label>
+          <label><input id="explorer-shadows" type="checkbox" checked> Crater shadows</label>
+        </fieldset>
+        <div class="explorer-time"><label for="map-time">View time</label><input id="map-time" type="range" min="0" max="168" step="0.25" value="0"><output id="map-time-label" for="map-time"></output></div>
+        <div class="explorer-map-key"><span id="map-layer-legend"></span><span id="map-layer-status" role="status"></span></div>
+      </section>
+      <section id="explorer-journey" hidden aria-label="Selected landing site Surface view">
+        <div class="journey-heading"><button id="journey-back" class="ghost" type="button">← Three-site comparison</button><h2 id="journey-title"></h2></div>
+        <div id="journey-view"></div>
+        <p id="journey-status" class="muted" role="status"></p>
+      </section>
       <div class="suggestions" id="suggestions" aria-live="polite"><p class="muted">Loading lunar data…</p></div>
 
       <div class="options" id="options" data-min-level="2" data-max-level="4" aria-label="More options"></div>
@@ -75,7 +91,7 @@
           <svg id="chart" role="img" aria-label="Trade-off map of the two most decisive factors"></svg>
           <div class="tooltip" id="tooltip" hidden></div>
         </div>
-        <p class="legend"><span><i class="key top">1</i> suggested</span><span><i class="key front"></i> nothing beats it on both axes</span><span><i class="key fail"></i> misses a must-have</span><span class="muted">Click a dot to compare it.</span></p>
+        <p class="legend"><span><i class="key top">1</i> suggested</span><span><i class="key front"></i> nothing beats it on both axes</span><span><i class="key fail"></i> misses a must-have</span><span class="muted">Select a site to descend to its surface.</span></p>
       </div>
 
       <div class="card">

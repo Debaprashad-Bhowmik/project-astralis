@@ -1,8 +1,10 @@
 import {
   chooseCriteria, criteria, dateFloor, day, dayOffsets, explain, formatHours, funnelScore, levels, meetsRequirements,
-  niceRange, paretoFront, presets, regions, siteName, tieTolerance,
+  niceRange, paretoFront, presets, siteName, tieTolerance,
 } from './explore-model.mjs'
 import { missionStrip } from './mission-visuals.mjs'
+import { createExplorerViewers } from './explore-viewer.mjs'
+import { artemisSouthLatitude } from './mission-heat.mjs'
 
 const $ = id => document.getElementById(id)
 const svgNs = 'http://www.w3.org/2000/svg'
@@ -19,6 +21,7 @@ let results = new Map()
 let job = 0
 let hovered = null
 const worker = new Worker(new URL('./explore-worker.mjs', import.meta.url), { type: 'module' })
+const comparisonViews = createExplorerViewers({ onShadowsChange(checked) { state.terrain = checked; compute() } })
 
 // ---------- small helpers ----------
 function svg(tag, attributes = {}, parent) {
@@ -36,7 +39,7 @@ function html(tag, className, text) {
 const percent = value => `${Math.round(value)}%`
 const startMs = () => Date.parse(`${state.date}T${state.time}:00Z`)
 const dateLabel = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-const inRegions = site => [...state.regions].some(key => regions[key].test(site))
+const inRegions = site => site.lat <= artemisSouthLatitude
 const groupLabel = site => site.lat <= -60 ? 'South polar' : site.kind.startsWith('Historic') ? 'Historic landing' : site.kind.startsWith('Future CLPS') ? 'Future CLPS target' : 'Study point'
 
 // ---------- shareable URL ----------
@@ -59,13 +62,12 @@ function loadHash() {
   if (/^\d{4}-\d\d-\d\d$/.test(params.get('d'))) state.date = params.get('d')
   if (/^\d\d:\d\d$/.test(params.get('t'))) state.time = params.get('t')
   if (params.has('h')) state.hours = durationHours(Number(params.get('h')) / 24) ?? state.hours
-  const chosen = (params.get('r') ?? '').split('.').filter(key => key in regions)
-  if (chosen.length) state.regions = new Set(chosen)
+  state.regions = new Set(['pole'])
   if (params.has('terrain')) state.terrain = params.get('terrain') !== '0'
   state.weight = number('w', state.weight * 100, 0, 100) / 100
   state.req = { sun: number('s', state.req.sun, 0, 100), earth: number('e', state.req.earth, 0, 100),
     dark: number('dk', state.req.dark, 0, 336), blackout: number('bo', state.req.blackout, 0, 336) }
-  state.picks = (params.get('p') ?? '').split('.').filter(Boolean).slice(0, 2)
+  state.picks = []
   if (params.get('x') in criteria) state.x = params.get('x')
   if (params.get('y') in criteria) state.y = params.get('y')
 }
@@ -87,7 +89,6 @@ worker.onmessage = ({ data: message }) => {
     state.picks = state.picks.filter(id => siteById.has(id))
     $('date').min = message.start.slice(0, 10)
     $('date').max = new Date(Date.parse(message.end) - 76 * day).toISOString().slice(0, 10)
-    buildRegions()
     compute()
   } else if (message.type === 'offset') {
     results.set(message.offset, message.rows ? new Map(message.rows.map(row => [row.id, row])) : null)
@@ -223,10 +224,8 @@ function syncControls() {
   for (const button of $('levels').children) button.setAttribute('aria-pressed', String(Number(button.dataset.level) === state.level))
   $('presets').value = state.preset ?? 'custom'
   if (document.activeElement !== $('duration')) $('duration').value = +(state.hours / 24).toFixed(2)
-  for (const button of $('regions').children) button.setAttribute('aria-pressed', String(state.regions.has(button.dataset.region)))
   $('date').value = state.date
   $('time').value = state.time
-  $('terrain').checked = state.terrain
   $('weight').value = Math.round(state.weight * 100)
   const capMax = Math.min(state.hours, 720)
   for (const key of ['dark', 'blackout']) {
@@ -283,15 +282,14 @@ function leaderChanged(previous, view) {
 // ---------- suggestion cards ----------
 function renderSuggestions(view) {
   const box = $('suggestions')
+  void comparisonViews.update({ start: startMs() + state.offset * day, hours: state.hours, terrain: state.terrain })
   box.replaceChildren()
-  if (!view.visible.length) { box.append(html('p', 'muted', 'Choose at least one group under “Where”.')); return }
+  if (!view.visible.length) { box.append(html('p', 'muted', 'No South Pole sites are available.')); return }
   if (view.current === undefined) { box.append(html('p', 'muted', 'Calculating sunlight and Earth visibility…')); return }
   if (view.current === null) { box.append(html('p', 'muted', 'That date is outside the 2024–2030 ephemeris coverage.')); return }
   const leader = view.top[0]
   const passing = view.ranked.filter(point => point.pass)
-  const shown = [...view.top.map((point, index) => ({ point, rank: index })),
-    ...state.picks.filter(id => !view.top.some(point => point.id === id))
-      .map(id => ({ point: view.current.find(point => point.id === id), id, pick: true }))]
+  const shown = view.top.map((point, index) => ({ point, rank: index }))
   for (const [index, entry] of shown.entries()) {
     const { point, rank, pick } = entry
     const card = html('article', 'suggestion' + (pick ? ' pick' : '') + (rank === 0 ? ' lead' : '') + (point && !point.pass ? ' fail' : ''))
@@ -299,7 +297,13 @@ function renderSuggestions(view) {
     const head = html('div', 'suggestion-head')
     const site = point?.site ?? siteById.get(entry.id)
     const title = html('div', 'title')
-    title.append(html('h3', '', siteName(site)))
+    const name = html('button', 'site-visit', siteName(site))
+    name.type = 'button'
+    name.title = `Descend to ${siteName(site)} in 3D`
+    name.onclick = () => comparisonViews.openSite(site.id)
+    const heading = html('h3', '')
+    heading.append(name)
+    title.append(heading)
     // The group only adds information when more than one group is on screen.
     if (state.regions.size > 1) title.append(html('span', 'muted', groupLabel(site)))
     head.append(html('span', 'rank', pick ? '+' : String(rank + 1)), title)
@@ -311,6 +315,7 @@ function renderSuggestions(view) {
       head.append(remove)
     }
     card.append(head)
+    comparisonViews.mount(index, card, site)
     if (!point) { card.append(html('p', 'muted', 'Hidden by the “Where” filter.')); box.append(card); continue }
     let reason
     if (!point.pass) reason = `Misses ${point.misses.join(', ')}.`
@@ -364,9 +369,7 @@ function horizonsUrl(site, target) {
 }
 
 function togglePick(id) {
-  if (state.picks.includes(id)) state.picks = state.picks.filter(pick => pick !== id)
-  else state.picks = [...state.picks, id].slice(-2)
-  render()
+  comparisonViews.openSite(id)
 }
 
 // Red (worse) through yellow to green (better): ColorBrewer RdYlGn in eight steps. Distinct steps are easier to
@@ -593,6 +596,14 @@ function renderHeat(view) {
     const name = siteName(anchorPoint.site)
     const label = svg('text', { x: labelWidth - 8, y: y + 14, class: 'heat-label' + (anchorPoint.pass ? '' : ' fail'), 'text-anchor': 'end' }, heat)
     label.textContent = narrow && name.length > 16 ? name.slice(0, 15) + '…' : name
+    label.setAttribute('role', 'button')
+    label.setAttribute('tabindex', '0')
+    label.setAttribute('aria-label', `View ${name} from the lunar surface`)
+    label.style.cursor = 'pointer'
+    label.addEventListener('click', () => comparisonViews.openSite(anchorPoint.id))
+    label.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); comparisonViews.openSite(anchorPoint.id) }
+    })
     for (const offset of dayOffsets) {
       const point = view.byOffset.get(offset)?.find(candidate => candidate.id === anchorPoint.id)
       if (!point) continue
@@ -681,17 +692,6 @@ function exportCsv() {
 }
 
 // ---------- controls ----------
-function buildRegions() {
-  $('regions').replaceChildren()
-  for (const [key, region] of Object.entries(regions)) {
-    const button = html('button', '', `${region.label} `)
-    button.type = 'button'
-    button.dataset.region = key
-    button.append(html('span', 'count', String(sites.filter(region.test).length)))
-    button.addEventListener('click', () => { state.regions.has(key) ? state.regions.delete(key) : state.regions.add(key); noteText = ''; render() })
-    $('regions').append(button)
-  }
-}
 for (const level of levels) {
   const button = html('button', '')
   button.type = 'button'
@@ -699,6 +699,7 @@ for (const level of levels) {
   button.title = level.question
   button.append(html('span', 'step', String(level.id)), html('span', 'name', level.name))
   button.addEventListener('click', () => {
+    comparisonViews.returnToComparison(false)
     const previous = buildView().top[0]
     state.level = level.id
     const view = buildView()
@@ -733,7 +734,6 @@ $('duration').addEventListener('change', () => {
 })
 $('date').addEventListener('change', () => { if ($('date').value) { state.date = $('date').value; noteText = ''; compute() } })
 $('time').addEventListener('change', () => { if ($('time').value) { state.time = $('time').value; compute() } })
-$('terrain').addEventListener('change', () => { state.terrain = $('terrain').checked; compute() })
 $('weight').addEventListener('input', () => { state.weight = Number($('weight').value) / 100; custom(); render() })
 for (const key of ['sun', 'earth']) {
   $(`req-${key}`).addEventListener('input', () => {

@@ -1,6 +1,6 @@
 # Sources, data, and credits
 
-**Lunar Landing Site Navigator v1.4.0 — Deb · Team Astralis · 2026-11-15**
+**Lunar Landing Site Navigator v1.5.0 — Deb · Team Astralis · 2026-11-15**
 
 This is the release's source register. It distinguishes numerical inputs, display imagery, methods, software, and background research. A realistic-looking image is not evidence of measured terrain. Source pixel spacing is not a guarantee of positional or height accuracy.
 
@@ -117,3 +117,5 @@ The link index preserves references found in this release's source, documentatio
 ## 9. Visual comparison contribution
 
 The Trade-off Explorer, adaptive catalog comparison, date heatmap, and initial timeline presentation were contributed by **vnk11** in [e81fb40](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57). v1.4.0 reuses its presentation in the main planner and retains the separate Explorer page. The main patch ranking still uses total modeled energy and uninterrupted Earth visibility after the slope screen. Its timelines are evaluated from the same terrain horizons and time samples as that ranking. Shared-scale bars visualize measurements; they do not enter the scoring formula.
+
+The v1.5.0 Explorer comparisons reuse `globe.mjs`, `mission-heat-detail.mjs`, and the existing planner camera/Surface renderer. They use the same JPL ephemerides, LROC imagery, and LOLA terrain products cited above, with no new synthetic analysis input. The region is fixed at 84°S–90°S. Mission-overlap grids use the existing sampled horizon model and 15-minute temporal cadence; zooming recomputes viewport samples. Colour is calibrated in hours against the same mission duration on all three maps. Instantaneous power remains the existing horizontal-panel estimate, not a new hardware model. The finite terrain and angular/time sampling resolutions remain applicable.

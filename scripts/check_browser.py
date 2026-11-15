@@ -315,6 +315,60 @@ def audit_explorer(page, url):
     page.wait_for_function("document.querySelector('#progress').hidden", timeout=120_000)
     assert page.locator('#suggestions .mission-strip').count() >= 3
     expect(page.locator('#weight')).to_have_attribute('aria-label', 'Priority between sunlight and Earth contact')
+    assert page.locator('#regions').count() == 0
+    assert page.locator('.explorer-moon').count() == 3
+    page.evaluate("window.originalExplorerCanvases = [...document.querySelectorAll('.explorer-moon')]")
+    for level in range(5):
+        page.locator('#levels button').nth(level).click()
+        expect(page.locator('#explorer-map-tools')).to_be_visible()
+        assert page.locator('.explorer-moon').count() == 3
+        assert page.evaluate("[...document.querySelectorAll('.explorer-moon')].every((canvas,i) => canvas === originalExplorerCanvases[i])")
+    assert page.evaluate("""[...document.querySelectorAll('.explorer-moon')].every(canvas => {
+      const gl=canvas.getContext('webgl'), program=gl.getParameter(gl.CURRENT_PROGRAM);
+      return Math.abs(gl.getUniform(program,gl.getUniformLocation(program,'regionNorthLatitude')) + 84*Math.PI/180) < 1e-6;
+    })""")
+    # Terrain and instant layers share one epoch; combinations must intersect.
+    page.locator('#explorer-both').uncheck()
+    page.locator('#explorer-sun').check()
+    page.locator('#explorer-earth').check()
+    page.locator('#explorer-power').check()
+    assert page.evaluate("""[...document.querySelectorAll('.explorer-moon')].every(canvas => {
+      const gl=canvas.getContext('webgl'), program=gl.getParameter(gl.CURRENT_PROGRAM);
+      const mask=gl.getUniform(program,gl.getUniformLocation(program,'visibility'));
+      return mask[0]>0 && mask[1]>0 && gl.getUniform(program,gl.getUniformLocation(program,'showPower'));
+    })""")
+    page.locator('#duration').fill('0.25')
+    page.locator('#duration').dispatch_event('change')
+    page.wait_for_function("document.querySelector('#progress').hidden", timeout=120_000)
+    page.locator('#explorer-overlap').check()
+    page.wait_for_function("document.querySelector('#map-layer-status').textContent.includes('same hours scale')", timeout=120_000)
+    assert page.evaluate("""[...document.querySelectorAll('.explorer-moon')].every(canvas => {
+      const gl=canvas.getContext('webgl'), program=gl.getParameter(gl.CURRENT_PROGRAM);
+      return gl.getUniform(program,gl.getUniformLocation(program,'showHeat')) && gl.getUniform(program,gl.getUniformLocation(program,'showDetail'));
+    })""")
+    expect(page.locator('#map-layer-legend')).to_contain_text('6 h out of 6 h')
+    page.locator('#explorer-overlap').uncheck()
+    page.locator('#map-time').fill('2')
+    page.locator('#map-time').dispatch_event('input')
+    expect(page.locator('#map-time-label')).to_contain_text('02:00 UTC')
+    chosen = page.locator('.site-visit').first.inner_text()
+    page.locator('.site-visit').first.focus()
+    page.keyboard.press('Enter')
+    expect(page.locator('#journey-status')).to_contain_text('Surface view', timeout=120_000)
+    expect(page.locator('#journey-title')).to_have_text(chosen)
+    embedded = page.frame_locator('#journey-view iframe')
+    expect(embedded.locator('#space')).to_have_attribute('data-viewer-mode', 'surface')
+    expect(embedded.locator('#duration')).to_have_value('6')
+    expect(embedded.locator('#model')).to_have_value('terrain')
+    page.locator('#journey-back').click()
+    expect(page.locator('#suggestions')).to_be_visible()
+    # Pin selection reuses the same iframe/renderer for the next site.
+    page.locator('.explorer-markers .pin').nth(1).click()
+    expect(page.locator('#journey-status')).to_contain_text('Surface view', timeout=120_000)
+    assert page.locator('#journey-view iframe').count() == 1
+    page.locator('#levels button').first.click()
+    expect(page.locator('#suggestions')).to_be_visible()
+    expect(page.locator('#explorer-power')).to_be_checked()
     page.locator('#levels button').last.click()
     expect(page.locator('#chart')).to_be_visible()
     expect(page.locator('#table')).to_be_visible()
@@ -323,7 +377,7 @@ def audit_explorer(page, url):
     page.set_viewport_size({'width': 390, 'height': 900})
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors, errors
-    print('PASS: merged Explorer computes its catalog, shows shared timelines, deeper visualizations and mobile controls', flush=True)
+    print('PASS: all five Explorer tabs reuse three South Pole maps, intersect heat layers, and animate selected sites into Surface view', flush=True)
 
 
 def main():

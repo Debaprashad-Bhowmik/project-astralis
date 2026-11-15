@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator — team handbook
 
-**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.4.0 — Deb**
+**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.5.0 — Deb**
 
 Release navigation: [source register](REFERENCES.md) · [version history](CHANGELOG.md) · [submission checklist](docs/SUBMISSION-CHECKLIST.md).
 
@@ -317,4 +317,4 @@ Landing Suggestions now starts with three compact patches. Gold bars compare tot
 
 The three site-comparison Moon maps remain the original renderer. Their summaries use the same visual vocabulary, with exact totals and overlap tracks expandable. Changing a patch still uses the existing map-to-Surface journey. The top layer controls, intersection behavior, mission/annual playback, source resolution, and numerical ranking rules are retained.
 
-The separately linked catalog Trade-off Explorer comes from vnk11's e81fb40. Its sunlight-duration and communication scoring is distinct from the main planner's energy-based South Pole patch search; its labeled 60°S–90°S catalog group does not redefine the main 84°S–90°S boundary.
+The separately linked catalog Trade-off Explorer comes from vnk11's e81fb40. Its sunlight-duration and communication scoring is distinct from the main planner's energy-based South Pole patch search; as of v1.5.0, its catalog and comparison maps are restricted to the same 84°S–90°S region. Every detail tab shares three original Moon renderers and one layer-checkbox row. Mission overlap uses measured terrain horizons when Crater shadows is checked; the colour scale is shared across the three maps. Selecting a site follows the existing map-to-Surface animation within the Explorer. Use the back button to restore the comparison. The epoch scrubber controls the instant layers; mission overlap always integrates the selected mission duration.

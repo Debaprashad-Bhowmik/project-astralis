@@ -1,6 +1,7 @@
 // Computes every site at every landing-date offset, nearest offsets first, so the chart fills in progressively.
 import { binaryFrames } from './planner.mjs'
 import { day, framesFor, offsetOrder, scenario } from './explore-model.mjs'
+import { artemisSouthLatitude } from './mission-heat.mjs'
 
 let data
 let currentJob = 0
@@ -11,6 +12,7 @@ async function load() {
   if (!catalogReply.ok || !ephemerisReply.ok) throw new Error('The lunar data files could not be loaded.')
   const metadata = await catalogReply.json()
   const catalog = { ...metadata, startMs: Date.parse(metadata.start), endMs: Date.parse(metadata.end) }
+  catalog.catalog = metadata.catalog.filter(site => site.lat <= artemisSouthLatitude)
   return { catalog, ephemeris: binaryFrames(await ephemerisReply.arrayBuffer()) }
 }
 
