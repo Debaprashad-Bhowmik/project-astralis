@@ -474,7 +474,7 @@ function showAssessment() {
   const status = get('assessment-status')
   const total = checks.length
   status.classList.toggle('failed', unmet.length > 0)
-  status.textContent = 'No mission limits set. Set them in Mission setup → Advanced settings.'
+  status.textContent = 'Mission totals for the selected site.'
   if (total === 1 && !unmet.length) status.textContent = 'Meets the mission limit'
   else if (total) status.textContent = unmet.length ? `Meets ${total - unmet.length} of ${total} mission limits` : `Meets all ${total} mission limits`
   get('assessment-limits').hidden = !total

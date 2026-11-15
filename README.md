@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.3.0 · Release prepared by Deb**
+**Team: Astralis · v1.3.1 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
@@ -11,7 +11,7 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.3.0 release notes](CHANGELOG.md) |
+| Review what changed | [v1.3.1 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
@@ -290,7 +290,7 @@ Turn on **South Pole only** in the map controls to focus every surface layer on 
 
 Compare total solar energy, average power, total and continuous Earth view, sunlight share, slope, roughness, and the longest gaps. Patch comparisons use the original screening horizon and sampling (15 minutes through 30 days; two hours for longer windows), so opening a finer terrain inspection does not silently change the recommendation totals. The shared slider moves all three maps through the same elapsed time. **Compare different landing dates** retains separate dates for B and C. **Use recommended patches** restores all three defaults and the mission date. Manual choices stay selected when the mission changes and are labeled **Custom comparison**. Map coordinates can be assigned with **Use as Site A / B / C**. If no patch qualifies, the panel identifies the closest alternative; if none passes the slope screen, it offers manual selection instead.
 
-**Check power and communications.** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Set mission limits to check or rank sites using your own requirements.
+**Check power and communications.** Compare sunlight hours, direct Earth visibility windows, the longest gaps, and equivalent full-sun hours for a flat panel. Use the Landing Suggestions scenarios to compare communications, solar power, and balance, with an editable maximum slope.
 
 ## Run manually
 
@@ -302,7 +302,7 @@ The terrain server uses NASA’s 10 m LOLA product for South Pole patches and th
 
 The mission tools row stays beside the viewer tabs. **Map layers**, **Add coordinates**, and **Find lunar features** open the relevant map controls; **Compare sites** takes you to the three-panel comparison. The map analysis controls start expanded, with visibility and power overlays still opt-in.
 
-Turn on **Landing Suggestions** beside the **Orbit / Moon Map / Surface** tabs and set the landing time and operating window. The switch is available in every viewer mode, including the polar and visibility maps. Enabling it takes you to the ranked shortlist. Changing views keeps that shortlist; changing the mission or maximum slope recalculates it. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
+Mission setup now shows the landing date, UTC time, operating window, and date-shift button. The old best-fit summary, priority presets, and Advanced settings are hidden. Turn on **Landing Suggestions** beside the **Orbit / Moon Map / Surface** tabs to reveal a full-width panel directly below the viewer; the ordinary site ranking follows it. Set the landing time and operating window in Mission setup. The switch is available in every viewer mode, including the polar and visibility maps. Enabling it takes you to the ranked shortlist. Changing views keeps that shortlist; changing the mission or maximum slope recalculates it. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
 
 Select a suggestion or its pin to open **Surface operations** at the patch’s coordinates, 2 m above the modeled ground. The mission timeline updates Sun and Earth positions and calculates visibility. With the terrain server running, inspection recalculates the skyline from the finer elevation window. The suggestion list uses the precomputed inventory to screen the full region. The patch stays available for inspection and comparison during the current session.
 
@@ -324,11 +324,11 @@ Clone the repo, create a branch from `main` for your task, and open a pull reque
 
 ### Publish a version
 
-Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.3.1. Each tag stays attached to its original release commit.
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.3.2. Each tag stays attached to its original release commit.
 
 ```sh
-git tag -a v1.3.1 -m "Lunar Landing Site Navigator v1.3.1 — Deb"
-git push --atomic origin main v1.3.1
+git tag -a v1.3.2 -m "Lunar Landing Site Navigator v1.3.2 — Deb"
+git push --atomic origin main v1.3.2
 ```
 
 The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)

@@ -1,5 +1,14 @@
 # Version history
 
+## v1.3.1 — Deb · Viewer-first landing suggestions (2026-11-15)
+
+- Hide the old best-fit headline/timelines, the “What matters most?” presets, and Advanced settings in Mission setup. Date, UTC time, duration, and the three-day shift remain visible.
+- Move Landing Suggestions into its own full-width panel directly after the mission viewer, before the ordinary site ranking, on desktop and mobile.
+- Preserve the scenario controls, slope limit, patch-to-Surface navigation, original map rendering, and three-panel comparison. Calculation defaults and scientific inputs are unchanged.
+- Check the requested sections are hidden, the panel follows the viewer without a layout gap, mobile has no horizontal overflow, and suggested patches still open Surface with guides available.
+
+Release prepared by **Deb**, team **Astralis**. See the [setup guide](README.md) and [references](REFERENCES.md).
+
 ## v1.3.0 — Deb · Three mission scenarios side by side (2026-11-15)
 
 Release prepared by **Deb**, team **Astralis**. Project: **Lunar Landing Site Navigator**.

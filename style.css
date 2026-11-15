@@ -123,7 +123,7 @@ details p{margin:7px 0}
 .legend-dot.feature{color:#e3e8f1}
 .custom form{padding-top:7px}
 .ranking{display:flex;flex-direction:column}
-#landing-suggestions{display:grid;gap:8px;padding-bottom:14px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+#landing-suggestions{display:grid;grid-column:1/-1;order:1;gap:8px}
 #landing-suggestions p{margin:0}
 #landing-suggestions-window,#landing-suggestions-status,#landing-suggestions details,.landing-rule{font-size:.8rem}
 .landing-scenarios{display:grid;gap:4px;margin:0;padding:0;border:0}
@@ -286,7 +286,7 @@ canvas{display:block;width:100%;height:190px}
 .primary-grid{grid-template-columns:minmax(360px,1.5fr) minmax(300px,1fr)}
 .setup,.public-answer{grid-column:1/-1}
 .setup h2{font-size:1.15rem}
-.setup form{grid-template-columns:minmax(215px,1.3fr) minmax(140px,.65fr) minmax(315px,2fr) auto;align-items:start;gap:12px}
+.setup form{grid-template-columns:minmax(215px,1.3fr) minmax(140px,.65fr) auto;align-items:end;gap:12px}
 .setup .priorities{border:0;padding:0;margin:0}
 .setup .priorities legend{font-size:.84rem;margin-bottom:4px}
 .setup .presets{margin:0}
@@ -296,7 +296,7 @@ canvas{display:block;width:100%;height:190px}
 .setup .limits .model-label,.setup .limits>label{max-width:280px;margin-top:8px}
 .setup .limits .weight{max-width:400px}
 .setup .limit-grid{max-width:600px}
-.setup #input-error{grid-column:1/-1}
+.setup #input-error,.setup #mission-year-dates{grid-column:1/-1}
 .public-answer{background:transparent;border:0;padding:6px 0}
 .answer-copy{padding:4px 0 13px}
 .answer-copy h2{font-size:clamp(1.75rem,3.35vw,3.25rem)}
@@ -397,7 +397,7 @@ canvas{display:block;width:100%;height:190px}
 @media(max-width:1150px){
   .primary-grid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
   .ranking{grid-column:auto}
-  .setup form{grid-template-columns:minmax(200px,1fr) minmax(125px,.65fr) minmax(220px,1.55fr)}
+  .setup form{grid-template-columns:minmax(200px,1fr) minmax(125px,.65fr) auto}
 }
 @media(max-width:660px){
   .hero-inner{padding:28px 12px 27px}
@@ -546,6 +546,7 @@ canvas{display:block;width:100%;height:190px}
 .mission-tools>label:has(:checked){background:#342744;border-color:#c8a9f1}
 .mission-tools input{width:auto;margin:0;accent-color:#c8a9f1}
 #landing-suggestions{scroll-margin-top:20px}
+.primary-grid>.ranking{grid-column:1/-1;order:2}
 .viewer-site{margin-top:10px}
 .viewer-site .space-readout{border:0;padding:0;display:grid;grid-template-columns:auto minmax(140px,240px) 1fr 1fr;gap:5px 13px;align-items:center}
 .viewer-site label{margin:0}
