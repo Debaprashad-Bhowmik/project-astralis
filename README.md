@@ -2,7 +2,9 @@
 
 The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
-[Windows setup](#run-astralis-on-windows) · [macOS setup](#run-astralis-on-macos)
+[Windows setup](#run-astralis-on-windows) · [macOS setup](#run-astralis-on-macos) · [Version history](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)
+
+Both commands start the newest version tagged on main. They keep a separate project-astralis-run folder for running the site, so teammates can keep their work in their existing checkout. Stop the server with Control+C and paste the same block again to check for an update.
 
 ## Run Astralis on Windows
 
@@ -54,23 +56,40 @@ The block uses WinGet to install Git and x64 Python 3.13 if needed. It then down
     }
 
     try {
-        $astralisFolder = (Get-Location).Path
-        if (-not (Test-Path -LiteralPath (Join-Path $astralisFolder 'scripts\serve_astralis.py'))) {
-            $astralisFolder = Join-Path $astralisFolder 'project-astralis'
+        $astralisRepo = 'https://github.com/Debaprashad-Bhowmik/project-astralis.git'
+        $astralisParent = (Get-Location).Path
+        if (Test-Path -LiteralPath (Join-Path $astralisParent 'scripts\serve_astralis.py') -PathType Leaf) {
+            $astralisParent = Split-Path -Parent $astralisParent
         }
+        $astralisFolder = Join-Path $astralisParent 'project-astralis-run'
         $astralisServer = Join-Path $astralisFolder 'scripts\serve_astralis.py'
-        if (-not (Test-Path -LiteralPath $astralisFolder)) {
+        $astralisGit = Find-AstralisGit
+        if (-not $astralisGit) {
+            Install-AstralisTool 'Git.Git' 'Git for Windows'
             $astralisGit = Find-AstralisGit
-            if (-not $astralisGit) {
-                Install-AstralisTool 'Git.Git' 'Git for Windows'
-                $astralisGit = Find-AstralisGit
-            }
-            if (-not $astralisGit) { throw 'Git is unavailable. Install Git for Windows using the link below, open a new PowerShell window, and paste this block again.' }
-            & $astralisGit clone https://github.com/Debaprashad-Bhowmik/project-astralis.git $astralisFolder
-            if ($LASTEXITCODE -ne 0) { throw 'Clone failed. Check your connection, GitHub invitation, and the account you signed in with.' }
         }
+        if (-not $astralisGit) { throw 'Git is unavailable. Install Git for Windows using the link below, open a new PowerShell window, and paste this block again.' }
+
+        if (-not (Test-Path -LiteralPath $astralisFolder)) {
+            & $astralisGit clone --branch main --single-branch $astralisRepo $astralisFolder
+            if ($LASTEXITCODE -ne 0) { throw 'Clone failed. Check your connection, GitHub invitation, and the account you signed in with.' }
+        } else {
+            if (-not (Test-Path -LiteralPath (Join-Path $astralisFolder '.git') -PathType Container)) {
+                throw 'project-astralis-run already exists. Paste the block in a different parent folder.'
+            }
+            $astralisOrigin = & $astralisGit -C $astralisFolder config --get remote.origin.url
+            if ($LASTEXITCODE -ne 0 -or $astralisOrigin -ne $astralisRepo) { throw 'project-astralis-run is a different checkout. Paste the block in a different parent folder.' }
+            $astralisEdits = & $astralisGit -C $astralisFolder status --porcelain --untracked-files=no
+            if ($LASTEXITCODE -ne 0 -or $astralisEdits) { throw 'Save your edits in project-astralis-run or paste the block in a different parent folder.' }
+            & $astralisGit -C $astralisFolder fetch --tags origin
+            if ($LASTEXITCODE -ne 0) { throw 'Could not check GitHub for the latest version. Check your connection and repository access, then retry.' }
+        }
+        $astralisVersion = & $astralisGit -C $astralisFolder describe --tags --abbrev=0 --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' origin/main
+        if ($LASTEXITCODE -ne 0) { throw 'A version tag could not be found on main.' }
+        & $astralisGit -C $astralisFolder switch --detach "refs/tags/$astralisVersion"
+        if ($LASTEXITCODE -ne 0) { throw "Could not check out $astralisVersion. See the Git message above." }
         if (-not (Test-Path -LiteralPath $astralisServer -PathType Leaf)) {
-            throw "The Astralis server is missing from $astralisFolder. Update that checkout or run the setup in a different parent folder."
+            throw "The Astralis server is missing from $astralisVersion."
         }
 
         $astralisEnv = Join-Path $astralisFolder '.venv'
@@ -88,6 +107,7 @@ The block uses WinGet to install Git and x64 Python 3.13 if needed. It then down
 
         & $astralisPython -m pip install --disable-pip-version-check numpy rasterio
         if ($LASTEXITCODE -ne 0) { throw 'Could not install the terrain packages. Check the pip message above and your internet connection, then retry.' }
+        Write-Host "Starting Astralis $astralisVersion"
         & $astralisPython $astralisServer --port 0 --open
         if ($LASTEXITCODE -ne 0) { throw 'The local server could not start. Check the message above.' }
     } catch {
@@ -97,8 +117,6 @@ The block uses WinGet to install Git and x64 Python 3.13 if needed. It then down
 ```
 
 If WinGet is missing or your computer blocks it, install or update App Installer, or install Git and the **64-bit Windows installer for Python 3.13** directly. Open a new PowerShell window and paste the block again. [Microsoft App Installer](https://learn.microsoft.com/en-us/windows/package-manager/winget/) · [Git for Windows](https://git-scm.com/install/win) · [Python for Windows](https://www.python.org/downloads/windows/)
-
-Paste the same block from the same folder to reopen Astralis. To update an existing `main` checkout first, open PowerShell in the repository and run `git pull --ff-only`.
 
 ## Run Astralis on macOS
 
@@ -132,23 +150,45 @@ Accept your invitation to the private repository. Open **Terminal**, go to the f
         "$astralis_brew" install "$1" || astralis_fail "Homebrew could not install $1. Check the message above and retry."
     }
 
-    astralis_folder="$PWD"
-    if [ ! -f "$astralis_folder/scripts/serve_astralis.py" ]; then
-        astralis_folder="$PWD/project-astralis"
+    astralis_repo='https://github.com/Debaprashad-Bhowmik/project-astralis.git'
+    astralis_parent="$PWD"
+    if [ -f "$astralis_parent/scripts/serve_astralis.py" ]; then
+        astralis_parent="$(dirname "$astralis_parent")"
     fi
-    if [ ! -e "$astralis_folder" ]; then
-        git --version >/dev/null 2>&1 || astralis_install git
-        command -v gh >/dev/null 2>&1 || astralis_install gh
-        if ! gh auth status --hostname github.com >/dev/null 2>&1; then
-            gh auth login --hostname github.com --git-protocol https --web ||
-                astralis_fail 'GitHub sign-in was interrupted. Sign in and retry.'
-        fi
-        gh repo clone https://github.com/Debaprashad-Bhowmik/project-astralis.git "$astralis_folder" ||
-            astralis_fail 'Clone failed. Check your connection and the GitHub account that accepted the invite.'
+    astralis_folder="$astralis_parent/project-astralis-run"
+    git --version >/dev/null 2>&1 || astralis_install git
+    command -v gh >/dev/null 2>&1 || astralis_install gh
+    if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+        gh auth login --hostname github.com --git-protocol https --web ||
+            astralis_fail 'GitHub sign-in was interrupted. Sign in and retry.'
     fi
 
+    if [ ! -e "$astralis_folder" ]; then
+        gh repo clone "$astralis_repo" "$astralis_folder" -- --branch main --single-branch ||
+            astralis_fail 'Clone failed. Check your connection and the GitHub account that accepted the invite.'
+    else
+        [ -d "$astralis_folder/.git" ] ||
+            astralis_fail 'project-astralis-run already exists. Paste the block in a different parent folder.'
+        astralis_origin="$(git -C "$astralis_folder" config --get remote.origin.url)" ||
+            astralis_fail 'The run checkout has no GitHub origin. Paste the block in a different parent folder.'
+        case "$astralis_origin" in
+            "$astralis_repo"|"${astralis_repo%.git}") ;;
+            *) astralis_fail 'project-astralis-run is a different checkout. Paste the block in a different parent folder.' ;;
+        esac
+        astralis_edits="$(git -C "$astralis_folder" status --porcelain --untracked-files=no)" ||
+            astralis_fail 'Could not check the run folder for edits.'
+        [ -z "$astralis_edits" ] ||
+            astralis_fail 'Save your edits in project-astralis-run or paste the block in a different parent folder.'
+        git -C "$astralis_folder" -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch --tags origin ||
+            astralis_fail 'Could not check GitHub for the latest version. Check your connection and repository access, then retry.'
+    fi
+
+    astralis_version="$(git -C "$astralis_folder" describe --tags --abbrev=0 --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' origin/main)" ||
+        astralis_fail 'A version tag could not be found on main.'
+    git -C "$astralis_folder" switch --detach "refs/tags/$astralis_version" ||
+        astralis_fail "Could not check out $astralis_version. See the Git message above."
     astralis_server="$astralis_folder/scripts/serve_astralis.py"
-    [ -f "$astralis_server" ] || astralis_fail 'The project folder is missing the server. Update that checkout or choose a different parent folder.'
+    [ -f "$astralis_server" ] || astralis_fail "The Astralis server is missing from $astralis_version."
 
     astralis_python="$astralis_folder/.venv/bin/python"
     if [ ! -x "$astralis_python" ]; then
@@ -158,6 +198,7 @@ Accept your invitation to the private repository. Open **Terminal**, go to the f
     fi
     "$astralis_python" -m pip install --disable-pip-version-check numpy rasterio ||
         astralis_fail 'Could not install the terrain packages. Check the pip message above and retry.'
+    printf 'Starting Astralis %s\n' "$astralis_version"
     "$astralis_python" "$astralis_server" --port 0 --open
 )
 ```
@@ -227,6 +268,17 @@ To regenerate the inventory, download the `LDRM_80S_50MPP_ADJ_SLP_100M.TIF` and 
 ## Working together
 
 Clone the repo, create a branch from `main` for your task, and open a pull request when your work is ready for review. Use GitHub Issues to share questions and track tasks.
+
+### Publish a version
+
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, tag the release commit on main, and push both together. For example, use the following commands for v1.0.1. Each tag stays attached to its original release commit.
+
+```sh
+git tag -a v1.0.1 -m "Astralis v1.0.1"
+git push --atomic origin main v1.0.1
+```
+
+The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)
 
 ## References
 

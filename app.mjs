@@ -2,7 +2,7 @@ import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, l
 import { createGlobe } from './globe.mjs'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=20261115-surface-blend'
+import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=20261115-terrain-relief'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
@@ -1589,7 +1589,7 @@ async function showNearbyCraters(site, terrain) {
 function showSurfaceCaption() {
   const height = get('surface-height').value
   const detail = surfaceTerrain.coarse ? 'This grid can miss nearby craters and slopes.' : 'Crater relief comes from NASA elevations.'
-  get('surface-caption').textContent = `${surfaceTerrain.source} · Camera ${height} m above the modeled ground. ${detail} Fine dust is illustrative.` +
+  get('surface-caption').textContent = `${surfaceTerrain.source} · Camera ${height} m above the modeled ground. ${detail} Fine dust and pebble texture are illustrative.` +
     (horizonFor(active.site) === 'terrain' ? '' : ' The readouts use the selected 0° horizon.')
   const sourceLink = get('surface-terrain-source')
   sourceLink.href = surfaceTerrain.sourceUrl ?? 'https://svs.gsfc.nasa.gov/4720/'

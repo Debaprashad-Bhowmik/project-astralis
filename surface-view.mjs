@@ -397,21 +397,28 @@ float celStep(float value, float threshold) {
   return smoothstep(threshold - width, threshold + width, value);
 }
 
-vec3 celColor(vec3 normal, float incidence, float sunVisibility, float reflectance, float detail) {
-  float plane = clamp(.58 + dot(normal, vec3(-.7,.0,.72))*.68, 0.0, 1.0);
+vec3 celColor(vec3 normal, vec2 relief, float sunVisibility, float reflectance, float detail) {
+  const vec3 fillDirection = vec3(-.50,.76,.42);
+  float facing = dot(normal, fillDirection);
+  float plane = clamp(.15 + .58 * facing, 0.0, 1.0);
   vec3 shaded = mix(vec3(.075,.087,.159), vec3(.162,.19,.30), celStep(plane,.49));
   shaded = mix(shaded, vec3(.29,.32,.44), celStep(plane,.70) * .65);
+  shaded *= mix(.70,1.15,smoothstep(.28,.98,facing));
+  float incidence = max(0.0, dot(normal, sunDirection));
   float beam = sqrt(incidence);
   vec3 sunlit = mix(vec3(.44,.425,.51), vec3(.64,.58,.53), celStep(beam,.20));
   sunlit = mix(sunlit, vec3(.77,.715,.64), celStep(beam,.43));
   sunlit = mix(sunlit, vec3(.89,.835,.75), celStep(beam,.67));
+  sunlit *= mix(.83,1.16,beam);
 
-  // The measured light and shadow mask selects the illustrated palette.
+  // Only measured slopes and cast shadows select the cel bands. Grain adds
+  // continuous shading within a band so small stones cannot create stripes.
   float illuminated = sunVisibility * smoothstep(0.0,.045,incidence);
   vec3 color = mix(shaded, sunlit, illuminated);
-  float slopeInk = smoothstep(.08,.55,length(dFdx(normal)) + length(dFdy(normal)));
-  float tone = .78 + reflectance * .44 + clamp(detail,-.35,.35) * .45;
-  return color * (1.0 - .20 * slopeInk) * tone;
+  vec3 grainNormal = normalize(normal + vec3(relief.x,0.0,relief.y) * .85);
+  float grainLight = dot(grainNormal - normal, mix(fillDirection, sunDirection, illuminated));
+  float tone = .78 + reflectance * .44 + clamp(detail,-.38,.38) * .78 + grainLight * .85;
+  return color * clamp(tone,.55,1.36);
 }
 
 void main() {
@@ -436,8 +443,7 @@ void main() {
   float coarseDetail = (fragments.r - .51) * .29 + (coarseDust - .36) * .84;
   float detail = fineDetail * fine + coarseDetail * coarse + patches * .10;
   if (inkStyle > .5) {
-    float incidence = max(0.0, dot(n,sunDirection));
-    gl_FragColor = vec4(celColor(n, incidence, direct, reflectance, detail), 1.0);
+    gl_FragColor = vec4(celColor(n, relief, direct, reflectance, detail + patches * .16), 1.0);
     return;
   }
   vec3 textured = normalize(n + vec3(relief.x,0,relief.y) * .12);
