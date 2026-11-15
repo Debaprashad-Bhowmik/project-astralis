@@ -4,41 +4,99 @@ The Astralis is building a Lunar Site Navigator for the 2026 NASA Space Apps Cha
 
 ## Run Astralis on Windows
 
-Accept your invitation to the private repository. Install Git for Windows and 64-bit Python 3.13 if needed, then open a new PowerShell window. If Git asks you to sign in, use the GitHub account that accepted the invite. [Git for Windows](https://git-scm.com/install/win) · [Python for Windows](https://www.python.org/downloads/windows/) · [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
+Accept your invitation to the private repository. Open **Windows PowerShell** in the folder where you want Astralis, use the copy button on the code block below, paste the whole block, and press Enter. If Git opens a sign-in window, use the GitHub account that accepted the invite. [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
 
-Open PowerShell in the folder where you want Astralis, paste the whole block, and press Enter. It downloads the project and bundled lunar data into `project-astralis`, installs the terrain packages in a local Python environment, and opens the website in your default browser. The terminal prints the localhost link and stays open while the site runs. Press **Ctrl+C** to stop it.
+The block uses WinGet to install Git and x64 Python 3.13 if needed. It then downloads the project and bundled lunar data, installs the terrain packages, and opens Astralis in your default browser. The terminal prints the localhost link. Keep the window open while using the site and press **Ctrl+C** to stop it. [Microsoft WinGet guide](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $astralisFolder = Join-Path (Get-Location).Path 'project-astralis'
-    $astralisServer = Join-Path $astralisFolder 'scripts\serve_astralis.py'
-    $astralisEnv = Join-Path $astralisFolder '.venv'
-    $astralisPython = Join-Path $astralisEnv 'Scripts\python.exe'
+    $PSNativeCommandUseErrorActionPreference = $false
 
-    if (-not (Test-Path -LiteralPath $astralisFolder)) {
-        git clone https://github.com/Debaprashad-Bhowmik/project-astralis.git $astralisFolder
-        if ($LASTEXITCODE -ne 0) { throw 'Clone failed. Check your GitHub invitation and sign-in.' }
+    function Find-AstralisGit {
+        $gitHomeKeys = 'HKCU:\Software\GitForWindows', 'HKLM:\Software\GitForWindows'
+        @(
+            Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+            Get-ItemProperty -LiteralPath $gitHomeKeys -ErrorAction SilentlyContinue |
+                Where-Object InstallPath | ForEach-Object { Join-Path $_.InstallPath 'cmd\git.exe' }
+            "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe"
+            "$env:ProgramFiles\Git\cmd\git.exe"
+        ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
     }
-    if (-not (Test-Path -LiteralPath $astralisServer)) {
-        throw "The Astralis server is missing from $astralisFolder. Update that clone or use a different parent folder."
-    }
-    if (-not (Test-Path -LiteralPath $astralisPython)) {
-        if (Get-Command py -ErrorAction SilentlyContinue) {
-            py -3.13 -m venv $astralisEnv
-        } else {
-            python -m venv $astralisEnv
+
+    function Find-AstralisPython {
+        $pythonKeys = 'HKCU:\Software\Python\PythonCore\3.13\InstallPath', 'HKLM:\Software\Python\PythonCore\3.13\InstallPath'
+        $candidates = @(
+            Get-ItemProperty -LiteralPath $pythonKeys -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty ExecutablePath -ErrorAction SilentlyContinue
+            Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+            "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+            "$env:ProgramFiles\Python313\python.exe"
+        )
+        foreach ($candidate in $candidates) {
+            if (-not $candidate -or $candidate -like '*\Microsoft\WindowsApps\*' -or
+                -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+            $compatible = & $candidate -c "import sys, sysconfig; print(sys.version_info[:2] == (3, 13) and sysconfig.get_platform() == 'win-amd64')"
+            if ($compatible -eq 'True') { return $candidate }
         }
-        if ($LASTEXITCODE -ne 0) { throw 'Could not create the Python environment. Check your Python 3.13 installation.' }
     }
 
-    & $astralisPython -m pip install --disable-pip-version-check numpy rasterio
-    if ($LASTEXITCODE -ne 0) { throw 'Could not install the terrain packages.' }
-    & $astralisPython $astralisServer --port 0 --open
+    function Install-AstralisTool($package, $label, [string[]]$options = @()) {
+        $winget = Get-Command winget.exe -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $winget) {
+            throw "${label} is missing and WinGet is unavailable. See the install links below this block, then reopen PowerShell and paste it again."
+        }
+        Write-Host "Installing $label..."
+        & $winget.Source install --id $package --exact --source winget --scope user --silent --accept-package-agreements --accept-source-agreements @options
+        if ($LASTEXITCODE -ne 0) { Write-Host "WinGet returned $LASTEXITCODE while installing $label. Checking for the installed program..." }
+    }
+
+    try {
+        $astralisFolder = (Get-Location).Path
+        if (-not (Test-Path -LiteralPath (Join-Path $astralisFolder 'scripts\serve_astralis.py'))) {
+            $astralisFolder = Join-Path $astralisFolder 'project-astralis'
+        }
+        $astralisServer = Join-Path $astralisFolder 'scripts\serve_astralis.py'
+        if (-not (Test-Path -LiteralPath $astralisFolder)) {
+            $astralisGit = Find-AstralisGit
+            if (-not $astralisGit) {
+                Install-AstralisTool 'Git.Git' 'Git for Windows'
+                $astralisGit = Find-AstralisGit
+            }
+            if (-not $astralisGit) { throw 'Git is unavailable. Install Git for Windows using the link below, open a new PowerShell window, and paste this block again.' }
+            & $astralisGit clone https://github.com/Debaprashad-Bhowmik/project-astralis.git $astralisFolder
+            if ($LASTEXITCODE -ne 0) { throw 'Clone failed. Check your connection, GitHub invitation, and the account you signed in with.' }
+        }
+        if (-not (Test-Path -LiteralPath $astralisServer -PathType Leaf)) {
+            throw "The Astralis server is missing from $astralisFolder. Update that checkout or run the setup in a different parent folder."
+        }
+
+        $astralisEnv = Join-Path $astralisFolder '.venv'
+        $astralisPython = Join-Path $astralisEnv 'Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $astralisPython -PathType Leaf)) {
+            $basePython = Find-AstralisPython
+            if (-not $basePython) {
+                Install-AstralisTool 'Python.Python.3.13' 'Python 3.13 (x64)' -options @('--architecture','x64')
+                $basePython = Find-AstralisPython
+            }
+            if (-not $basePython) { throw 'Python 3.13 (x64) is unavailable. Use the Python link below, open a new PowerShell window, and paste this block again.' }
+            & $basePython -m venv $astralisEnv
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the local Python environment. Check that you can write to the project folder, then retry.' }
+        }
+
+        & $astralisPython -m pip install --disable-pip-version-check numpy rasterio
+        if ($LASTEXITCODE -ne 0) { throw 'Could not install the terrain packages. Check the pip message above and your internet connection, then retry.' }
+        & $astralisPython $astralisServer --port 0 --open
+        if ($LASTEXITCODE -ne 0) { throw 'The local server could not start. Check the message above.' }
+    } catch {
+        Write-Host "Astralis setup stopped. $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 ```
 
-Run the same block from the same parent folder to reopen Astralis. To get the latest `main` first, run `git -C .\project-astralis pull --ff-only` from that folder while your checkout is on `main`.
+If WinGet is missing or your computer blocks it, install or update App Installer, or install Git and the **64-bit Windows installer for Python 3.13** directly. Open a new PowerShell window and paste the block again. [Microsoft App Installer](https://learn.microsoft.com/en-us/windows/package-manager/winget/) · [Git for Windows](https://git-scm.com/install/win) · [Python for Windows](https://www.python.org/downloads/windows/)
+
+Paste the same block from the same folder to reopen Astralis. To update an existing `main` checkout first, open PowerShell in the repository and run `git pull --ff-only`.
 
 ## Explore the app
 
