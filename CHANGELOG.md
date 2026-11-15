@@ -1,5 +1,26 @@
 # Version history
 
+## v1.2.1 — Deb · Restore mission tools and strengthen distant focus (2026-11-15)
+
+Release prepared by **Deb**, team **Astralis**. Project: **Lunar Landing Site Navigator**.
+
+### Fixes
+
+- Make **Landing Suggestions** visible beside the Orbit, Moon Map, and Surface tabs. Enabling it takes the user to the shortlist with Best communications, Best solar power, Best balance, and the editable slope limit.
+- Fix projection changes cancelling the landing worker and clearing the shortlist. Results now persist across 3D, polar, visibility, Orbit, and Surface views; mission and slope changes still recalculate them. Selecting a patch still opens its first-person terrain.
+- Add direct access to map layers, custom coordinates, named lunar features, and two-site comparisons. Expand map analysis controls by default without turning on visibility/power overlays.
+- Fix **Find Sun**, **Find Earth**, and off-screen targeting in the whole-year Surface view: aim at the displayed date, not the mission's original time. Off-screen buttons return keyboard focus to the visible primary control.
+- Double the maximum **Distant softness** blur radius from 2.6 to 5.2 CSS pixels. Keep foreground detail, sky bodies, annotations, terrain elevations, crater shadows, and planning calculations unchanged.
+
+### Validation and references
+
+- 69 numerical, terrain, geometry, and camera tests; 121 bundled asset/data checksums.
+- Add a reproducible Chromium browser regression check and run it in GitHub Actions. It covers suggestion visibility/persistence, all three ranking scenarios, mission/slope changes, patch Surface inspection, annual targeting, map layers, custom and catalog sites, comparison dates, CSV, leap years, and mobile navigation.
+- Check the live terrain server at named, custom, and suggested locations; verify stronger distant focus on the GPU while nearby and sky pixels remain unchanged. Windows and macOS launcher syntax is checked; both launchers continue to select the latest tagged release.
+- Scientific sources and derived data are unchanged. Source provenance, rendering references, and AI/artwork disclosures remain in [REFERENCES.md](REFERENCES.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). These are sampled planning suggestions, not certified safe landing sites.
+
+Stop the previous local server with **Ctrl+C** and rerun the Windows or macOS command in [README.md](README.md). The terminal and footer show **v1.2.1**. Repository access remains private.
+
 ## v1.2.0 — Deb · Connected lunar views and surface guides (2026-11-15)
 
 Release prepared by **Deb**, team **Astralis**. Project: **Lunar Landing Site Navigator**.

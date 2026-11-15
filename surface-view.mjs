@@ -4,7 +4,7 @@ import { horizonProfile, loadTerrainSampler, polarHorizon } from './terrain.mjs'
 import { loadPolarGrids, polarProjection, samplePolarGrid } from './polar-shadows.mjs'
 import { buildSurfaceDetail, surfaceDetailStride } from './surface-detail.mjs?v=3'
 import { surfaceFocalLength } from './viewer-flight.mjs'
-import { createDistantFocus, distantFocusRange } from './surface-focus.mjs'
+import { createDistantFocus, distantFocusRange } from './surface-focus.mjs?v=1.2.1'
 
 const radians = Math.PI / 180
 const spokes = 180

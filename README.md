@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.2.0 · Release prepared by Deb**
+**Team: Astralis · v1.2.1 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
@@ -11,7 +11,7 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.2.0 release notes](CHANGELOG.md) |
+| Review what changed | [v1.2.1 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
@@ -250,7 +250,7 @@ Apollo 12 and Surveyor 3 share a 2.05 km square of LROC stereo elevation data wi
 
 Focus the 3D scene and hold **W, A, S, D** to move, or use the buttons below it to step 10 m at a time. The camera follows the measured terrain and can move up to 500 m from the landing point. Generated rocks and shallow soil relief appear in the foreground at named sites, custom coordinates, and suggested patches. The rocks use closed, irregular shapes with blended face normals and texture on every side. A continuous centimeter-scale soil overlay adds uneven ground without flattening the measured elevations. These illustrative details cast moving shadows in both Illustrated and Natural styles. The timeline, power estimates, and landing rankings use the measured terrain at the selected coordinates.
 
-**Distant softness** in **Camera, walking and terrain details** is on by default. A depth-aware camera effect gradually softens far terrain, with a maximum blur radius of 2.6 screen pixels. At eye level and 1× zoom, the transition spans approximately 60–800 m in front of the camera; survey height and zoom move the focus range farther away. Nearby ground, sky bodies, labels, and the terrain silhouette stay sharp. Switch it off for a fully sharp view. It is a presentation choice, not lunar haze or extra measured detail. Synthetic rocks are loaded beyond their visible range and settle gradually into their support at distance, with the same transition in their cast shadows. The measured ground, crater elevations, and planning calculations are unchanged. If the device lacks a suitable depth framebuffer, the view remains sharp.
+**Distant softness** in **Camera, walking and terrain details** is on by default. A depth-aware camera effect gradually softens far terrain, with a maximum blur radius of 5.2 screen pixels (twice the v1.2.0 radius). At eye level and 1× zoom, the transition spans approximately 60–800 m in front of the camera; survey height and zoom move the focus range farther away. Nearby ground, sky bodies, labels, and the terrain silhouette stay sharp. Switch it off for a fully sharp view. It is a presentation choice, not lunar haze or extra measured detail. Synthetic rocks are loaded beyond their visible range and settle gradually into their support at distance, with the same transition in their cast shadows. The measured ground, crater elevations, and planning calculations are unchanged. If the device lacks a suitable depth framebuffer, the view remains sharp.
 
 **Sun & Earth guides** sits beside **Find Sun** and **Find Earth**, directly below the Surface viewer. Turn it on for body labels, paths across the local sky, camera bearing, and clickable off-screen arrows. Turn it off to hide all those annotations. Paths follow the mission window or selected whole year; the yearly preview samples directions every six hours. These are apparent sky paths from the selected landing site, not orbital ellipses drawn on the lunar ground.
 
@@ -298,7 +298,9 @@ The terrain server uses NASA’s 10 m LOLA product for South Pole patches and th
 
 ### South Pole landing suggestions
 
-Turn on **Landing Suggestions** in the 3D Moon’s map layers and set the landing time and operating window. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
+The mission tools row stays beside the viewer tabs. **Map layers**, **Add coordinates**, and **Find lunar features** open the relevant map controls; **Compare sites** takes you to the two-site comparison. The map analysis controls start expanded, with visibility and power overlays still opt-in.
+
+Turn on **Landing Suggestions** beside the **Orbit / Moon Map / Surface** tabs and set the landing time and operating window. The switch is available in every viewer mode, including the polar and visibility maps. Enabling it takes you to the ranked shortlist. Changing views keeps that shortlist; changing the mission or maximum slope recalculates it. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
 
 Select a suggestion or its pin to open **Surface operations** at the patch’s coordinates, 2 m above the modeled ground. The mission timeline updates Sun and Earth positions and calculates visibility. With the terrain server running, inspection recalculates the skyline from the finer elevation window. The suggestion list uses the precomputed inventory to screen the full region. The patch stays available for inspection and comparison during the current session.
 
@@ -318,11 +320,11 @@ Clone the repo, create a branch from `main` for your task, and open a pull reque
 
 ### Publish a version
 
-Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.2.1. Each tag stays attached to its original release commit.
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.2.2. Each tag stays attached to its original release commit.
 
 ```sh
-git tag -a v1.2.1 -m "Lunar Landing Site Navigator v1.2.1 — Deb"
-git push --atomic origin main v1.2.1
+git tag -a v1.2.2 -m "Lunar Landing Site Navigator v1.2.2 — Deb"
+git push --atomic origin main v1.2.2
 ```
 
 The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)

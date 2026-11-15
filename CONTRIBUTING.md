@@ -1,6 +1,6 @@
 # Working on Lunar Landing Site Navigator
 
-Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.2.0 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
+Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.2.1 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
 
 ## Access and setup
 
@@ -29,15 +29,25 @@ git diff --check
 
 If intentionally changing a bundled asset or data file, update its reference entry, run `python scripts/asset_manifest.py`, and review the checksum diff before rerunning `--check`. Checksums identify the bundled derivatives; they do not independently validate the science.
 
+Run the same browser regression check used in GitHub Actions:
+
+```sh
+python -m pip install playwright==1.65.2
+python -m playwright install chromium
+python scripts/check_browser.py
+```
+
+This starts a temporary local server and checks the real bundled data, landing suggestions, all three rankings, projection changes, patch inspection, yearly Sun/Earth targeting, map filters, coordinates, comparison, CSV export, and mobile navigation. It deliberately tests the bundled-terrain fallback without downloading remote elevation tiles. To also exercise your running terrain server, use `python scripts/check_browser.py --url http://localhost:4173/`. `--browser-path` accepts an installed Chrome/Chromium executable. Browser checks complement the numerical tests; they do not establish scientific accuracy.
+
 ## Publish a named version
 
-Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.2.0 release is credited to Deb.
+Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.2.1 release is credited to Deb.
 
 After review and tests, commit the intended files on `main`. For example, the *next fix release* could use:
 
 ```sh
-git tag -a v1.2.1 -m "Lunar Landing Site Navigator v1.2.1 — Deb"
-git push --atomic origin main v1.2.1
+git tag -a v1.2.2 -m "Lunar Landing Site Navigator v1.2.2 — Deb"
+git push --atomic origin main v1.2.2
 ```
 
 Create a GitHub Release from that tag using the corresponding changelog entry. Verify the tag and `main` point to the intended commit and that the README launch commands select it. Teammates stop the old server with Ctrl+C and rerun the same launch command to update. Feature branches do not need release tags.

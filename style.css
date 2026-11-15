@@ -529,6 +529,12 @@ canvas{display:block;width:100%;height:190px}
 .viewer-tabs{display:flex;gap:4px;margin-top:9px;padding:4px;background:#07070a;border:1px solid var(--line);border-radius:9px;width:max-content;max-width:100%}
 .viewer-tabs .subtle{min-width:110px;min-height:38px;border-color:transparent;font-weight:650}
 .viewer-tabs .subtle[aria-pressed=true]{background:#242433;border-color:#6e6386;color:#faf4ff}
+.mission-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.mission-tools .subtle,.mission-tools>label{min-height:38px;display:inline-flex;align-items:center;gap:8px;margin:0;padding:7px 10px;font-size:.85rem}
+.mission-tools>label{border:1px solid #8a77a9;border-radius:6px;background:#211b2c;cursor:pointer;font-weight:650}
+.mission-tools>label:has(:checked){background:#342744;border-color:#c8a9f1}
+.mission-tools input{width:auto;margin:0;accent-color:#c8a9f1}
+#landing-suggestions{scroll-margin-top:20px}
 .viewer-site{margin-top:10px}
 .viewer-site .space-readout{border:0;padding:0;display:grid;grid-template-columns:auto minmax(140px,240px) 1fr 1fr;gap:5px 13px;align-items:center}
 .viewer-site label{margin:0}

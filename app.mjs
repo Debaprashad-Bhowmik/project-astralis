@@ -2,7 +2,7 @@ import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, l
 import { createGlobe, globeOrientation } from './globe.mjs?v=map-system-1'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs?v=map-system-1'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=1.2.0'
+import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=1.2.1'
 import { surfaceFlightFrame } from './viewer-flight.mjs'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
@@ -717,9 +717,12 @@ function updateLandingScenario() {
 }
 
 function syncLandingSuggestions() {
-  const toggle = get('landing-suggestions-toggle')
-  toggle.hidden = !globe || get('globe-view').hidden
-  const enabled = !toggle.hidden && get('layer-landing-suggestions').checked && Boolean(settings)
+  const toggle = get('layer-landing-suggestions')
+  toggle.disabled = !settings
+  for (const button of document.querySelectorAll('[data-map-tool]')) button.disabled = !settings
+  // Planning depends on the mission, not which camera or map projection is visible.
+  // Changing views must not cancel the worker or discard the ranked patches.
+  const enabled = toggle.checked && Boolean(settings)
   get('landing-suggestions').hidden = !enabled
   const preference = landingPreference()
   if (enabled) showLandingScenarioRule(preference)
@@ -2366,8 +2369,8 @@ get('surface-walk-reset').addEventListener('click', () => surfaceView?.returnToL
 for (const body of ['sun', 'earth']) {
   function findBody(event) {
     if (!active) return
-    const sample = active.timeline[Math.round(elapsed * 4)]
-    if (event.currentTarget.id.includes('guide')) get(`surface-${body}`).focus({ preventScroll: true })
+    const sample = viewerSample()
+    if (event.currentTarget.id.includes('guide')) get(`surface-primary-${body}`).focus({ preventScroll: true })
     surfaceView?.aim(sample[`${body}Az`], sample[`${body}El`])
   }
   for (const button of inputs(`surface-${body}`, `surface-guide-${body}`)) button.addEventListener('click', findBody)
@@ -2462,7 +2465,22 @@ get('map-color-metric').addEventListener('change', showCoverage)
 get('layer-landing-suggestions').addEventListener('change', event => {
   if (event.currentTarget.checked) globe?.southPole()
   syncLandingSuggestions()
+  if (!get('landing-suggestions').hidden) {
+    get('landing-suggestions-heading').focus({ preventScroll: true })
+    get('landing-suggestions').scrollIntoView({ behavior: 'instant', block: 'start' })
+  }
 })
+for (const button of document.querySelectorAll('[data-map-tool]')) {
+  button.addEventListener('click', async () => {
+    await setViewerMode('map')
+    const panel = get(button.dataset.mapTool)
+    panel.open = true
+    if (button.dataset.mapTool === 'viewer-analysis' && !get('polar-view').hidden) useMap('globe')
+    const target = panel.querySelector('input:not(:disabled), summary')
+    target?.focus({ preventScroll: true })
+    panel.scrollIntoView({ behavior: 'instant', block: 'start' })
+  })
+}
 get('landing-max-slope').addEventListener('change', syncLandingSuggestions)
 for (const input of inputs('landing-scenarios', 'landing-window-body', 'landing-window-share')) {
   input.addEventListener('change', updateLandingScenario)

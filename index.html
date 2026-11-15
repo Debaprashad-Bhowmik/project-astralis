@@ -9,8 +9,8 @@
   <meta name="author" content="Astralis">
   <link rel="icon" href="./assets/the-astralis-logo.png?v=team-wordmark-2">
   <title>Lunar Landing Site Navigator · Team Astralis</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.0">
-  <script type="module" src="./app.mjs?v=1.2.0"></script>
+  <link rel="stylesheet" href="./style.css?v=1.2.1">
+  <script type="module" src="./app.mjs?v=1.2.1"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
@@ -169,6 +169,13 @@
             <button type="button" class="subtle" data-viewer="map" aria-controls="viewer-map" aria-pressed="false">Moon Map</button>
             <button type="button" class="subtle" data-viewer="surface" aria-controls="viewer-surface" aria-pressed="false">Surface</button>
           </div>
+          <nav class="mission-tools" aria-label="Mission planning tools">
+            <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox" aria-controls="landing-suggestions" disabled> Landing Suggestions</label>
+            <button type="button" class="subtle" data-map-tool="viewer-analysis" disabled>Map layers</button>
+            <button type="button" class="subtle" data-map-tool="custom-coordinates" disabled>Add coordinates</button>
+            <button type="button" class="subtle" data-map-tool="named-features" disabled>Find lunar features</button>
+            <a class="subtle" href="#compare-heading">Compare sites</a>
+          </nav>
           <p id="space-error" class="error" role="status" hidden></p>
           <p id="space-status" class="muted" role="status">Loading 3D positions…</p>
           <div id="space-content" hidden>
@@ -246,8 +253,8 @@
             <div class="panel-heading"><h2 id="map-heading">Lunar sites</h2>
               <div class="map-view" role="group" aria-label="Map view"><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-coverage" aria-pressed="false">Visibility map</button></div>
             </div>
-            <details class="viewer-options" id="viewer-analysis">
-              <summary>Analyze landing conditions <span>Visibility, power and landing suggestions</span></summary>
+            <details class="viewer-options" id="viewer-analysis" open>
+              <summary>Analyze landing conditions <span>Visibility, power and crater shadows</span></summary>
             <label class="map-scope"><input id="mission-heat-south" type="checkbox"> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
             <div class="coverage-toolbar" id="coverage-toolbar">
               <fieldset class="map-filters" id="coverage-filters">
@@ -258,7 +265,6 @@
                 <label><input id="layer-both" type="checkbox"> Both in view now</label>
                 <label><input id="layer-power" type="checkbox"> Solar power</label>
                 <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
-                <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox"> Landing Suggestions</label>
               </fieldset>
               <label id="mission-heat-period-label" hidden>Heat map period
                 <select id="mission-heat-period"></select>
@@ -359,7 +365,7 @@
             </div>
             <p class="muted" id="coordinate-status" role="status"></p>
             <p class="error" id="coordinate-error" role="alert" hidden></p>
-            <details class="custom">
+            <details class="custom" id="custom-coordinates">
               <summary>Add a coordinate</summary>
               <form id="coordinates" novalidate>
                 <div class="limit-grid">
@@ -423,7 +429,7 @@
 
         <section class="panel ranking" aria-labelledby="rank-heading">
           <section id="landing-suggestions" aria-labelledby="landing-suggestions-heading" hidden>
-            <h2 id="landing-suggestions-heading">Landing Suggestions</h2>
+            <h2 id="landing-suggestions-heading" tabindex="-1">Landing Suggestions</h2>
             <p id="landing-suggestions-window" class="muted"></p>
             <fieldset id="landing-scenarios" class="landing-scenarios" aria-describedby="landing-scenario-rule">
               <legend>Rank patches by</legend>
@@ -607,6 +613,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by team Astralis · v1.2.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by team Astralis · v1.2.1 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>

@@ -29,3 +29,9 @@ jobs:
         run: python -m compileall -q scripts
       - name: Bundled data and asset integrity
         run: python scripts/asset_manifest.py --check
+      - name: Install browser regression tools
+        run: |
+          python -m pip install playwright==1.65.2
+          python -m playwright install --with-deps chromium
+      - name: Mission tools browser regressions (bundled terrain)
+        run: python scripts/check_browser.py

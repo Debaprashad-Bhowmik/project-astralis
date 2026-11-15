@@ -91,7 +91,7 @@ export function createDistantFocus(gl) {
       gl.uniform1i(uniforms.scene,6)
       gl.uniform2f(uniforms.texel,1/width,1/height)
       gl.uniform2fv(uniforms.focusRange,range)
-      gl.uniform1f(uniforms.radius,enabled?2.6*pixel:0)
+      gl.uniform1f(uniforms.radius,enabled?5.2*pixel:0)
       gl.bindBuffer(gl.ARRAY_BUFFER,quad)
       gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0)
       for (const index of [1,2,3]) gl.disableVertexAttribArray(index)
