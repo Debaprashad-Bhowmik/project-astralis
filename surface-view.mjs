@@ -2,7 +2,9 @@ import { earthOrientation, loadBodyTexture, rotateBodyVector, textureOffset } fr
 import { earthRadius, observer, radius } from './planner.mjs'
 import { horizonProfile, loadTerrainSampler, polarHorizon } from './terrain.mjs'
 import { loadPolarGrids, polarProjection, samplePolarGrid } from './polar-shadows.mjs'
-import { buildSurfaceDetail, surfaceDetailStride } from './surface-detail.mjs?v=2'
+import { buildSurfaceDetail, surfaceDetailStride } from './surface-detail.mjs?v=3'
+import { surfaceFocalLength } from './viewer-flight.mjs'
+import { createDistantFocus, distantFocusRange } from './surface-focus.mjs'
 
 const radians = Math.PI / 180
 const spokes = 180
@@ -306,19 +308,35 @@ function terrainNormals(mesh) {
   return normals
 }
 
+const detailPlacement = `
+attribute vec2 detailPlacement;
+uniform vec3 cameraPosition;
+float detailCoverage(vec3 point) {
+  return detailPlacement.x<=0.0?1.0:1.0-smoothstep(detailPlacement.x*.65,detailPlacement.x,length(point.xz-cameraPosition.xz));
+}
+vec3 placedDetail(vec3 point) {
+  if (detailPlacement.x<=0.0) return point;
+  // Only synthetic stones settle into their measured support at far distance.
+  // Ground elevations and full-size near rocks are untouched; no noisy holes.
+  return vec3(point.x,mix(detailPlacement.y-.005,point.y,detailCoverage(point)),point.z);
+}
+`
 const vertex = `
 attribute vec3 position, normal;
 attribute float stoneTone;
-uniform vec3 cameraRight, cameraUp, cameraForward, cameraPosition;
+uniform vec3 cameraRight, cameraUp, cameraForward;
 uniform vec2 lens;
 varying vec3 terrain;
 varying vec3 groundNormal;
 varying float stone;
+varying float fadeRange;
+${detailPlacement}
 void main() {
-  terrain = position;
-  groundNormal = normal;
+  terrain = placedDetail(position);
+  groundNormal = detailPlacement.x>0.0?normalize(vec3(normal.x,normal.y/max(.001,detailCoverage(position)),normal.z)):normal;
   stone = stoneTone;
-  vec3 view = position - cameraPosition;
+  fadeRange = detailPlacement.x;
+  vec3 view = terrain - cameraPosition;
   float z = dot(view, cameraForward);
   // The landing-point vertex can lie exactly on the camera plane. Keep its
   // clip-space w nonzero so clipping preserves the ground texture interpolation.
@@ -326,11 +344,23 @@ void main() {
   gl_Position = vec4(dot(view, cameraRight) * lens.x, dot(view, cameraUp) * lens.y,
                      z * 1.000003 - 2.0, z);
 }`
+const detailFade = `
+varying float fadeRange;
+uniform vec3 cameraPosition;
+bool fadedDetail() {
+  if (fadeRange <= 0.0) return false;
+  float coverage = 1.0 - smoothstep(fadeRange*.65,fadeRange,length(terrain.xz-cameraPosition.xz));
+  if (coverage >= 1.0) return false;
+  return coverage <= .001;
+}
+`
 const fragment = `
 #extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec3 sunDirection;
 uniform float daylight, inkStyle;
+uniform float outputDepth;
+uniform vec3 cameraForward;
 uniform vec3 siteEast, siteNorth, siteUp;
 uniform float siteRadius;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent, localShadowExtent;
@@ -340,6 +370,12 @@ uniform float shadowPixel, localShadowPixel, detailShadowPixel;
 varying vec3 terrain;
 varying vec3 groundNormal;
 varying float stone;
+${detailFade}
+vec4 terrainColor(vec3 color) {
+  float depth=max(0.0,dot(terrain-cameraPosition,cameraForward));
+  float encodedDepth=.0625+log2(1.0+depth)/20.0;
+  return vec4(color,outputDepth>.5?clamp(encodedDepth,.0625,1.0):1.0);
+}
 const float pi = 3.14159265359;
 float hash(vec2 cell) {
   return fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
@@ -461,6 +497,7 @@ vec3 celColor(vec3 normal, vec3 relief, float sunVisibility, float reflectance, 
 }
 
 void main() {
+  if (fadedDetail()) discard;
   vec3 n = normalize(groundNormal);
   vec3 point = normalize(siteUp * (siteRadius + terrain.y) + siteEast * terrain.x + siteNorth * terrain.z);
   vec2 uv = vec2(atan(point.y, point.x) / (2.0*pi) + .5, .5 - asin(clamp(point.z,-1.0,1.0)) / pi);
@@ -504,7 +541,7 @@ void main() {
 
   }
   if (inkStyle > .5) {
-    gl_FragColor = vec4(celColor(n, relief, direct, reflectance, detail + patches * .16) * material, 1.0);
+    gl_FragColor = terrainColor(celColor(n, relief, direct, reflectance, detail + patches * .16) * material);
     return;
   }
   vec3 textured = normalize(n + relief * .25);
@@ -514,19 +551,27 @@ void main() {
   float exposure = mix(1.88, 1.48, smoothstep(.02,.6,sunDirection.y));
   vec3 shade = vec3(.031,.034,.041) + vec3(1.03,1.0,.97) * (exposure * pow(lit,.55));
   vec3 exposed = albedo * shade;
-  gl_FragColor = vec4(exposed / (1.0 + exposed * .38), 1.0);
+  gl_FragColor = terrainColor(exposed / (1.0 + exposed * .38));
 }`
 
 const shadowVertex = `
 attribute vec3 position;
+varying vec3 terrain;
+varying float fadeRange;
 uniform vec3 shadowRight, shadowUp, shadowDepth, shadowExtent, shadowCenter;
+${detailPlacement}
 void main() {
-  vec3 relative = position - shadowCenter;
+  terrain=placedDetail(position);
+  fadeRange=detailPlacement.x;
+  vec3 relative = terrain - shadowCenter;
   gl_Position = vec4(vec3(dot(relative,shadowRight),dot(relative,shadowUp),dot(relative,shadowDepth)) / shadowExtent, 1.0);
 }`
 const shadowFragment = `
 precision highp float;
+varying vec3 terrain;
+${detailFade}
 void main() {
+  if (fadedDetail()) discard;
   vec3 depth = fract(gl_FragCoord.z * vec3(1.0, 255.0, 65025.0));
   depth.xy -= depth.yz / 255.0;
   gl_FragColor = vec4(depth, 1.0);
@@ -544,6 +589,7 @@ function terrainProgram(gl, vertexSource, fragmentSource) {
   gl.bindAttribLocation(program, 0, 'position')
   gl.bindAttribLocation(program, 1, 'normal')
   gl.bindAttribLocation(program, 2, 'stoneTone')
+  gl.bindAttribLocation(program, 3, 'detailPlacement')
   gl.linkProgram(program)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('The 3D terrain renderer could not start. Use the skyline plot.')
   return program
@@ -556,13 +602,14 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   if (!gl || !sky || !ctx || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D terrain is unavailable in this browser. Use the skyline plot.')
   const program = terrainProgram(gl, vertex, fragment)
   const shadowProgram = terrainProgram(gl, shadowVertex, shadowFragment)
+  const distantFocus = createDistantFocus(gl)
   const shadowNames = ['shadowRight', 'shadowUp', 'shadowDepth', 'shadowExtent']
   const locations = (owner, names) => Object.fromEntries(names.map(name => [name, gl.getUniformLocation(owner, name)]))
   const uniforms = locations(program, ['cameraRight', 'cameraUp', 'cameraForward', 'cameraPosition', 'lens', 'sunDirection', 'daylight', 'inkStyle',
     'siteEast', 'siteNorth', 'siteUp', 'siteRadius', 'albedoMap', 'shadowMap', 'localShadowMap', 'regolithMap', 'dustMap',
     'shadowPixel', 'localShadowPixel', 'localShadowExtent', 'detailShadowMap', 'detailShadowPixel', 'detailShadowExtent',
-    'detailShadowCenter', ...shadowNames])
-  const shadowUniforms = locations(shadowProgram, [...shadowNames, 'shadowCenter'])
+    'detailShadowCenter', 'outputDepth', ...shadowNames])
+  const shadowUniforms = locations(shadowProgram, [...shadowNames, 'shadowCenter', 'cameraPosition'])
   const vertices = gl.createBuffer()
   const normals = gl.createBuffer()
   const elements = gl.createBuffer()
@@ -574,6 +621,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0)
     gl.disableVertexAttribArray(2)
     gl.vertexAttrib1f(2, 0)
+    gl.disableVertexAttribArray(3)
+    gl.vertexAttrib2f(3, 0, 0)
   }
   function bindDetail() {
     const bytes = Float32Array.BYTES_PER_ELEMENT
@@ -583,6 +632,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 3 * bytes)
     gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 6 * bytes)
     gl.enableVertexAttribArray(2)
+    gl.vertexAttribPointer(3, 2, gl.FLOAT, false, stride, 7 * bytes)
+    gl.enableVertexAttribArray(3)
   }
   gl.useProgram(program)
   gl.enableVertexAttribArray(0)
@@ -663,6 +714,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   let cameraHeight = 2
   let zoom = 1
   let illustrated = true
+  let softDistance = true
   let drag
   let paths
   let shadowSample
@@ -777,6 +829,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       gl.uniform3f(bindings.shadowExtent, width, height, width)
     }
     gl.useProgram(shadowProgram)
+    gl.uniform3f(shadowUniforms.cameraPosition, walkEast, groundHeight + cameraHeight, walkNorth)
     if (refreshTerrain) {
       bindTerrain()
       for (const [target, extent] of [[regionalTarget, [width, height, width]], [localTarget, localShadowExtent]]) {
@@ -806,9 +859,10 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       canvas.height = skyCanvas.height = overlay.height = pixelHeight
     }
     const camera = surfaceCamera(azimuth, elevation)
-    const scale = Math.min(width, height) * .83 * zoom
+    const scale = surfaceFocalLength(width, height, zoom)
     updateDetail()
     drawShadows()
+    const focused = !flying && distantFocus?.begin(pixelWidth,pixelHeight)
     gl.useProgram(program)
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clearColor(0, 0, 0, 0)
@@ -821,6 +875,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     gl.uniform3fv(uniforms.sunDirection, direction(sample.sunAz, sample.sunEl))
     gl.uniform1f(uniforms.daylight, sample.eclipse ? 0 : 1)
     gl.uniform1f(uniforms.inkStyle, Number(illustrated))
+    gl.uniform1f(uniforms.outputDepth, Number(!!focused))
     gl.uniform3fv(uniforms.detailShadowCenter, detailCenter)
     bindTerrain()
     gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0)
@@ -828,6 +883,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       bindDetail()
       gl.drawArrays(gl.TRIANGLES, 0, detailCount)
     }
+    if (focused) distantFocus.finish(pixelWidth,pixelHeight,pixel,distantFocusRange(cameraHeight,zoom),softDistance)
 
     sky.setTransform(pixel, 0, 0, pixel, 0, 0)
     sky.clearRect(0, 0, width, height)
@@ -976,6 +1032,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
     walkEast = east
     walkNorth = north
     groundHeight = ground
+    detailShadowSample = null
     draw()
   }
 
@@ -1046,6 +1103,7 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
       aim(heading, pitch ?? Math.atan2(ground - groundHeight - cameraHeight, Math.max(range, 1)) / radians)
     },
     setZoom(value) { zoom = value; draw() }, setStyle(value) { illustrated = value === 'illustrated'; draw() },
+    setDistantSoftness(value) { softDistance = value; draw() },
     setHeight(value) {
       if (value > 2 && cameraHeight === 2) elevation = Math.min(elevation, -12)
       if (value === 2 && cameraHeight > 2) elevation = 2
@@ -1088,8 +1146,8 @@ export function createSurfaceView(canvas, skyCanvas, overlay, showHeading) {
   } }
 }
 
-export function surfacePaths(samples) {
-  return Object.fromEntries(['sun', 'earth'].map(body => [body, samples.filter((_, i) => i % 4 === 0 || i === samples.length - 1)
+export function surfacePaths(samples, stride = 4) {
+  return Object.fromEntries(['sun', 'earth'].map(body => [body, samples.filter((_, i) => i % stride === 0 || i === samples.length - 1)
     .map(item => direction(item[`${body}Az`], item[`${body}El`]))]))
 }
 

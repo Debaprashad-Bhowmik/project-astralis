@@ -191,6 +191,24 @@ test('generated rocks and soil relief stay anchored while walking, including at 
   }
 })
 
+test('visible rocks survive a diagonal streaming-tile boundary before fading out', () => {
+  const frame = observer(-3.01, -23.42, 0)
+  const visible = mesh => {
+    const points = []
+    for (let i = 0; i < mesh.length; i += surfaceDetailStride) {
+      if (mesh[i + 6] > 0 && Math.hypot(mesh[i] - 6, mesh[i + 2] - 6) < 28) {
+        points.push(mesh.subarray(i, i + surfaceDetailStride).join(','))
+      }
+    }
+    return points.sort()
+  }
+  const before = visible(buildSurfaceDetail(frame, 0, 0, () => -2))
+  const after = visible(buildSurfaceDetail(frame, 12, 12, () => -2))
+  assert.ok(before.length > 0)
+  assert.equal(before.length, after.length, 'a tile change must not replace rocks still inside the visible distance')
+  assert.ok(before.every((value, i) => value === after[i]), 'shared rocks must keep their positions')
+})
+
 test('foreground rocks are closed surfaces with coherent normals and no collapsed triangles', () => {
   const mesh = buildSurfaceDetail(observer(-3.01, -23.42, 0), 0, 0, () => -2)
   const tone = mesh.find((value, index) => index % surfaceDetailStride === 6 && value > 0)

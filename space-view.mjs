@@ -3,7 +3,7 @@ import { earthOrientation, rotateBodyVector } from './body-textures.mjs'
 
 import { globeOrientation } from './globe.mjs'
 import { createOrbitalBodies } from './orbital-bodies.mjs?v=physical-orbit-1'
-import { physicalBodies, orbitUnitKm, projectBody, nearestBody } from './orbital-geometry.mjs'
+import { physicalBodies, orbitUnitKm, projectBody, nearestBody, lunarMapSystem } from './orbital-geometry.mjs'
 
 const stride = 10
 const magnitude = vector => Math.hypot(...vector)
@@ -79,7 +79,7 @@ export function createSpaceView(canvas, samples, controls) {
   const labels = controls.labels
   const ctx = labels.getContext('2d')
   const paths = new Map()
-  let current, drag, approachRadius, approachSite, moonCamera
+  let current, drag, approachRadius, approachSite, moonCamera, mapCamera
   let latitude = 18, longitude = -70, scene = 'earth', focus = controls.focus?.value??'', zoom = 1, approach = 0
 
   function trail(index, kind) {
@@ -99,7 +99,7 @@ export function createSpaceView(canvas, samples, controls) {
   }
 
   function draw() {
-    if(!current || canvas.closest('.viewer-layer')?.inert) return
+    if(!current || canvas.closest('.viewer-layer')?.inert && !mapCamera) return
     const width=canvas.clientWidth, height=canvas.clientHeight
     if(!width || !height) return
     const dpi=Math.min(2,devicePixelRatio||1)
@@ -111,7 +111,7 @@ export function createSpaceView(canvas, samples, controls) {
     const {state,index,epoch,site}=current
     const world=physicalBodies(state)
     const delta=approachSite?((approachSite.lon-longitude+540)%360)-180:0
-    const orientation=globeOrientation(latitude+((approachSite?.lat??latitude)-latitude)*approach,longitude+delta*approach)
+    const orientation=mapCamera?.orientation??globeOrientation(latitude+((approachSite?.lat??latitude)-latitude)*approach,longitude+delta*approach)
     const camera=[orientation.east,orientation.north,orientation.front].map(axis=>rotateBodyVector(axis,state.rotation))
     const [right,up,toward]=camera
     const axes=[right,up,scale(toward,-1)]
@@ -128,8 +128,9 @@ export function createSpaceView(canvas, samples, controls) {
     const centerRatio=Math.abs(startDistance-endDistance)>1e-12 ?
       clamp((distance-endDistance)/(startDistance-endDistance),0,1) : 1-approach
     const target=originalTarget.map((v,i)=>world.moon[i]+(v-world.moon[i])*centerRatio)
-    const eye=target.map((v,i)=>v+toward[i]*distance)
-    const transform=point=>axes.map(axis=>dot(point.map((v,i)=>v-eye[i]),axis))
+    const mapSystem=mapCamera?lunarMapSystem(state,orientation,mapCamera.radius,lens):null
+    const eye=mapSystem?.eye??target.map((v,i)=>v+toward[i]*distance)
+    const transform=mapSystem?.transform??(point=>axes.map(axis=>dot(point.map((v,i)=>v-eye[i]),axis)))
     const view=Object.fromEntries(Object.entries(world).map(([name,body])=>[name,[...transform(body.slice(0,3)),body[3]]]))
     const projected=Object.fromEntries(Object.entries(view).map(([name,body])=>[name,projectBody(body,lens,width,height)]))
     const hidden=Object.fromEntries(Object.entries(view).map(([name,body])=>[name,fullyOcculted(body,Object.entries(view).filter(([other])=>other!==name).map(([,value])=>value))]))
@@ -148,9 +149,9 @@ export function createSpaceView(canvas, samples, controls) {
       }
       ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1
     }
-    if(controls.yearPath.checked) line(trail(index,'sun').map(point=>scene==='sun'?world.sun.slice(0,3).map((v,i)=>v-point[i]):point),'#665944')
-    if(controls.moonPath.checked) line(trail(index,'moon'),'#515265')
-    if(controls.links.checked) {
+    if(!mapCamera && controls.yearPath.checked) line(trail(index,'sun').map(point=>scene==='sun'?world.sun.slice(0,3).map((v,i)=>v-point[i]):point),'#665944')
+    if(!mapCamera && controls.moonPath.checked) line(trail(index,'moon'),'#515265')
+    if(!mapCamera && controls.links.checked) {
       line([world.earth.slice(0,3),world.sun.slice(0,3)],'#685335',[3,7])
       line([world.earth.slice(0,3),world.moon.slice(0,3)],'#53647e',[3,7])
     }
@@ -159,23 +160,32 @@ export function createSpaceView(canvas, samples, controls) {
     const lunar=projected.moon
     moonCamera={moving:approach>0&&approach<1,radius:lunar.radius,center:lunar.center,orientation,
       perspective:{...view,lens,mapBlend:approach*approach*approach}}
-    controls.moonCamera(moonCamera,state)
+    // The map owns its camera and picking projection; feeding this back would
+    // replace its interactive map with a flight and recursively redraw both.
+    if(!mapCamera) controls.moonCamera(moonCamera,state)
     // Trace annotations are separate from the actual ray-tested body pixels.
     ctx.globalCompositeOperation='destination-out'
     for(const item of Object.values(projected)) if(item.inFront) {
       ctx.beginPath();ctx.arc(...item.center,item.radius+1,0,Math.PI*2);ctx.fill()
     }
     ctx.globalCompositeOperation='source-over'
-    ctx.globalAlpha=1-approach
+    ctx.globalAlpha=mapCamera?1:1-approach
     ctx.font='600 13px DM Sans, sans-serif';ctx.textAlign='center'
     const unresolvedPair=projected.earth.radius<4 && projected.moon.radius<4 &&
       Math.hypot(...projected.earth.center.map((v,i)=>v-projected.moon.center[i]))<35
     const placedLabels=[]
+    const mapNotes=[]
     for(const [name,color] of [['earth','#b6cdff'],['sun','#ffd18a'],['moon','#eae9f0']]) {
+      if(mapCamera && name==='moon') continue
       if(name==='moon' && unresolvedPair && !hidden.earth) continue
-      if(hidden[name]) continue
       const {center:[x,y],radius,inFront}=projected[name]
       const outside=!inFront || x+radius<0 || x-radius>width || y+radius<0 || y-radius>height
+      if(mapCamera) {
+        const blocker=hidden[name]?nearestBody(view[name].slice(0,3),view):null
+        const state=blocker?'hidden by '+blocker[0].toUpperCase()+blocker.slice(1):!inFront?'behind camera':outside?'off screen':'in view'
+        mapNotes.push(`${name[0].toUpperCase()+name.slice(1)} ${distanceLabel.format(projected[name].distance*orbitUnitKm)} km · ${state}`)
+      }
+      if(hidden[name]) continue
       const arrow=!inFront?'↶ ':x<0?'← ':x>width?'→ ':y<0?'↑ ':y>height?'↓ ':''
       const title=name==='earth'&&unresolvedPair&&!hidden.moon?'Earth + Moon':name[0].toUpperCase()+name.slice(1)
       ctx.fillStyle=color
@@ -183,9 +193,15 @@ export function createSpaceView(canvas, samples, controls) {
       const labelY=[0,22,-22,44,-44].map(offset=>initialY+offset).find(candidate=>
         candidate>=18 && candidate<=height-14 && !placedLabels.some(([px,py])=>Math.abs(px-labelX)<150 && Math.abs(py-candidate)<20))??initialY
       placedLabels.push([labelX,labelY])
-      ctx.fillText((outside?arrow:'')+title+(outside?' · off screen':''),labelX,labelY)
+      const text=(outside?arrow:'')+title+(outside?(!inFront?' · behind camera':' · off screen'):'')
+      if(mapCamera) {
+        const labelWidth=ctx.measureText(text).width
+        ctx.fillStyle='#07090de8';ctx.fillRect(labelX-labelWidth/2-5,labelY-15,labelWidth+10,21)
+        ctx.fillStyle=color
+      }
+      ctx.fillText(text,labelX,labelY)
     }
-    if(!hidden.moon && lunar.inFront && lunar.radius>4) {
+    if(!mapCamera && !hidden.moon && lunar.inFront && lunar.radius>4) {
       const direction=siteDirection(site,state)
       const worldPoint=world.moon.slice(0,3).map((v,i)=>v+direction[i]*world.moon[3])
       if(dot(direction,eye.map((v,i)=>v-worldPoint[i]))>0) {
@@ -194,7 +210,8 @@ export function createSpaceView(canvas, samples, controls) {
       }
     }
     ctx.globalAlpha=1
-    if(controls.note) controls.note.textContent=Object.entries(hidden).filter(([,value])=>value).map(([name])=>name[0].toUpperCase()+name.slice(1)+' is hidden behind a nearer body.').join(' ')
+    if(mapCamera && controls.mapNote) controls.mapNote.textContent='From the map camera: '+mapNotes.join(' · ')
+    if(!mapCamera && controls.note) controls.note.textContent=Object.entries(hidden).filter(([,value])=>value).map(([name])=>name[0].toUpperCase()+name.slice(1)+' is hidden behind a nearer body.').join(' ')
   }
 
   function turn(north,east) {latitude=clamp(latitude+north,-89.8,89.8);longitude=(longitude+east)%360;draw()}
@@ -232,10 +249,11 @@ export function createSpaceView(canvas, samples, controls) {
   function update(index,site,yearRange=null,epoch=0,visible=true) {
     const state=systemAt(samples,index)
     current={state,index,site,epoch,yearRange}
-    if(visible) draw()
+    if(visible || mapCamera) draw()
     return {lunarKm:distanceLabel.format(magnitude(state.moon)),solarKm:distanceLabel.format(magnitude(state.sun))}
   }
   update.approach=(amount,target,radius)=>{approach=amount;approachSite=target;approachRadius=radius;draw()}
+  update.mapView=camera=>{mapCamera=camera;if(camera) draw()}
   update.camera=()=>moonCamera
   update.viewCenter=()=>({lat:latitude,lon:longitude})
   update.centerOnLunarView=site=>{latitude=site.lat;longitude=site.lon;draw()}

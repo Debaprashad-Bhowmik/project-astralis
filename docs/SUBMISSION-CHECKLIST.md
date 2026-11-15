@@ -1,6 +1,6 @@
-# Competition handoff — Astralis v1.1.0
+# Competition handoff — Lunar Landing Site Navigator v1.2.0
 
-**Team: The Astralis · Release prepared by Deb · November 15, 2026**
+**Team: Astralis · Release prepared by Deb · November 15, 2026**
 
 This is a handoff checklist, not a claim that the project has been submitted, accepted, or certified for mission operations. Use the [handbook](../ASTRALIS-HANDBOOK.md), [rubric summary](../JUDGING-RUBRIC.md), and [source register](../REFERENCES.md).
 

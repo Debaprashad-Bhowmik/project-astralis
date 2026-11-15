@@ -1,6 +1,6 @@
 # Sources, data, and credits
 
-**Astralis v1.1.0 — Deb · The Astralis · 2026-11-15**
+**Lunar Landing Site Navigator v1.2.0 — Deb · Team Astralis · 2026-11-15**
 
 This is the release's source register. It distinguishes numerical inputs, display imagery, methods, software, and background research. A realistic-looking image is not evidence of measured terrain. Source pixel spacing is not a guarantee of positional or height accuracy.
 
@@ -41,7 +41,7 @@ Terrain is projected and height-referenced according to the source metadata. Sky
 
 ## 3. Site catalog and search boundary
 
-| Reference | How Astralis uses it |
+| Reference | How the navigator uses it |
 | --- | --- |
 | [NASA/NSSDC lunar spacecraft archive](https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html) | Historical surface-site coordinates. Archive-reported vicinities remain approximate. |
 | [IAU/USGS lunar gazetteer](https://planetarynames.wr.usgs.gov/Page/MOON/target), [exact KMZ export](https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/MOON_nomenclature_center_pts.kmz) | The bundled searchable export contains 9,087 named feature centers. Names are geographic features, not 9,087 certified landing sites. `scripts/prepare_gazetteer.py` builds it. |
@@ -84,7 +84,7 @@ These are transparent decision aids, not a NASA-prescribed universal optimizatio
 | `assets/sun-sdo.jpg` | [NASA SVS / SDO-HMI solar cycle](https://svs.gsfc.nasa.gov/4551/), [exact archived image](https://svs.gsfc.nasa.gov/vis/a000000/a004500/a004551/SolarCycleHMI.02000_print.jpg). Credit: NASA's Scientific Visualization Studio. | Display recoloring and glow; this is not a prediction of sunspots at the selected date. |
 | `assets/astralis-hero.webp`, `assets/lunar-regolith.webp` | Generated for Astralis with OpenAI ImageGen. | Concept art and dust material. Neither is a photograph or a measured map of the selected site. |
 | Foreground rocks and fine soil | Procedural code in `surface-detail.mjs`; visual inspiration includes [NASA Apollo 17 surface photography](https://nssdc.gsfc.nasa.gov/imgcat/html/object_page/a17_h_146_22294.html). | Deterministic illustrative geometry over measured elevations at named sites, custom coordinates, and patches. Not surveyed boulder locations; excluded from scientific ranking and power calculations. |
-| `assets/the-astralis-logo.png` | Supplied by Deb for The Astralis. | Team identity; not a NASA logo or endorsement. |
+| `assets/the-astralis-logo.png` | Astralis team logo supplied by Deb; outlined A and serif wordmark, updated November 15, 2026. Original PNG preserved. | Team identity; Astralis is the team name, and Lunar Landing Site Navigator is the project. Not a NASA logo or endorsement. |
 | DM Sans / Space Grotesk | [DM Sans authors](https://github.com/googlefonts/dm-fonts), [Space Grotesk authors](https://github.com/floriankarsten/space-grotesk) | Local WOFF2 fonts; complete SIL OFL notices are included beside them. |
 
 `scripts/prepare_visual_assets.py` rebuilds the Moon and Earth derivatives and packs the original global elevation values for rendering. Camera transitions, illustrated shading, glare, and atmospheric appearance are presentation choices. Historical reference: the [Apollo 17 Blue Marble photograph AS17-148-22727](https://eol.jsc.nasa.gov/Collections/EarthFromSpace/images.pl?photo=AS17-148-22727) was used by an earlier Earth display; the current renderer uses the global mosaic above.
@@ -92,6 +92,8 @@ These are transparent decision aids, not a NASA-prescribed universal optimizatio
 **Retained legacy assets:** `assets/earth-blue-marble.jpg` is the earlier Apollo 17 Earth image; `assets/south-pole.jpg` is the earlier header visual credited in the original app to the [NASA SVS LRO/LOLA flyover](https://svs.gsfc.nasa.gov/3686/). They remain tracked for provenance but are not loaded by the current renderer. `data/polar-relief.webp` is a display derivative of the measured polar terrain prepared with the data pipeline.
 
 ## 6. Software and reproduction
+
+**Surface distance focus:** [NVIDIA GPU Gems 3, Chapter 28: Practical Post-Process Depth of Field](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-28-practical-post-process-depth-field) informed the depth-aware background gather approach. The implementation uses its own bounded terrain-only filter with depth rejection, preserving sky and nearby detail. Focus distances, blur strength, and synthetic rock distance transitions are display choices; they do not alter measured elevations or calculated visibility and energy. No third-party shader source was copied.
 
 The browser application uses native JavaScript modules and WebGL. Runtime terrain support uses Python, [NumPy](https://numpy.org/), and [Rasterio](https://rasterio.readthedocs.io/). Preprocessing additionally uses [SpiceyPy](https://github.com/AndrewAnnex/SpiceyPy), [pyproj](https://pyproj4.github.io/pyproj/stable/), and [Pillow](https://python-pillow.github.io/). [GDAL remote raster access](https://gdal.org/en/stable/user/virtual_file_systems.html#vsicurl-http-https-ftp-files-random-access) underlies windowed terrain reads. These packages are installed dependencies, not bundled third-party application source.
 
@@ -108,6 +110,6 @@ The manifest records SHA-256 hashes of **bundled derivatives**, not unknown orig
 
 ## 8. AI assistance and attribution
 
-OpenAI Codex assisted with code, data-processing scripts, debugging, research, and documentation. ImageGen assisted with design concepts and the identified visual materials. Numerical celestial positions and measured terrain come from the cited products; procedural visual detail is explicitly separate. Deb and The Astralis are responsible for reviewing the release and describing AI assistance in the competition submission. This release does not make runtime calls to a generative AI service.
+OpenAI Codex assisted with code, data-processing scripts, debugging, research, and documentation. ImageGen assisted with design concepts and the identified visual materials. Numerical celestial positions and measured terrain come from the cited products; procedural visual detail is explicitly separate. Deb and team Astralis are responsible for reviewing the release and describing AI assistance in the competition submission. This release does not make runtime calls to a generative AI service.
 
 The link index preserves references found in this release's source, documentation, and metadata. A listed URL means it was recorded, not that every page was independently revalidated or that every linked dataset was used. Missing provenance should be resolved before making stronger scientific or licensing claims.

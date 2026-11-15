@@ -1,4 +1,5 @@
 import { radius, earthRadius, sunRadius } from './planner.mjs'
+import { rotateBodyVector } from './body-textures.mjs'
 
 // One unit for every coordinate and radius. Ephemeris input is in kilometres.
 export const orbitUnitKm = 384400
@@ -8,6 +9,20 @@ export function physicalBodies(state) {
     moon: [...state.moon.map(v => v / orbitUnitKm), radius / 1000 / orbitUnitKm],
     sun: [...state.sun.map(v => v / orbitUnitKm), sunRadius / 1000 / orbitUnitKm],
   }
+}
+
+// Fit the perspective Moon silhouette to the interactive map's circle. All
+// external bodies retain their physical radii and mutual separations.
+export function lunarMapSystem(state, orientation, mapRadius, lens) {
+  const world=physicalBodies(state)
+  const toward=rotateBodyVector(orientation.front,state.rotation)
+  const axes=[rotateBodyVector(orientation.east,state.rotation),
+    rotateBodyVector(orientation.north,state.rotation),toward.map(value=>-value)]
+  const distance=world.moon[3]*Math.sqrt(1+(lens/mapRadius)**2)
+  const eye=world.moon.slice(0,3).map((value,i)=>value+toward[i]*distance)
+  const transform=point=>axes.map(axis=>axis.reduce((sum,value,i)=>sum+value*(point[i]-eye[i]),0))
+  const view=Object.fromEntries(Object.entries(world).map(([name,body])=>[name,[...transform(body.slice(0,3)),body[3]]]))
+  return {world,axes,eye,view,distance,transform}
 }
 
 export function raySphere(direction, body) {

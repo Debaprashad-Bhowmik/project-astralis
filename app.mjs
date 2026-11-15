@@ -1,8 +1,9 @@
 import { annualMissionHours, binaryFrames, evaluate, flatPanelFactor, frameAt, longestGap, missionCrossings, nextSkyCrossing, radius, rank, siteSkyModel, siteSolarPower, skyCrossings, solarExposure } from './planner.mjs'
-import { createGlobe, globeOrientation } from './globe.mjs?v=physical-orbit-1'
-import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs?v=physical-orbit-1'
+import { createGlobe, globeOrientation } from './globe.mjs?v=map-system-1'
+import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs?v=map-system-1'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
-import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=cinematic-surface-1'
+import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=1.2.0'
+import { surfaceFlightFrame } from './viewer-flight.mjs'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
@@ -769,6 +770,13 @@ function syncLandingSuggestions() {
   }
 }
 
+function syncMapSystem(camera=globe?.camera()) {
+  const visible=Boolean(updateSpace && camera?.radius>0 && !get('globe-view').hidden &&
+    (viewerMode==='map' || get('space').dataset.flying==='true'))
+  get('space').dataset.systemContext=String(visible)
+  updateSpace?.mapView(visible?camera:null)
+}
+
 function useMap(view) {
   for (const [mode, button] of [['polar', 'show-map'], ['globe', 'show-globe'], ['coverage', 'show-coverage']]) {
     get(`${mode}-view`).hidden = view !== mode
@@ -786,6 +794,7 @@ function useMap(view) {
   showCoverageLegend()
   showCoverage()
   syncLandingSuggestions()
+  syncMapSystem()
 }
 
 function evaluateMapPoint({ lat, lon }) {
@@ -1187,7 +1196,7 @@ function installGlobe() {
     showFeatureMatches()
   }, {
     directions: { sun: get('globe-sun-marker'), earth: get('globe-earth-marker') },
-    onViewChange: queueHeatDetail, onTerrainStatus(status) {
+    onViewChange: queueHeatDetail, onCameraChange:syncMapSystem, onTerrainStatus(status) {
     polarShadowStatus = status
     requestAnimationFrame(showCoverage)
   } }) }
@@ -1610,9 +1619,19 @@ function updateSurface(sample) {
   get('surface-labels').hidden = !showPaths
   get('surface-guide-sun').parentElement.hidden = !showPaths
   if (showPaths && !spaceYearMode && !localSky.surfacePaths) localSky.surfacePaths = surfacePaths(active.timeline)
+  if (showPaths && spaceYearMode && localSky.surfaceYear !== spaceYearWindow.start) {
+    const samples = []
+    const sampleSky = siteSkyModel(active.site, horizonFor(active.site) === 'terrain')
+    for (let epoch = spaceYearWindow.start; epoch <= spaceYearWindow.end; epoch += 6 * hour) {
+      samples.push(sampleSky(frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))))
+    }
+    localSky.surfaceYearPaths = surfacePaths(samples, 1)
+    localSky.surfaceYear = spaceYearWindow.start
+  }
   const epoch = viewerEpoch()
   const rotation = updateSpace?.lunarRotation((epoch - catalog.startMs) / (spaceStep * 1000))
-  surfaceView?.update(sample, showPaths && !spaceYearMode ? localSky.surfacePaths : null, epoch, rotation)
+  const tracks = showPaths ? (spaceYearMode ? localSky.surfaceYearPaths : localSky.surfacePaths) : null
+  surfaceView?.update(sample, tracks, epoch, rotation)
   const diameter = angle => (360 * angle / Math.PI).toFixed(2) + '°'
   const { fraction } = earthIllumination(sample)
   get('surface-angles').textContent = `Apparent disk diameter · Sun ${diameter(sample.sunRadius)} · Earth ${diameter(sample.earthRadius)} · Earth’s visible disk ${formatPercent.format(fraction)} sunlit`
@@ -1690,6 +1709,7 @@ async function showSurface() {
     const current = viewerSample()
     surfaceView.setTerrain(terrain.mesh, terrain.site, current.sunAz)
     surfaceView.setStyle(get('surface-style').value)
+    surfaceView.setDistantSoftness(get('surface-softness').checked)
     surfaceSite = site
     surfaceTerrain = terrain
     showSurfaceCaption()
@@ -1719,6 +1739,7 @@ function displayViewerMode(mode) {
   get('surface-view').hidden=mode!=='surface'
   get('globe-stage').hidden=mode==='surface' || mode==='map' && get('globe-view').hidden
   get('globe-stage').inert=mode!=='map'
+  syncMapSystem()
   showSpaceTime()
 }
 
@@ -1784,14 +1805,7 @@ async function approachSurface(reverse=false) {
   const surface=get('viewer-surface')
   const globeStage=get('globe-stage')
   const startRadius=start.radius>0?start.radius:Math.min(stage.clientWidth,stage.clientHeight)*.46
-  // A cinematic handoff avoids magnifying map pixels and exposing the local
-  // terrain mesh from orbital altitudes. The scientific endpoint is unchanged.
-  const smooth=(from,to,value)=>{
-    const x=Math.min(1,Math.max(0,(value-from)/(to-from)))
-    return x*x*(3-2*x)
-  }
-  const startingHeight=Math.max(eye.height,Math.min(eye.height*2.5,eye.height+8))
-  const startingPitch=Math.max(-35,eye.elevation-14)
+  const flightOptions={width:stage.clientWidth,height:stage.clientHeight,startRadius,eye}
   const clearFlightStyles=()=>{
     for(const node of [surface,globeStage]) {
       for(const property of ['opacity','filter','will-change','z-index','pointer-events']) node.style.removeProperty(property)
@@ -1810,33 +1824,33 @@ async function approachSurface(reverse=false) {
   globeStage.inert=true
   get('space').dataset.flying='true'
   if(!reverse) surfaceView.returnToLanding()
-  surfaceView.flight(reverse?eye:{height:startingHeight,azimuth:eye.azimuth,elevation:startingPitch,zoom:eye.zoom})
+  surfaceView.flight(reverse?eye:{height:90_000,azimuth:0,elevation:-90,zoom:eye.zoom})
   updateSurface(viewerSample())
   surfaceView.prepareFlight()
   status.textContent=reverse?'Returning to the lunar map…':'Approaching '+siteName(site)+'…'
   try {
-    await animateFlight(reverse?1500:1900,progress=>{
+    await animateFlight(reverse?3800:4600,progress=>{
       if(active.site!==site) throw new Error("The selected site changed. Choose Surface to travel to the new site.")
       const t=reverse?1-progress:progress
-      const alignment=smooth(0,.4,t)
-      const lat=origin.lat+(site.lat-origin.lat)*alignment
-      const lon=origin.lon+delta*alignment
-      const mapZoom=smooth(.08,.62,t)
-      const handoff=smooth(.34,.72,t)
-      const settle=smooth(.44,1,t)
-      const soften=Math.sin(Math.PI*handoff)
-      globeStage.hidden=handoff===1
-      globeStage.style.opacity=String(1-handoff)
-      globeStage.style.filter=`blur(${(handoff*9).toFixed(2)}px) brightness(${1-.22*soften})`
-      if(handoff<1) globe.flight({moving:true,radius:startRadius*(1+2*mapZoom),center:[stage.clientWidth/2,stage.clientHeight/2],orientation:globeOrientation(lat,lon)})
-      surface.style.opacity=String(handoff)
-      surface.style.filter=`blur(${(9*(1-settle)).toFixed(2)}px) brightness(${1-.22*soften})`
-      if(handoff>0) surfaceView.flight({moving:true,
-        height:startingHeight+(eye.height-startingHeight)*settle,
-        azimuth:eye.azimuth,elevation:startingPitch+(eye.elevation-startingPitch)*settle,zoom:eye.zoom})
+      const frame=surfaceFlightFrame(t,flightOptions)
+      const lat=origin.lat+(site.lat-origin.lat)*frame.alignment
+      const lon=origin.lon+delta*frame.alignment
+      const focus=`blur(${frame.blur.toFixed(2)}px)`
+      globeStage.hidden=frame.surfaceOpacity===1
+      // Keep the backing image opaque: fading both layers would dim the middle
+      // and make a continuous approach look like a transition through black.
+      globeStage.style.opacity='1'
+      globeStage.style.filter=focus
+      if(frame.surfaceOpacity<1) globe.flight({moving:true,radius:frame.mapRadius,center:[stage.clientWidth/2,stage.clientHeight/2],orientation:globeOrientation(lat,lon)})
+      surface.style.opacity=String(frame.surfaceOpacity)
+      // Match the distant map's neutral material during transfer, then restore
+      // the user's full surface style as the camera resolves local detail.
+      surface.style.filter=`${focus} saturate(${.18+.82*frame.detailReveal}) brightness(${.66+.34*frame.detailReveal})`
+      if(frame.surfaceOpacity>0) surfaceView.flight({...frame,moving:true})
     })
   } finally {
     clearFlightStyles()
+    surfaceView.flight(eye)
   }
   globe.landCamera(reverse?origin:site)
   displayViewerMode(reverse?'map':'surface')
@@ -2225,7 +2239,7 @@ async function start() {
     void openSurfaceLink()
     void startSpace()
   } catch (reason) {
-    error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open Astralis through a local web server.' : ''))
+    error('boot-error', reason.message + (location.protocol === 'file:' ? ' Open the navigator through a local web server.' : ''))
     get('answer-title').textContent = 'Lunar data could not be loaded'
     get('rank-summary').textContent = 'Reload to try again.'
     get('explore-conclusion').textContent = 'Lunar data could not load. Reload to try again.'
@@ -2238,7 +2252,7 @@ async function startSpace() {
     if (!response.ok) throw new Error('The 3D ephemeris could not be loaded.')
     const samples = readSpaceSamples(await response.arrayBuffer(), catalog.startMs, catalog.endMs)
     const controls = {
-      labels:get('orbit-labels'), focus:get('space-focus'), note:get('space-geometry-note'),
+      labels:get('orbit-labels'), focus:get('space-focus'), note:get('space-geometry-note'), mapNote:get('map-system-note'),
       zoomIn:get('space-zoom-in'), zoomOut:get('space-zoom-out'),
       moonCamera(camera) {globe?.flight(camera)},
       earthView: get('space-earth-view'), sunView: get('space-sun-view'), scale: get('space-scale'),
@@ -2365,6 +2379,7 @@ get('surface-paths').addEventListener('change', () => {
 })
 get('surface-zoom').addEventListener('change', event => surfaceView?.setZoom(Number(event.target.value)))
 get('surface-style').addEventListener('change', event => surfaceView?.setStyle(event.target.value))
+get('surface-softness').addEventListener('change', event => surfaceView?.setDistantSoftness(event.target.checked))
 function aimAtSurfaceCrater(crater) {
   const height = Number(get('surface-height').value)
   const aimDistance = Math.max(25, 1000 * (crater.inside ? crater.diameter / 2 : crater.distance))

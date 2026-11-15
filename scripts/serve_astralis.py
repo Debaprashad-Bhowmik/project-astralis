@@ -162,11 +162,12 @@ class AstralisHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default=4173, type=int, help="use 0 to pick an available port")
-    parser.add_argument("--open", action="store_true", help="open Astralis in the default browser")
+    parser.add_argument("--open", action="store_true", help="open Lunar Landing Site Navigator in the default browser")
     args = parser.parse_args()
     with ThreadingHTTPServer(("127.0.0.1", args.port), AstralisHandler) as server:
         url = f"http://localhost:{server.server_port}/"
-        print(f"Astralis is running at {url}", flush=True)
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        print(f"Lunar Landing Site Navigator v{version} by team Astralis is running at {url}", flush=True)
         if args.open:
             Thread(target=webbrowser.open, args=(url,), daemon=True).start()
         try:

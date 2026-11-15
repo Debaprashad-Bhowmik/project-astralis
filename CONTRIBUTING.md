@@ -1,6 +1,6 @@
-# Working on Astralis
+# Working on Lunar Landing Site Navigator
 
-Team: **The Astralis**. Current release: **v1.1.0 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
+Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.2.0 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
 
 ## Access and setup
 
@@ -21,7 +21,7 @@ Use `python scripts/serve_astralis.py --open` after installing `numpy` and `rast
 Run from the repository root with Node.js 22+ and Python 3.13:
 
 ```sh
-node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs
+node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs viewer-flight.test.mjs
 python -m compileall -q scripts
 python scripts/asset_manifest.py --check
 git diff --check
@@ -31,13 +31,13 @@ If intentionally changing a bundled asset or data file, update its reference ent
 
 ## Publish a named version
 
-Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.1.0 release is credited to Deb.
+Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.2.0 release is credited to Deb.
 
 After review and tests, commit the intended files on `main`. For example, the *next fix release* could use:
 
 ```sh
-git tag -a v1.1.1 -m "Astralis v1.1.1 — Deb"
-git push --atomic origin main v1.1.1
+git tag -a v1.2.1 -m "Lunar Landing Site Navigator v1.2.1 — Deb"
+git push --atomic origin main v1.2.1
 ```
 
 Create a GitHub Release from that tag using the corresponding changelog entry. Verify the tag and `main` point to the intended commit and that the README launch commands select it. Teammates stop the old server with Ctrl+C and rerun the same launch command to update. Feature branches do not need release tags.

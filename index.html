@@ -6,17 +6,18 @@
   <meta name="description" content="Compare lunar landing sites, dates, sunlight, and Earth visibility with NASA data.">
   <meta name="ai-disclosure" content="Application code and UI exploration used OpenAI Codex and ImageGen. Numerical inputs are attributed NASA and USGS products.">
   <meta name="theme-color" content="#050507">
-  <link rel="icon" href="./assets/the-astralis-logo.png">
-  <title>Astralis · Lunar Site Navigator</title>
-  <link rel="stylesheet" href="./style.css?v=continuous-camera-3">
-  <script type="module" src="./app.mjs?v=1.1.0"></script>
+  <meta name="author" content="Astralis">
+  <link rel="icon" href="./assets/the-astralis-logo.png?v=team-wordmark-2">
+  <title>Lunar Landing Site Navigator · Team Astralis</title>
+  <link rel="stylesheet" href="./style.css?v=1.2.0">
+  <script type="module" src="./app.mjs?v=1.2.0"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="The Astralis home">
-      <img src="./assets/the-astralis-logo.png" width="126" height="59" alt="">
-      <span>Lunar Site Navigator</span>
+    <a class="brand" href="./" aria-label="Lunar Landing Site Navigator home — by team Astralis">
+      <span class="brand-mark"><img src="./assets/the-astralis-logo.png?v=team-wordmark-2" width="2172" height="724" alt="Astralis team logo"></span>
+      <span class="brand-copy"><strong>Lunar Landing Site Navigator</strong><small>By team Astralis</small></span>
     </a>
     <nav aria-label="App navigation"><a href="#space" data-viewer-link="map">Moon map</a><a href="#assessment">Power &amp; comms</a><a href="#local-sky">Local sky</a><a href="#compare">Compare</a><a href="#methods">Data &amp; methods</a></nav>
   </header>
@@ -24,7 +25,7 @@
   <main>
     <div class="hero">
       <div class="hero-inner">
-        <h1>Lunar Site Navigator</h1>
+        <h1>Lunar Landing Site Navigator</h1>
         <p>Find when a landing site has sunlight, a clear view of Earth, or both.</p>
         <a class="hero-action" href="#mission">Plan a landing <span aria-hidden="true">↓</span></a>
         <a class="hero-action hero-explore" href="#explore">Explore examples <span aria-hidden="true">↓</span></a>
@@ -123,7 +124,7 @@
               <canvas id="space-canvas" role="img" aria-label="Rotatable 3D projection of the Sun, Earth and Moon" aria-describedby="space-scale space-caption"></canvas>
             </div>
               <div id="globe-stage" class="globe-stage" inert>
-                <canvas id="globe-canvas" aria-label="Rotatable 3D Moon. Drag to rotate or use the orbit buttons." aria-describedby="globe-pole-note" role="img"></canvas>
+                <canvas id="globe-canvas" aria-label="Rotatable 3D Moon with the Sun and Earth at the selected time. Drag to rotate or use the map buttons." aria-describedby="globe-pole-note map-system-note" role="img"></canvas>
                 <canvas id="globe-features" aria-hidden="true" hidden></canvas>
                 <div id="globe-markers"></div>
                 <span id="globe-pole-marker" hidden>South Pole · 90°S</span>
@@ -151,7 +152,7 @@
                   <canvas id="surface-canvas" tabindex="0" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-walk-help surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
                   <span id="surface-heading" aria-label="Camera bearing"></span>
-                  <div class="surface-guides" aria-label="Off-screen objects">
+                  <div class="surface-guides" id="surface-guides" aria-label="Off-screen objects">
                     <button type="button" class="subtle" id="surface-guide-sun" hidden></button>
                     <button type="button" class="subtle" id="surface-guide-earth" hidden></button>
                   </div>
@@ -336,7 +337,8 @@
               </div>
               <p class="muted globe-help" id="globe-pole-note"><i aria-hidden="true"></i> <strong>84°S search boundary</strong>. The ring marks the northern edge of the six-degree search area. The geographic South Pole is at 90°S. <a href="https://www.nasa.gov/podcasts/houston-we-have-a-podcast/moon-geology/">NASA’s exploration-zone definition</a> · <a href="https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/">NASA’s 2024 candidate-region map</a></p>
               <p class="muted globe-help">Drag to rotate. Pinch or use + and − to zoom. Select a marker, or click the surface to evaluate a new spot. <a href="https://svs.gsfc.nasa.gov/4720/">NASA LROC imagery</a></p>
-              <p class="muted globe-help">Sun and Earth arrows show their directions from the Moon. The shaded hemisphere is in lunar night.</p>
+              <p class="muted globe-help">The Sun and Earth share Orbit’s date and physical scale. Rotate the Moon to look around the system. Bodies outside the camera view have direction labels; the Moon blocks bodies behind it.</p>
+              <p class="muted globe-help" id="map-system-note"></p>
             </div>
             <div id="polar-view" hidden>
             </div>
@@ -373,6 +375,7 @@
                 <div class="surface-primary-controls">
                   <button type="button" class="subtle" id="surface-primary-sun">Find Sun</button>
                   <button type="button" class="subtle" id="surface-primary-earth">Find Earth</button>
+                  <label class="sky-path-toggle" title="Show Sun and Earth labels, paths across the local sky, camera bearing, and off-screen direction arrows"><input type="checkbox" id="surface-paths" aria-controls="surface-labels surface-heading surface-guides"> Sun &amp; Earth guides</label>
                   <span class="muted">Drag to look around · W A S D to walk</span>
                 </div>
                 <details class="viewer-options" id="surface-options"><summary>Camera, walking and terrain details</summary>
@@ -388,7 +391,7 @@
                   <label class="surface-zoom">Style <select id="surface-style"><option value="illustrated">Illustrated</option><option value="natural">Natural</option></select></label>
                   <label class="surface-zoom">Zoom <select id="surface-zoom"><option value="1">1×</option><option value="3">3×</option><option value="6">6×</option></select></label>
                   <label class="surface-zoom">View height <select id="surface-height"><option value="2">2 m · eye level</option><option value="30">30 m</option><option value="100">100 m · survey</option></select></label>
-                  <label class="sky-path-toggle"><input type="checkbox" id="surface-paths"> Show arcs and labels</label>
+                  <label class="sky-path-toggle"><input type="checkbox" id="surface-softness" checked aria-describedby="surface-focus-help"> Distant softness</label>
                 </div>
                 <div class="globe-controls surface-walk" role="group" aria-label="Move around the landing site">
                   <button type="button" class="subtle" id="surface-walk-forward" aria-label="Walk forward 10 meters">Forward</button>
@@ -399,6 +402,7 @@
                   <output id="surface-walk-offset" class="muted" aria-live="off">At landing point</output>
                 </div>
                 <p id="surface-walk-help" class="muted">Drag to look around. Press W, A, S, D while the view has focus to walk. Visibility readouts use the landing point.</p>
+                <p id="surface-focus-help" class="muted">Distant softness gently blurs far terrain while keeping nearby ground and the sky sharp. Camera effect only; terrain heights and calculations stay unchanged.</p>
                 <p class="muted" id="surface-landmark" hidden></p>
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>
@@ -595,7 +599,7 @@
       <section class="panel methods" id="methods" aria-labelledby="methods-heading">
         <h2 id="methods-heading">Data &amp; methods</h2>
         <div class="method-grid">
-          <div><h3>What the ranking means</h3><p>Astralis filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
+          <div><h3>What the ranking means</h3><p>The navigator filters out sites that miss your requirements. It scores qualifying sites using the weighted share of mission time with Sun, Earth, and both visible. Inspect the longest gaps before choosing a site.</p></div>
           <div><h3>How visibility is estimated</h3><p>JPL’s DE440 and lunar orientation kernels drive the mission viewer. Orbit interpolates hourly geometric positions. The Moon Map and Surface modes use 15-minute apparent positions for visibility and surface lighting. The model checks each object's center against the skyline from 2 m above the surface and excludes periods of total solar eclipse. January 2024 through December 2030 is supported.</p><p>Global LOLA terrain is sampled at 16 pixels per degree, about 1.9 km north to south. Eight default polar sites use the finer 80 and 240 m LOLA grids.</p></div>
           <div><h3>How to interpret the result</h3><p>Sunlight is a power opportunity, and Earth visibility is a communication opportunity. Power also depends on the solar array. Actual communications depend on the antenna, Earth station, and link budget. Study points illustrate different terrain. Landing hazards require a separate assessment.</p></div>
         </div>
@@ -603,6 +607,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by The Astralis · v1.1.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by team Astralis · v1.2.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>

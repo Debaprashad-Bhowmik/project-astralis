@@ -276,7 +276,7 @@ function glslColor(color) {
   return 'vec3(' + color.map(value => (value / 255).toFixed(6)).join(',') + ')'
 }
 
-export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onTerrainStatus, directions } = {}) {
+export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, polarExtent, onSelect, onPoint, onFeature, { detail = true, onViewChange, onCameraChange, onTerrainStatus, directions } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true, preserveDrawingBuffer:true })
   if (!gl || !gl.getExtension('OES_standard_derivatives')) throw new Error('3D is unavailable in this browser. Use the polar map to select sites.')
   const program = gl.createProgram()
@@ -442,6 +442,7 @@ export function createGlobe(canvas, markerLayer, featureCanvas, poleMarker, pola
     const size = flightCamera?.radius ?? Math.min(width, height) * .46 * zoom
     const orientation = flightCamera?.orientation ?? globeOrientation(latitude, longitude)
     const center = flightCamera?.center ?? [width / 2, height / 2]
+    onCameraChange?.({radius:size,center,orientation})
     requestImageTile(orientation,size,height)
     const annotations = !flightCamera
     markerLayer.hidden = !annotations

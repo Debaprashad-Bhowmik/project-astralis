@@ -32,6 +32,10 @@ Generated from the release source, documentation, and metadata on 2026-11-15. St
 
 - [https://developer.apple.com/documentation/xcode/installing-the-command-line-tools](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools) — recorded in `README.md`
 
+## developer.nvidia.com
+
+- [Practical Post-Process Depth of Field](https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-28-practical-post-process-depth-field) — recorded in `REFERENCES.md`; background-depth gather reference for the optional surface camera effect.
+
 ## docs.github.com
 
 - [https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows) — recorded in `README.md`

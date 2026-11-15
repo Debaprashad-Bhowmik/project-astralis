@@ -26,8 +26,11 @@ h3{font-size:1.09rem}
 .skip:focus{position:fixed;z-index:8;top:9px;left:9px;padding:8px 12px;background:var(--panel)}
 .topbar{height:66px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 max(22px,calc((100vw - 1460px)/2));background:var(--bg)}
 .brand{display:flex;align-items:center;gap:15px;text-decoration:none;color:var(--text);min-width:0}
-.brand img{width:113px;height:58px;object-fit:cover;object-position:center 47%;flex:none;mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
-.brand span{font-size:.73rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.brand-mark{position:relative;display:block;width:212px;height:44px;overflow:hidden;flex:none}
+.brand-mark img{position:absolute;left:-12%;top:50%;width:126%;height:auto;max-width:none;transform:translateY(-50%)}
+.brand-copy{display:grid;gap:3px;white-space:nowrap}
+.brand-copy strong{font-size:.82rem;font-weight:500}
+.brand-copy small{font-size:.7rem;color:var(--muted)}
 .topbar nav{display:flex;align-items:center;gap:28px}
 .topbar nav a{color:var(--text);font-size:.87rem;text-decoration:none;white-space:nowrap}
 .topbar nav a:hover{color:var(--sun)}
@@ -225,17 +228,22 @@ canvas{display:block;width:100%;height:190px}
 .footer span:first-child{font-family:"Space Grotesk",sans-serif;color:var(--text)}
 
 @media(max-width:1140px){
+  .brand-copy{display:none}
   .primary-grid{grid-template-columns:minmax(220px,.7fr) minmax(300px,1.3fr)}
   .ranking{grid-column:1/-1}
   .rank-legend,.rank-row{grid-template-columns:1fr repeat(3,minmax(65px,90px))}
   .polar-map{min-height:315px}
 }
+@media(max-width:780px){
+  .topbar{padding:8px 12px 10px;height:auto;flex-wrap:wrap;gap:5px}
+  .topbar nav{width:100%;gap:18px}
+}
 @media(max-width:660px){
-  .topbar{padding-inline:12px;height:52px}
+  .topbar{padding:8px 12px 10px;height:auto;flex-direction:column;align-items:flex-start;gap:5px}
   .brand{gap:7px}
-  .brand img{width:99px;height:48px}
-  .brand span,.topbar nav a[href="#compare"],.topbar nav a[href="#methods"]{display:none}
-  .topbar nav{gap:12px}
+  .brand-mark{width:190px;height:35px}
+  .topbar nav a[href="#compare"],.topbar nav a[href="#methods"]{display:none}
+  .topbar nav{gap:18px}
   .hero-inner{padding:27px 13px 30px}
   .hero p{max-width:250px;font-size:.9rem}
   .hero-credit{right:12px}
@@ -577,6 +585,7 @@ canvas{display:block;width:100%;height:190px}
 .viewer-events p:last-child{color:var(--earth)}
 .surface-primary-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:12px}
 .surface-primary-controls span{font-size:.8rem;margin-left:8px}
+.surface-primary-controls .sky-path-toggle{margin-left:0;padding:6px 10px;min-height:34px;border:1px solid var(--line);border-radius:6px;color:var(--text)}
 #viewer-map-controls .globe-help,#space-caption{font-size:.78rem}
 @media(max-width:650px){
   .viewer-metrics{grid-template-columns:1fr 1fr;gap:12px}
@@ -585,3 +594,8 @@ canvas{display:block;width:100%;height:190px}
 
 #orbit-labels{z-index:4}
 #space:not([data-viewer-mode=orbit]) #orbit-labels{display:none}
+#space[data-system-context=true] #viewer-orbit{opacity:1;z-index:1;pointer-events:none}
+#space[data-system-context=true] #space-canvas{background:transparent}
+#space[data-system-context=true] #orbit-labels{display:block}
+#space[data-system-context=true] .globe-directions{display:none}
+#space[data-flying=true] #orbit-labels{visibility:hidden}

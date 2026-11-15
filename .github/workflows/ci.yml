@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Calculation and geometry regression tests
-        run: node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs
+        run: node --test planner.test.mjs landing-suggestions.test.mjs orbital-geometry.test.mjs viewer-flight.test.mjs
       - name: Python syntax
         run: python -m compileall -q scripts
       - name: Bundled data and asset integrity

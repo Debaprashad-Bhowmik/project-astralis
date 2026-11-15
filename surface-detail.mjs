@@ -1,10 +1,12 @@
 import { radius } from './planner.mjs'
 
-export const surfaceDetailStride = 7
+export const surfaceDetailStride = 9
 const turn = 2 * Math.PI
 const detailBands = [
-  { spacing: 1.25, reach: 34, coverage: .29, salt: 1, type: 'stone' },
-  { spacing: 8, reach: 100, coverage: .29, salt: 3, type: 'boulder' },
+  // Guard bands exceed the 12 m tile's diagonal camera offset. Geometry is
+  // already present before the shared shader's 34/90 m fades reveal it.
+  { spacing: 1.25, reach: 46, coverage: .29, salt: 1, type: 'stone' },
+  { spacing: 8, reach: 104, coverage: .29, salt: 3, type: 'boulder' },
 ]
 
 function noise(row, column, salt) {
@@ -83,7 +85,7 @@ function rock(buffer, east, north, floor, slopes, kind, random, heightAt) {
     const localZ=z*size*width*squash
     const dx=localX*cos-localZ*sin,dz=localX*sin+localZ*cos
     const support=heightAt(east+dx,north+dz)??floor+slopes[0]*dx+slopes[1]*dz
-    return [east+dx,support+height*(y*size*.78+.25),north+dz]
+    return [east+dx,support+height*(y*size*.78+.25),north+dz,support]
   })
   const normals=points.map(()=>[0,0,0])
   for(const [a,b,c] of topology.triangles) {
@@ -91,7 +93,7 @@ function rock(buffer, east, north, floor, slopes, kind, random, heightAt) {
     const area=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
     for(const index of [a,b,c]) for(let axis=0;axis<3;axis++) normals[index][axis]+=area[axis]
   }
-  const vertices=points.map((point,i)=>[...point,...normal(...normals[i]),tone])
+  const vertices=points.map((point,i)=>[...point.slice(0,3),...normal(...normals[i]),tone,boulder?90:34,point[3]])
   for(const triangle of topology.triangles) for(const i of triangle) buffer.push(...vertices[i])
 }
 
@@ -132,7 +134,7 @@ function soilSurface(buffer,frame,centerEast,centerNorth,heightAt) {
     if(height===undefined)return null
     const dx=((heights.get(key(x+1,z))??height)-(heights.get(key(x-1,z))??height))/(2*step)
     const dz=((heights.get(key(x,z+1))??height)-(heights.get(key(x,z-1))??height))/(2*step)
-    return [x*step,height,z*step,...normal(-dx,1,-dz),0]
+    return [x*step,height,z*step,...normal(-dx,1,-dz),0,0,0]
   }
   for(let z=firstZ;z<lastZ;z++) for(let x=firstX;x<lastX;x++) {
     if(Math.hypot((x+.5)*step-centerEast,(z+.5)*step-centerNorth)>reach)continue

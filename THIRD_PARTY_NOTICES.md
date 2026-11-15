@@ -1,6 +1,6 @@
 # Credits and third-party notices
 
-Project: **Astralis**, team **The Astralis**. Release **v1.1.0 — Deb**.
+Project: **Lunar Landing Site Navigator**, team **Astralis**. Release **v1.2.0 — Deb**.
 
 ## Scientific data and imagery
 
@@ -19,7 +19,7 @@ These notices accompany the bundled font files and must be retained with them.
 
 ## Project artwork and AI assistance
 
-Deb supplied The Astralis logo. OpenAI ImageGen produced the identified hero/dust visuals and design concepts; Codex assisted with implementation and documentation. Generated rocks and soil are illustrative. These assets do not establish ground truth, measured hazards, or additional scientific resolution. See the [AI disclosure and asset table](REFERENCES.md#5-display-imagery-and-synthesized-details).
+Deb supplied the Astralis team logo. The current outlined A and serif wordmark replaces the earlier star-and-orbit logo; the supplied image is preserved unchanged. OpenAI ImageGen produced the identified hero/dust visuals and design concepts; Codex assisted with implementation and documentation. Generated rocks and soil are illustrative. These assets do not establish ground truth, measured hazards, or additional scientific resolution. See the [AI disclosure and asset table](REFERENCES.md#5-display-imagery-and-synthesized-details).
 
 ## Code and dependencies
 
