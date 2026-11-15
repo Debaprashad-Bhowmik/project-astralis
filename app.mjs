@@ -66,6 +66,10 @@ const element = (tag, className, value) => {
 }
 
 function syncExperience() {
+  if (location.hash === '#compare' || location.hash === '#compare-heading') {
+    comparisonRequested = true
+    if (settings) syncLandingSuggestions()
+  }
   const exploring = location.hash === '#explore'
   const wasExploring = get('workspace').dataset.mode === 'explore'
   get('workspace').dataset.mode = exploring ? 'explore' : 'planner'
@@ -120,6 +124,8 @@ function openLessonInPlanner() {
   recalculate()
   get('compare-a').value = lesson.sites[0]
   get('compare-b').value = lesson.sites[1]
+  comparisonManual.add('a')
+  comparisonManual.add('b')
   get('compare-time').value = `${lesson.dates[1]}T00:00`
   comparisonEdited = true
   compare()
@@ -141,6 +147,7 @@ let elapsed = 0
 let settings
 let playing = null
 let comparisonEdited = false
+let comparisonEditedC = false
 let globe
 let landingWorker
 let landingRequest = 0
@@ -188,6 +195,14 @@ let detailTimer
 let detailJob
 let comparisonViews
 let comparisonScenarios
+const comparisonKeys = ['a', 'b', 'c']
+const comparisonModes = { a: 'earth', b: 'solar', c: 'balanced' }
+const comparisonTitles = { a: 'Best communications', b: 'Best solar power', c: 'Best balance' }
+const comparisonManual = new Set()
+const comparisonPatches = new Map()
+const comparisonCache = new Map()
+let comparisonRequested = location.hash === '#compare' || location.hash === '#compare-heading'
+let comparisonRecommendations = null
 const getVisibilityFilters = () => Object.entries(visibilityLayers).reduce((mask, [key, value]) => mask | (get(`layer-${key}`).checked ? value : 0), 0)
 
 function error(id, message = '') {
@@ -281,6 +296,7 @@ function recalculate(reuseSettings = false) {
   showResult()
   updateComparisonOptions()
   if (!comparisonEdited) get('compare-time').value = controlDate(start)
+  if (!comparisonEditedC) get('compare-time-c').value = controlDate(start)
   compare()
   syncLandingSuggestions()
 }
@@ -543,7 +559,7 @@ function showMap() {
   get('map-site-source').hidden = !source
   if (source) get('map-site-source').href = source
   get('remove-custom').hidden = site.kind !== 'Custom coordinates'
-  for (const key of ['a', 'b']) get(`pick-compare-${key}`).disabled = false
+  for (const key of comparisonKeys) get(`pick-compare-${key}`).disabled = false
   const pins = get('pins')
   pins.replaceChildren()
   showGlobeSites()
@@ -606,7 +622,7 @@ async function refineLandingSuggestion(site) {
     Object.assign(site, terrain)
     siteEvaluations.rows.delete(site)
     if (active?.site === site) showResult()
-    if (inputs('compare-a', 'compare-b').some(select => select.value === site.id)) compare()
+    if (comparisonKeys.some(key => get(`compare-${key}`).value === site.id)) compare()
   } catch {
     // The suggestion retains its precomputed horizon when the local terrain cannot load.
   } finally {
@@ -619,6 +635,7 @@ const landingPatchName = id => `Patch ${id.slice('landing-patch-'.length)}`
 
 function showLandingSuggestions({ result, preference, step, sampled }) {
   const status = get('landing-suggestions-status')
+  updateComparisonRecommendations(result, step)
   if (!result.evaluated) {
     status.textContent = 'No sampled patch meets this slope limit.'
     return
@@ -721,8 +738,8 @@ function syncLandingSuggestions() {
   for (const button of document.querySelectorAll('[data-map-tool]')) button.disabled = !settings
   // Planning depends on the mission, not which camera or map projection is visible.
   // Changing views must not cancel the worker or discard the ranked patches.
-  const enabled = toggle.checked && Boolean(settings)
-  get('landing-suggestions').hidden = !enabled
+  const enabled = (toggle.checked || comparisonRequested) && Boolean(settings)
+  get('landing-suggestions').hidden = !toggle.checked || !settings
   const preference = landingPreference()
   if (enabled) showLandingScenarioRule(preference)
   const slope = get('landing-max-slope')
@@ -732,6 +749,12 @@ function syncLandingSuggestions() {
   landingKey = key
   const request = ++landingRequest
   landingRows = []
+  comparisonRecommendations = null
+  comparisonCache.clear()
+  updateComparisonOptions()
+  compare()
+  get('compare-recommendation-status').textContent = key ? 'Calculating recommended South Pole patches…' :
+    enabled ? 'Enter a valid slope limit to calculate recommendations.' : 'Open the comparison to calculate recommended patches.'
   for (const key of Object.keys(landingRankLabels)) get(`landing-${key}-winner`).textContent = ''
   get('landing-rank-note').hidden = true
   get('landing-suggestions-list').replaceChildren()
@@ -746,18 +769,23 @@ function syncLandingSuggestions() {
   get('landing-suggestions-status').textContent = 'Loading NASA LOLA terrain…'
   const fail = message => {
     get('landing-suggestions-status').textContent = message + ' Toggle Landing Suggestions to try again.'
+    get('compare-recommendation-status').textContent = message + ' Select Use recommended patches to retry.'
     landingKey = undefined
   }
   try {
     if (!landingWorker) {
-      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs?v=20261115-shortlist', import.meta.url), { type: 'module' })
+      landingWorker = new Worker(new URL('./landing-suggestions-worker.mjs?v=1.3.0', import.meta.url), { type: 'module' })
       landingWorker.addEventListener('message', ({ data }) => {
         if (data.request !== landingRequest) return
         if (data.error) fail(data.error)
         else if (data.result) {
           if (data.preference.revision === landingRevision) showLandingSuggestions(data)
         }
-        else get('landing-suggestions-status').textContent = `Evaluating mission power and Earth view · ${data.done.toLocaleString()} / ${data.total.toLocaleString()}`
+        else {
+          const progress = `Evaluating mission power and Earth view · ${data.done.toLocaleString()} / ${data.total.toLocaleString()}`
+          get('landing-suggestions-status').textContent = progress
+          get('compare-recommendation-status').textContent = progress
+        }
       })
       landingWorker.addEventListener('error', () => {
         landingWorker.terminate()
@@ -1959,13 +1987,34 @@ async function openSurfaceLink() {
   get('space').scrollIntoView({ behavior: 'instant' })
 }
 
+function updateComparisonRecommendations(result, step) {
+  comparisonRecommendations = { ...result, step }
+  const patches = [...Object.values(result.winners), ...result.rows, result.flattest].filter(Boolean)
+  for (const patch of patches) comparisonPatches.set(patch.id, {
+    ...patch, name: landingPatchName(patch.id), displayName: landingPatchName(patch.id),
+    kind: 'Landing suggestion', terrain: 'NASA LOLA polar horizon', source: 'polar-lola',
+  })
+  comparisonCache.clear()
+  updateComparisonOptions()
+  get('compare-recommendation-status').textContent = result.evaluated ?
+    `Recommendations for ${dateLabel(settings.start)} · ${formatHours(settings.duration)} mission. One patch can lead more than one scenario.` :
+    'No sampled patch meets the slope limit. Increase the limit or select sites manually.'
+  compare()
+}
+
 function updateComparisonOptions() {
-  const ids = inputs('compare-a', 'compare-b')
-  const previous = ids.map(select => select.value)
-  for (const [index, select] of ids.entries()) {
-    const options = inspectionOptions()
-    select.replaceChildren(...options)
-    select.value = options.some(option => option.value === previous[index]) ? previous[index] : ranked[index].site.id
+  if (!ranked?.length) return
+  for (const key of comparisonKeys) {
+    const select = get(`compare-${key}`)
+    const previous = select.value
+    const sites = new Map([...ranked.map(({ site }) => [site.id, site]), ...inspectedPatches, ...comparisonPatches])
+    const options = [...sites.values()].map(site => new Option(siteName(site), site.id))
+    select.replaceChildren(new Option('Choose a site…', ''), ...options)
+    if (comparisonManual.has(key) && sites.has(previous)) select.value = previous
+    else {
+      comparisonManual.delete(key)
+      select.value = comparisonRecommendations?.winners[comparisonModes[key]]?.id ?? ''
+    }
   }
 }
 
@@ -1975,43 +2024,75 @@ function createComparisonViews() {
       if (!isIntersecting) continue
       showGlobe.unobserve(target)
       const view = comparisonViews.find(item => item.stage === target)
+      const unavailable = () => {
+        view.failed = true
+        view.stage.hidden = true
+        view.mapNote.textContent = '3D map unavailable on this device. The site metrics remain available.'
+        for (const button of view.mapControls.querySelectorAll('button')) button.disabled = true
+      }
       try {
-        view.globe = createGlobe(view.canvas, view.pins, null, null, catalog.mapExtent, undefined, undefined, undefined, { detail: false })
-        view.canvas.addEventListener('textureerror', () => { view.stage.hidden = true })
-        view.canvas.addEventListener('webglcontextlost', () => { view.stage.hidden = true })
-      } catch { view.stage.hidden = true }
+        // Use the original Moon Map renderer, including its detailed imagery,
+        // lighting, terrain shadows, drag controls and zoom implementation.
+        view.globe = createGlobe(view.canvas, view.pins, null, null, catalog.mapExtent,
+          undefined, undefined, undefined, { directions: view.directions })
+        for (const button of view.mapControls.querySelectorAll('button')) button.disabled = false
+        view.canvas.addEventListener('textureerror', unavailable)
+        view.canvas.addEventListener('webglcontextlost', unavailable)
+        view.stage.dataset.ready = 'true'
+      } catch { unavailable() }
     }
     showComparisonTime()
   }, { rootMargin: '160px' })
-  return ['a', 'b'].map(key => {
-    const heading = element('h3')
+  return comparisonKeys.map(key => {
+    const heading = element('h4', 'compare-site-name')
     const coordinates = element('p', 'muted')
     const stage = element('div', 'compare-moon')
     const canvas = element('canvas')
     canvas.setAttribute('role', 'img')
     const pins = element('div', 'compare-moon-pins')
     pins.setAttribute('aria-hidden', 'true')
-    stage.append(canvas, pins)
+    const directions = { sun: element('span', 'globe-direction'), earth: element('span', 'globe-direction') }
+    stage.append(canvas, pins, ...Object.values(directions))
     const timestamp = element('time')
     const metrics = element('dl', 'compare-live-metrics')
     const tracks = element('div', 'compare-mission-summary')
-    const values = ['Sun elevation', 'Earth visibility', 'Solar power'].map(label => {
-      const item = element('div')
-      const value = element('dd')
+    const values = ['Sun elevation now', 'Earth view now', 'Power now'].map(label => {
+      const item = element('div'), value = element('dd')
       item.append(element('dt', '', label), value)
       metrics.append(item)
       return value
     })
-    get(`compare-view-${key}`).append(heading, coordinates, stage, timestamp, metrics, tracks)
+    const mapControls = element('div', 'compare-map-controls')
+    mapControls.setAttribute('role', 'group')
+    mapControls.setAttribute('aria-label', `Map controls for ${key.toUpperCase()}`)
+    const mapNote = element('p', 'muted')
+    mapNote.textContent = 'Drag to rotate. Zoom uses the same Moon imagery as the main map.'
+    const view = { key, heading, coordinates, stage, canvas, pins, directions, timestamp, values, tracks, mapControls, mapNote }
+    for (const [label, action] of [
+      ['Zoom in', () => view.globe?.zoom(1.5)], ['Zoom out', () => view.globe?.zoom(1 / 1.5)],
+      ['Center site', () => view.site && view.globe?.center(view.site)], ['South Pole', () => view.globe?.southPole()],
+      ['Open Surface', () => {
+        if (!view.site) return
+        if (comparisonPatches.has(view.site.id)) focusLandingSuggestion(view.site)
+        else void openSurfaceView(view.site)
+      }],
+    ]) {
+      const button = element('button', 'subtle', label)
+      button.type = 'button'
+      button.disabled = true
+      button.addEventListener('click', action)
+      mapControls.append(button)
+    }
+    get(`compare-body-${key}`).append(heading, coordinates, stage, mapControls, mapNote, timestamp, metrics, tracks)
     showGlobe.observe(stage)
-    return { key, heading, coordinates, stage, canvas, pins, timestamp, values, tracks }
+    return view
   })
 }
 
 function showComparisonTime() {
   if (!comparisonScenarios) return
   const slider = get('compare-scrub')
-  const duration = comparisonScenarios[0][2]
+  const duration = settings.duration
   const time = Math.min(elapsed, duration)
   slider.max = duration
   slider.value = time
@@ -2019,25 +2100,27 @@ function showComparisonTime() {
   const timeLabel = `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
   get('compare-clock').value = timeLabel
   slider.setAttribute('aria-valuetext', `${timeLabel} since landing`)
-  const visibility = getVisibilityFilters()
-  const power = get('layer-power').checked
-  for (const [index, [row, start, hours]] of comparisonScenarios.entries()) {
-    const view = comparisonViews[index]
-    const site = row.site
-    const offset = Math.min(time, hours)
-    const epoch = start + offset * hour
-    const sample = row.timeline[Math.round(offset * 4)]
+  const visibility = getVisibilityFilters(), power = get('layer-power').checked
+  comparisonScenarios.forEach((scenario, index) => {
+    if (!scenario) return
+    const [row, start, hours] = scenario, view = comparisonViews[index], site = row.site
+    const offset = Math.min(time, hours), epoch = start + offset * hour
+    if (view.epoch !== epoch || view.sampleSite !== site) {
+      view.epoch = epoch
+      view.sampleSite = site
+      view.frame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
+    }
+    const sample = siteSkyModel(site, horizonFor(site) === 'terrain')(view.frame)
     if (view.globe && view.site !== site) {
       view.site = site
-      view.globe.setSites([{ ...site, displayName: `Site ${view.key.toUpperCase()}` }], site.id)
+      view.globe.setSites([{ ...site, displayName: siteName(site) }], site.id)
       view.globe.center(site)
     }
     if (view.globe) {
-      if (view.epoch !== epoch) {
-        view.epoch = epoch
-        view.frame = frameAt(ephemeris, (epoch - catalog.startMs) / (catalog.step * 1000))
-      }
-      view.globe.setLayers(visibility || power ? view.frame : null, { visibility, power })
+      view.globe.setLighting(view.frame)
+      view.globe.setLayers(view.frame, {
+        visibility, power, terrainShadows: get('layer-shadows').checked,
+      })
     }
     view.timestamp.dateTime = new Date(epoch).toISOString()
     view.timestamp.textContent = `${dateLabel(epoch)}${offset < time ? ' · End of window' : ''}`
@@ -2045,66 +2128,105 @@ function showComparisonTime() {
     view.values[1].textContent = `${sample.earthEl > sample.earthHorizon ? 'In view' : 'Blocked'} · ${signedDegrees(sample.earthEl)}`
     view.values[2].textContent = formatPower(siteSolarPower(sample))
     for (const marker of view.tracks.querySelectorAll('.now')) marker.style.left = Math.min(99.8, offset / hours * 100) + '%'
+  })
+}
+
+function comparisonRow(id, start, duration) {
+  const patch = comparisonPatches.get(id)
+  const site = patch ?? missionResult(id)?.site
+  if (!site) return null
+  const terrain = horizonFor(site) === 'terrain'
+  const key = `${id}/${start}/${duration}/${terrain}`
+  let evaluated = comparisonCache.get(key)
+  if (!evaluated || evaluated.site !== site) {
+    // Match the suggestion worker's sampling and original terrain skyline.
+    // Inspecting finer surface terrain must not silently change these totals.
+    const intervals = Math.ceil(duration / (patch && duration > 720 ? 2 : .25))
+    const frames = Array.from({ length: intervals + 1 }, (_, index) =>
+      frameAt(ephemeris, (start + index * duration / intervals * hour - catalog.startMs) / (catalog.step * 1000)))
+    evaluated = evaluate(site, frames, duration, terrain, { includeEnergy: true })
+    if (comparisonCache.size >= 12) comparisonCache.clear()
+    comparisonCache.set(key, evaluated)
   }
+  return rank([evaluated], settings.weights, settings.limits, duration)[0]
 }
 
 function compare() {
   if (!settings) return
-  const startB = Date.parse(get('compare-time').value + 'Z')
-  const { start, duration, annual, weights, limits } = settings
-  const durationB = annual ? annualMissionHours(startB) : duration
-  const result = get('compare-result')
-  const windowDetail = get('window-detail')
-  const siteA = missionResult(get('compare-a').value)
-  const rowB = missionResult(get('compare-b').value)
-  get('map-compare-pair').textContent = `A · ${siteName(siteA.site)}  |  B · ${siteName(rowB.site)}`
-  if (!Number.isFinite(startB) || startB < catalog.startMs || startB + durationB * hour > catalog.endMs) {
-    error('compare-error', 'Choose a UTC time for B that keeps its full mission inside the supported dates.')
-    comparisonScenarios = undefined
-    result.hidden = true
-    windowDetail.replaceChildren()
-    return
-  }
-  error('compare-error')
-  const a = withMissionTimeline(siteA)
-  const b = startB === start ? withMissionTimeline(rowB) :
-    rank([evaluate(rowB.site, framesFor(startB, durationB), durationB, horizonFor(rowB.site) === 'terrain')], weights, limits, durationB)[0]
-  const scenarios = [[a, start, duration], [b, startB, durationB]]
+  const { start, duration, annual } = settings
+  const starts = [start, Date.parse(get('compare-time').value + 'Z'), Date.parse(get('compare-time-c').value + 'Z')]
+  const durations = starts.map(epoch => annual && Number.isFinite(epoch) ? annualMissionHours(epoch) : duration)
+  const validDate = index => Number.isFinite(starts[index]) && starts[index] >= catalog.startMs && starts[index] + durations[index] * hour <= catalog.endMs
+  const invalid = starts.findIndex((_epoch, index) => !validDate(index))
+  error('compare-error', invalid < 0 ? '' : `Choose a UTC time for ${comparisonKeys[invalid].toUpperCase()} that keeps its full mission inside the supported dates.`)
+  const scenarios = comparisonKeys.map((key, index) => {
+    if (!validDate(index)) return null
+    const row = comparisonRow(get(`compare-${key}`).value, starts[index], durations[index])
+    return row ? [row, starts[index], durations[index]] : null
+  })
   comparisonScenarios = scenarios
   comparisonViews ??= createComparisonViews()
-  const decision = a.unmet.length && b.unmet.length ? 'Both scenarios miss mission requirements.' :
-    a.unmet.length ? 'Only B meets the mission requirements.' : b.unmet.length ? 'Only A meets the mission requirements.' :
-      a.score === b.score ? 'The scenarios tie for the chosen priorities.' :
-        'Scenario ' + (a.score > b.score ? 'A' : 'B') + ' scores higher for the chosen priorities.'
+  get('map-compare-pair').textContent = scenarios.map((scenario, index) => `${comparisonKeys[index].toUpperCase()} · ${scenario ? siteName(scenario[0].site) : 'Awaiting selection'}`).join('  |  ')
   const details = element('div', 'window-grid')
-  scenarios.forEach(([row, epoch, duration], index) => {
-    const title = (index === 0 ? 'A' : 'B') + ' · ' + siteName(row.site)
-    const view = comparisonViews[index]
-    view.heading.textContent = title
+  scenarios.forEach((scenario, index) => {
+    const key = comparisonKeys[index], view = comparisonViews[index]
+    const recommendation = comparisonRecommendations?.summaries[comparisonModes[key]]
+    const manual = comparisonManual.has(key)
+    const differentDate = starts[index] !== start
+    get(`compare-title-${key}`).textContent = `${key.toUpperCase()} · ${manual ? 'Custom comparison' : comparisonTitles[key]}`
+    get(`compare-choice-${key}`).textContent = manual ? 'Your selected site' :
+      !comparisonRecommendations ? 'Calculating the recommendation…' :
+        !recommendation?.id ? 'No patch meets the slope limit' :
+          recommendation.qualified ? 'Recommended for this mission' : 'Closest alternative · scenario not met'
+    if (differentDate) get(`compare-choice-${key}`).textContent += ' · Different landing date; recommendation uses the mission date.'
+    view.stage.hidden = !scenario || view.failed
+    view.mapControls.hidden = !scenario
+    view.mapNote.hidden = !scenario
+    if (!scenario) {
+      view.heading.textContent = index === invalid ? 'Check the landing date' : 'Choose a site above'
+      view.coordinates.textContent = ''
+      view.timestamp.textContent = ''
+      view.values.forEach(value => { value.textContent = '—' })
+      view.tracks.replaceChildren()
+      return
+    }
+    const [row, epoch, hours] = scenario
+    const title = key.toUpperCase() + ' · ' + siteName(row.site)
+    view.heading.textContent = siteName(row.site)
     view.coordinates.textContent = siteCoordinates(row.site)
     view.canvas.setAttribute('aria-label', `3D Moon centered on ${siteName(row.site)}`)
-    const power = solarExposure(row.timeline, row.sun, duration)
-    const terrain = terrainLabel(row.site, horizonFor(row.site))
-    view.tracks.replaceChildren(element('h4', '', 'Mission totals'), element('p', 'muted', `Starts ${dateLabel(epoch)}`),
-      element('p', 'muted', annual ? `${duration / 24} days · Ends ${dateLabel(epoch + duration * hour)} · ${terrain}` : terrain),
-      element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''),
-      row.unmet.length ? 'Misses: ' + row.unmet.join(', ') : 'Mission fit: ' + row.score + ' / 100'),
-    axis(duration), ...timeline(row, duration, Math.min(elapsed, duration)), element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) +
-      ' · Longest Earth gap ' + formatHours(row.metrics.blackout)),
-    element('p', 'muted stats', `${formatHours(power.beamHours)} equivalent full sun · ${formatEnergy(power.energyKwh)} · ${power.peak === null ? 'No direct sunlight' : `Peak Sun ${signedDegrees(power.peak)}`}`))
+    const power = solarExposure(row.timeline, row.sun, hours)
+    const sampleHours = hours / (row.timeline.length - 1)
+    const cadence = sampleHours < 1 ? `${Math.round(sampleHours * 60)} min` : formatHours(sampleHours)
+    const longestEarth = row.earth.reduce((longest, [first, last]) => Math.max(longest, last - first), 0)
+    const totalMetrics = element('dl', 'compare-totals')
+    for (const [label, value] of [
+      ['Total solar energy', formatEnergy(power.energyKwh)], ['Average power', formatPower(power.energyKwh * 1000 / hours)],
+      ['Earth in view', `${formatHours(row.metrics.earth)} · ${formatPercent.format(row.metrics.earth / hours)}`],
+      ['Continuous Earth view', formatHours(longestEarth)],
+      ['Sunlight', `${formatHours(row.metrics.sun)} · ${formatPercent.format(row.metrics.sun / hours)}`],
+      ['Slope / roughness', Number.isFinite(row.site.slope) ? `${row.site.slope.toFixed(2)}° / ${row.site.roughness.toFixed(2)} m` : 'Not assessed for this site'],
+    ]) {
+      const item = element('div')
+      item.append(element('dt', '', label), element('dd', '', value))
+      totalMetrics.append(item)
+    }
+    view.tracks.replaceChildren(element('h4', '', 'Over the whole mission'), totalMetrics,
+      element('p', 'muted', `${dateLabel(epoch)} → ${dateLabel(epoch + hours * hour)}`),
+      element('p', 'muted', `${terrainLabel(row.site, horizonFor(row.site))} · ${cadence} time samples`),
+      element('p', 'compare-status' + (row.unmet.length ? ' failed' : ''), row.unmet.length ? 'Misses setup limits: ' + row.unmet.join(', ') : 'Meets the mission setup limits.'),
+      axis(hours), ...timeline(row, hours, Math.min(elapsed, hours)),
+      element('p', 'muted stats', 'Longest dark gap ' + formatHours(row.metrics.darkness) + ' · Longest Earth gap ' + formatHours(row.metrics.blackout)))
     const detail = element('article')
     detail.append(element('h3', '', title))
-    for (const [key, windows] of [['sun', row.sun], ['earth', row.earth], ['overlap', row.metrics.both]]) {
-      detail.append(element('p', '', metricNames[key]))
-      detail.append(windowList(windows, epoch))
+    for (const [metric, windows] of [['sun', row.sun], ['earth', row.earth], ['overlap', row.metrics.both]]) {
+      detail.append(element('p', '', metricNames[metric]), windowList(windows, epoch))
     }
     details.append(detail)
   })
-  const context = duration === durationB ? 'Timelines are aligned to the same elapsed time after landing.' :
-    'Each timeline runs from landing to its own one-year anniversary.'
-  get('compare-context').textContent = decision + ' ' + context
-  windowDetail.replaceChildren(details)
-  result.hidden = false
+  get('compare-context').textContent = 'Compare energy, continuous Earth view and terrain together. All three maps share time since landing; each uses its own selected date.'
+  get('window-detail').replaceChildren(details)
+  get('compare-result').hidden = false
   showComparisonTime()
 }
 
@@ -2363,11 +2485,13 @@ get('feature-evaluate').addEventListener('click', () => {
   void addCoordinate(null, namedFeature)
 })
 get('compare-time').addEventListener('change', () => { comparisonEdited = true; compare() })
-for (const select of inputs('compare-a', 'compare-b')) select.addEventListener('change', compare)
-for (const key of ['a', 'b']) {
+get('compare-time-c').addEventListener('change', () => { comparisonEditedC = true; compare() })
+for (const key of comparisonKeys) {
+  get(`compare-${key}`).addEventListener('change', () => { comparisonManual.add(key); compare() })
   get(`pick-compare-${key}`).addEventListener('click', () => {
     if (!active) return
     get(`compare-${key}`).value = active.site.id
+    comparisonManual.add(key)
     compare()
   })
 }
@@ -2375,9 +2499,28 @@ get('compare-scrub').addEventListener('input', event => seekTime(Number(event.ta
 get('same-date').addEventListener('click', () => {
   if (!settings) return
   comparisonEdited = false
+  comparisonEditedC = false
   get('compare-time').value = controlDate(settings.start)
+  get('compare-time-c').value = controlDate(settings.start)
   compare()
 })
+get('compare-recommended').addEventListener('click', () => {
+  if (!settings) return
+  comparisonManual.clear()
+  comparisonRequested = true
+  comparisonEdited = comparisonEditedC = false
+  get('compare-time').value = get('compare-time-c').value = controlDate(settings.start)
+  updateComparisonOptions()
+  syncLandingSuggestions()
+  compare()
+})
+const compareVisibility = new IntersectionObserver(entries => {
+  if (!entries.some(entry => entry.isIntersecting)) return
+  comparisonRequested = true
+  if (settings) syncLandingSuggestions()
+  compareVisibility.disconnect()
+}, { rootMargin: '160px' })
+compareVisibility.observe(get('compare'))
 get('delay-b').addEventListener('click', () => {
   if (!settings) return
   comparisonEdited = true

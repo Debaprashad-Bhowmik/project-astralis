@@ -9,8 +9,8 @@
   <meta name="author" content="Astralis">
   <link rel="icon" href="./assets/the-astralis-logo.png?v=team-wordmark-2">
   <title>Lunar Landing Site Navigator · Team Astralis</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.2">
-  <script type="module" src="./app.mjs?v=1.2.2"></script>
+  <link rel="stylesheet" href="./style.css?v=1.3.0">
+  <script type="module" src="./app.mjs?v=1.3.0"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
@@ -358,6 +358,7 @@
               <div class="map-compare-actions">
                 <button type="button" class="subtle" id="pick-compare-a" disabled>Use as Site A</button>
                 <button type="button" class="subtle" id="pick-compare-b" disabled>Use as Site B</button>
+                <button type="button" class="subtle" id="pick-compare-c" disabled>Use as Site C</button>
                 <a href="#compare-heading">View comparison</a>
               </div>
               <p id="map-compare-pair" class="muted" role="status"></p>
@@ -580,13 +581,16 @@
       </section>
 
       <section class="panel comparison" id="compare" aria-labelledby="compare-heading">
-        <div class="panel-heading"><div><h2 id="compare-heading" tabindex="-1">Compare landing sites</h2><p class="muted">Choose two sites. Both start at the mission landing time unless you change Site B’s date.</p></div></div>
-        <div class="compare-controls">
-          <label>Site A <select id="compare-a"></select></label>
-          <label>Site B <select id="compare-b"></select></label>
-          <label>Landing time for B (UTC) <input id="compare-time" type="datetime-local" step="60" required></label>
-        </div>
-        <div class="compare-actions"><button id="same-date" type="button" class="subtle">Use A’s date</button><button id="delay-b" type="button" class="subtle">Delay B by 3 days</button></div>
+        <div class="panel-heading"><div><h2 id="compare-heading" tabindex="-1">Compare landing sites</h2><p class="muted">Three mission priorities, side by side. Start with the recommended patches or change any site below.</p></div><button id="compare-recommended" type="button" class="subtle">Use recommended patches</button></div>
+        <p id="compare-recommendation-status" class="muted" role="status">Recommendations use the mission date, duration, slope limit and scenario requirements.</p>
+        <details id="compare-schedule">
+          <summary>Compare different landing dates</summary>
+          <div class="compare-controls">
+            <label>Landing time for B (UTC) <input id="compare-time" type="datetime-local" step="60" required></label>
+            <label>Landing time for C (UTC) <input id="compare-time-c" type="datetime-local" step="60" required></label>
+          </div>
+          <div class="compare-actions"><button id="same-date" type="button" class="subtle">Use mission date for all</button><button id="delay-b" type="button" class="subtle">Delay B by 3 days</button></div>
+        </details>
         <p id="compare-error" class="error" role="alert" hidden></p>
         <div id="compare-result" hidden>
           <p id="compare-context" class="compare-context"></p>
@@ -594,8 +598,24 @@
             <label class="compare-scrub" for="compare-scrub">Time since landing <output id="compare-clock" for="compare-scrub"></output></label>
             <input id="compare-scrub" type="range" min="0" max="24" step=".25" value="0">
             <div class="compare-grid compare-moons">
-              <article class="compare-scenario" id="compare-view-a"></article>
-              <article class="compare-scenario" id="compare-view-b"></article>
+              <article class="compare-scenario" id="compare-view-a" aria-labelledby="compare-title-a">
+                <h3 id="compare-title-a">A · Best communications</h3>
+                <label>Site <select id="compare-a" aria-labelledby="compare-title-a"></select></label>
+                <p class="compare-choice muted" id="compare-choice-a"></p>
+                <div id="compare-body-a"></div>
+              </article>
+              <article class="compare-scenario" id="compare-view-b" aria-labelledby="compare-title-b">
+                <h3 id="compare-title-b">B · Best solar power</h3>
+                <label>Site <select id="compare-b" aria-labelledby="compare-title-b"></select></label>
+                <p class="compare-choice muted" id="compare-choice-b"></p>
+                <div id="compare-body-b"></div>
+              </article>
+              <article class="compare-scenario" id="compare-view-c" aria-labelledby="compare-title-c">
+                <h3 id="compare-title-c">C · Best balance</h3>
+                <label>Site <select id="compare-c" aria-labelledby="compare-title-c"></select></label>
+                <p class="compare-choice muted" id="compare-choice-c"></p>
+                <div id="compare-body-c"></div>
+              </article>
             </div>
           </div>
         </div>
@@ -613,6 +633,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by team Astralis · v1.2.2 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by team Astralis · v1.3.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>

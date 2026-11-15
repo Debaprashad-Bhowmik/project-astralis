@@ -124,6 +124,10 @@ test('scenario summaries and cross-ranks use the whole slope-eligible inventory'
   assert.equal(earth.summaries.earth.id, 'continuous')
   assert.equal(earth.summaries.solar.id, 'solar-6')
   assert.equal(earth.summaries.balanced.id, 'solar-6')
+  assert.equal(earth.winners.solar.id, 'solar-6')
+  assert.equal(earth.winners.solar.lat, rows[1].lat)
+  assert.deepEqual(earth.winners.solar.horizon, rows[1].horizon)
+  assert.equal(earth.winners.earth.scenarioRanks.earth, 1)
   assert.deepEqual(earth.rows[0].scenarioRanks, { earth: 1, solar: 8, balanced: 8 })
   const solar = rankLandingScenarios(rows, { duration: 10, mode: 'solar' })
   assert.equal(solar.rows[0].scenarioRanks.earth, null)
@@ -135,6 +139,7 @@ test('a no-match scenario identifies a closest patch with no qualifying rank', (
   const result = rankLandingScenarios(rows, { duration: 10, mode: 'earth' })
   assert.equal(result.summaries.earth.qualified, 0)
   assert.equal(result.summaries.earth.id, 'closest')
+  assert.equal(result.winners.earth.qualifies, false)
   assert.equal(result.rows[0].scenarioRanks.earth, null)
   assert.equal(result.summaries.solar.id, 'higher-energy')
 })
@@ -144,4 +149,9 @@ test('equal solar energy gives priority to a longer Earth window', () => {
   const result = rankLandingScenarios(rows, { duration: 10, mode: 'solar', minimumShare: .5, body: 'sun' })
   assert.equal(result.summaries.solar.id, 'better-earth-view')
   assert.equal(result.rows[0].scenarioRanks.solar, 1)
+})
+
+test('empty terrain screening supplies no comparison winners', () => {
+  const result = rankLandingScenarios([], { duration: 24, mode: 'balanced' })
+  assert.deepEqual(result.winners, { earth: null, solar: null, balanced: null })
 })

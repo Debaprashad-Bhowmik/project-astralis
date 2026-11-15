@@ -207,11 +207,22 @@ canvas{display:block;width:100%;height:190px}
 .sun-track{--metric:var(--sun)}.earth-track{--metric:var(--earth)}.both-track{--metric:var(--both)}
 .scrub{display:grid;grid-template-columns:35px minmax(10px,1fr) auto;gap:10px;align-items:center;margin-top:8px}
 .scrub output{color:var(--muted);font-size:.76rem;min-width:110px;text-align:right;font-variant-numeric:tabular-nums}
-.compare-controls{display:grid;grid-template-columns:1fr 1fr minmax(145px,.6fr);gap:12px;margin:13px 0}
+.compare-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:13px 0}
 .compare-controls small{font-size:.72rem;color:var(--muted)}
-.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
-.compare-scenario{min-width:0;padding:8px 12px 9px 0}
-.compare-scenario+.compare-scenario{border-left:1px solid var(--line);padding:8px 0 9px 12px}
+.compare-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+.compare-scenario{min-width:0;padding:12px}
+.compare-scenario+.compare-scenario{border-left:1px solid var(--line)}
+.compare-scenario>h3{font-size:1rem;margin-bottom:10px}
+.compare-choice{min-height:2.8em;font-size:.78rem;margin:6px 0}
+.compare-site-name{font-size:1rem;margin:6px 0}
+.compare-map-controls{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.compare-map-controls button{font-size:.75rem;padding:5px 8px}
+.compare-totals{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;margin:12px 0;font-size:.85rem}
+.compare-totals dt{color:var(--muted);font-size:.73rem}
+.compare-totals dd{margin:3px 0;font-variant-numeric:tabular-nums}
+#compare-schedule{margin:10px 0}
+#window-detail .window-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){.compare-grid{grid-template-columns:1fr}.compare-scenario+.compare-scenario{border-left:0;border-top:1px solid var(--line)}#window-detail .window-grid{grid-template-columns:1fr}}
 .compare-scenario time{font-size:.76rem;color:var(--muted)}
 .compare-scenario .stats{display:flex;gap:7px 15px;flex-wrap:wrap;margin:6px 0 2px;font-size:.75rem}
 .compare-status{font-size:.78rem;margin:4px 0 6px;color:var(--muted)}

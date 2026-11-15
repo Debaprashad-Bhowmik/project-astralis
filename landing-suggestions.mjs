@@ -73,6 +73,9 @@ export function rankLandingScenarios(results, preference) {
     scenarioRanks: Object.fromEntries(modes.map(mode => [mode, scenarios[mode].ranks.get(row.id) ?? null])),
   })
   const { rows, flattest, evaluated, qualified, minimumHours } = scenarios[preference.mode]
-  return { summaries, rows: rows.map(withScenarioRanks), flattest: flattest && withScenarioRanks(flattest),
+  const winners = Object.fromEntries(modes.map(mode => [mode,
+    scenarios[mode].rows[0] ? withScenarioRanks(scenarios[mode].rows[0]) : null,
+  ]))
+  return { summaries, winners, rows: rows.map(withScenarioRanks), flattest: flattest && withScenarioRanks(flattest),
     evaluated, qualified, minimumHours }
 }

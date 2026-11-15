@@ -5,6 +5,7 @@ already-running terrain server, or --browser-path to use an installed browser.
 """
 
 import argparse
+import gzip
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -49,6 +50,11 @@ def audit(page, url):
     toggle.check()
     patches()
     first_results = page.locator('#landing-suggestions-list').inner_text()
+    assert page.locator('.compare-scenario').count() == 3, 'Compare all three mission scenarios'
+    for key, mode in [('a', 'earth'), ('b', 'solar'), ('c', 'balanced')]:
+        patch_id = page.locator('#compare-' + key).input_value()
+        assert patch_id.startswith('landing-patch-'), patch_id
+        expect(page.locator(f'#landing-{mode}-winner')).to_contain_text('Patch ' + patch_id.removeprefix('landing-patch-'))
     for mode in ['earth', 'solar', 'balanced']:
         page.check(f'input[name="landing-scenario"][value="{mode}"]')
         expect(page.locator(f'#landing-{mode}-winner')).not_to_be_empty(timeout=30_000)
@@ -151,6 +157,7 @@ def audit(page, url):
     page.select_option('#compare-b', 'apollo-12')
     page.click('.mission-tools a[href="#compare-heading"]')
     expect(page.locator('#compare-result')).to_be_visible()
+    page.locator('#compare-schedule > summary').click()
     before = page.locator('#compare-time').input_value()
     page.click('#delay-b')
     assert page.locator('#compare-time').input_value() != before
@@ -182,6 +189,71 @@ def audit(page, url):
     print('PASS: leap/common year, mobile controls, Explore to Planner; no uncaught JavaScript errors', flush=True)
 
 
+def audit_comparison(page, url):
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(url + '#compare-heading', wait_until='domcontentloaded')
+    page.wait_for_function("document.querySelector('#compare-c').value.startsWith('landing-patch-')", timeout=120_000)
+    assert not page.locator('#layer-landing-suggestions').is_checked(), 'Comparison must load without showing the shortlist'
+    page.locator('#compare').scroll_into_view_if_needed()
+    page.wait_for_function("document.querySelectorAll('.compare-moon[data-ready=true]').length === 3", timeout=60_000)
+    defaults = [page.locator('#compare-' + key).input_value() for key in ['a', 'b', 'c']]
+    for key, mode in [('a', 'earth'), ('b', 'solar'), ('c', 'balanced')]:
+        winner = page.locator(f'#landing-{mode}-winner').inner_text().split(' · ')
+        expect(page.locator(f'#compare-view-{key} .compare-site-name')).to_have_text(winner[0])
+        expect(page.locator(f'#compare-view-{key} .compare-totals')).to_contain_text(winner[1])
+        assert page.locator(f'#compare-view-{key} canvas').evaluate("c => c.getContext('webgl').getError()") == 0
+        assert page.locator(f'#compare-view-{key} canvas').evaluate("c => {const gl=c.getContext('webgl'),p=gl.getParameter(gl.CURRENT_PROGRAM);return gl.getUniform(p,gl.getUniformLocation(p,'dayNight'))}") == 1
+    assert page.locator('#compare-view-a').bounding_box()['x'] < page.locator('#compare-view-b').bounding_box()['x'] < page.locator('#compare-view-c').bounding_box()['x']
+    radius = "c => {const gl=c.getContext('webgl');return gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM),gl.getUniformLocation(gl.getParameter(gl.CURRENT_PROGRAM),'sphereRadius'))}"
+    before = page.locator('#compare-view-c canvas').evaluate(radius)
+    page.locator('#compare-view-c').get_by_role('button', name='Zoom in', exact=True).click()
+    assert page.locator('#compare-view-c canvas').evaluate(radius) > before
+    page.locator('#compare-view-c').get_by_role('button', name='South Pole', exact=True).click()
+    page.locator('#compare-view-c').get_by_role('button', name='Center site', exact=True).click()
+    page.locator('#compare-scrub').evaluate("e => {e.value=12;e.dispatchEvent(new Event('input',{bubbles:true}))}")
+    times = page.locator('.compare-scenario time').evaluate_all('nodes => nodes.map(n => n.dateTime)')
+    assert len(set(times)) == 1 and '12:00:00' in times[0], times
+    page.select_option('#compare-c', 'apollo-12')
+    assert [page.locator('#compare-' + key).input_value() for key in ['a', 'b']] == defaults[:2]
+    page.select_option('#duration', '168')
+    page.wait_for_function("document.querySelector('#compare-b').value.startsWith('landing-patch-')", timeout=120_000)
+    assert page.locator('#compare-c').input_value() == 'apollo-12'
+    expect(page.locator('#compare-choice-c')).to_have_text('Your selected site')
+    page.locator('#compare-schedule > summary').click()
+    page.fill('#compare-time-c', '')
+    page.locator('#compare-time-c').dispatch_event('change')
+    expect(page.locator('#compare-error')).to_be_visible()
+    expect(page.locator('#compare-view-c .compare-moon')).to_be_hidden()
+    expect(page.locator('#compare-view-a .compare-moon')).to_be_visible()
+    page.click('#compare-recommended')
+    expect(page.locator('#compare-error')).to_be_hidden()
+    assert page.locator('#compare-c').input_value().startswith('landing-patch-')
+    page.locator('#compare-view-c').get_by_role('button', name='Open Surface', exact=True).click()
+    page.wait_for_function("document.querySelector('#space').dataset.viewerMode==='surface' && !document.querySelector('#viewer-stage').hasAttribute('aria-busy')", timeout=60_000)
+    assert page.locator('#space-site').input_value() == page.locator('#compare-c').input_value()
+    page.set_viewport_size({'width': 390, 'height': 900})
+    page.locator('#compare').scroll_into_view_if_needed()
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    assert page.locator('#compare-view-c').bounding_box()['y'] > page.locator('#compare-view-b').bounding_box()['y']
+    assert not errors, errors
+    print('PASS: three automatic recommendations, matching totals, original Moon zoom, shared clock, manual selection, invalid date, reset, Surface and mobile', flush=True)
+
+
+def audit_empty_comparison(page, url):
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.route('**/data/landing-patches.json.gz', lambda route: route.fulfill(content_type='application/gzip', body=gzip.compress(b'[]')))
+    page.goto(url + '#compare-heading', wait_until='domcontentloaded')
+    expect(page.locator('#compare-recommendation-status')).to_contain_text('No sampled patch meets', timeout=60_000)
+    assert all(page.locator('#compare-' + key).input_value() == '' for key in ['a', 'b', 'c'])
+    assert page.locator('.compare-moon:visible').count() == 0
+    page.select_option('#compare-c', 'apollo-12')
+    expect(page.locator('#compare-view-c .compare-site-name')).to_have_text('Apollo 12')
+    assert not errors, errors
+    print('PASS: no eligible patches show an honest empty state; manual comparison still works', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', help='existing navigator server; omit for bundled-only checks')
@@ -198,6 +270,12 @@ def main():
             try:
                 page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
                 audit(page, url)
+                page.close()
+                page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
+                audit_comparison(page, url)
+                page.close()
+                page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
+                audit_empty_comparison(page, url)
             finally:
                 browser.close()
     finally:

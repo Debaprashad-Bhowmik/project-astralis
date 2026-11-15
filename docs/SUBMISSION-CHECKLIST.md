@@ -1,4 +1,4 @@
-# Competition handoff — Lunar Landing Site Navigator v1.2.2
+# Competition handoff — Lunar Landing Site Navigator v1.3.0
 
 **Team: Astralis · Release prepared by Deb · November 15, 2026**
 
@@ -8,7 +8,7 @@ This is a handoff checklist, not a claim that the project has been submitted, ac
 
 | Challenge capability | Where to show it |
 | --- | --- |
-| Select and compare sites | Named-site catalog, feature search, custom map coordinate, and two-site/date comparison. |
+| Select and compare sites | Named-site catalog, feature search, custom map coordinate, and three-scenario comparison with editable sites and dates. |
 | Change landing date and duration | Mission setup and shared timeline; full-year exploration within 2024–2030 data coverage. |
 | Sun and Earth relative to a local horizon | Surface sky plot and first-person view, position annotations, and estimated next rise/set. |
 | Assess solar and communications opportunities | Energy, average power, sunlight/Earth-view hours and percentages, overlap, and longest gaps. |

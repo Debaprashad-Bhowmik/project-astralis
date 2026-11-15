@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator — team handbook
 
-**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.2.2 — Deb**
+**2026 NASA Space Apps Challenge · Lunar Landing Site Navigator · v1.3.0 — Deb**
 
 Release navigation: [source register](REFERENCES.md) · [version history](CHANGELOG.md) · [submission checklist](docs/SUBMISSION-CHECKLIST.md).
 

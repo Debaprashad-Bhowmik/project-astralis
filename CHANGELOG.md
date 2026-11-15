@@ -1,5 +1,17 @@
 # Version history
 
+## v1.3.0 — Deb · Three mission scenarios side by side (2026-11-15)
+
+Release prepared by **Deb**, team **Astralis**. Project: **Lunar Landing Site Navigator**.
+
+- Extend Compare landing sites to three panels: **Best communications**, **Best solar power**, and **Best balance**. Defaults come from the actual scenario winners, including winners outside the currently visible shortlist. The same patch may legitimately lead multiple scenarios.
+- Put an editable site selector above each map. Manual choices remain selected across mission edits; **Use recommended patches** restores the calculated defaults. Recommendations load when the comparison opens, independently of the Landing Suggestions display toggle. Empty screens and closest alternatives are explicitly labeled.
+- Reuse the original detailed Moon renderer for all three maps: dated illumination, crater shadows, Sun/Earth direction labels, rotation, zoom, centering, and South Pole controls. Each panel can open its selected site in the existing Surface viewer and suggested-patch camera journey.
+- Compare total energy, average power, sunlight hours/percentage, Earth-view hours/percentage, longest continuous Earth view, slope, roughness, and visibility gaps. Patch totals use the original screening skyline and sampling cadence to match the suggestion results. A shared timeline synchronizes the views; optional dates for B and C retain schedule comparison.
+- Validate with 72 numerical/geometry tests, 121 asset checksums, and browser regressions for all three defaults, matching totals, original-map zoom and lighting, manual overrides, mission edits, invalid dates, reset, Surface navigation, empty results, and stacked mobile panels.
+
+Scientific datasets, ranking formulas, and generated-art disclosures are unchanged. See [REFERENCES.md](REFERENCES.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the [Windows/macOS update instructions](README.md). This remains a sampled planning tool, not a certified landing assessment. Repository access remains private.
+
 ## v1.2.2 — Deb · Connected flights between suggested sites (2026-11-15)
 
 Release prepared by **Deb**, team **Astralis**.

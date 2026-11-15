@@ -1,5 +1,5 @@
 import { frameAt } from './planner.mjs'
-import { evaluateLandingPatches, rankLandingScenarios } from './landing-suggestions.mjs?v=20261115-shortlist'
+import { evaluateLandingPatches, rankLandingScenarios } from './landing-suggestions.mjs?v=1.3.0'
 
 let patchesPromise
 let currentRequest
