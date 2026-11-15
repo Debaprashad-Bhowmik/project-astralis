@@ -1,10 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { radius } from './planner.mjs'
-import { surfaceFlightFrame, surfaceFocalLength } from './viewer-flight.mjs'
+import { siteFlightCenter, surfaceFlightFrame, surfaceFocalLength } from './viewer-flight.mjs'
 
 const options = { width: 1200, height: 600, startRadius: 276,
   eye: {height: 2, elevation: 2, azimuth: 0, zoom: 1} }
+
+test('site transfers cross the longitude seam by the shorter turn', () => {
+  const from = {lat:-84,lon:179}, to = {lat:-88,lon:-179}
+  assert.deepEqual(siteFlightCenter(.5,from,to),{lat:-86,lon:180})
+  assert.deepEqual(siteFlightCenter(.5,to,from),{lat:-86,lon:-180})
+  assert.equal(siteFlightCenter(1,from,to).lon-360,to.lon)
+})
+
+test('site transfers preserve endpoints, intermediate latitude, and a stationary target', () => {
+  const from = {lat:43,lon:-52}, to = {lat:-85,lon:29}
+  assert.deepEqual(siteFlightCenter(-1,from,to),from)
+  assert.deepEqual(siteFlightCenter(2,from,to),to)
+  assert.deepEqual(siteFlightCenter(.25,from,to),{lat:11,lon:-31.75})
+  assert.deepEqual(siteFlightCenter(.7,to,to),to)
+})
 
 test('the map continues zooming and matches the overhead terrain scale through the handoff', () => {
   const frames = Array.from({length: 1001}, (_,i)=>surfaceFlightFrame(i/1000, options))

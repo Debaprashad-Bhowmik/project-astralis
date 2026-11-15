@@ -1,5 +1,15 @@
 # Version history
 
+## v1.2.2 — Deb · Connected flights between suggested sites (2026-11-15)
+
+Release prepared by **Deb**, team **Astralis**.
+
+- Connect suggested-patch selection to the shared camera journey. From Surface, keep the current site visible during ascent, rotate the Moon Map to the destination, and use the existing descent into its first-person terrain. From Orbit or Moon Map, join the same route at the relevant stage.
+- Queue the latest selected patch during a transition instead of replacing the visible terrain mid-flight. Preserve the shortlist, existing transition focus, physical terrain, sunlight, and crater shadows. Reduced motion follows the same site changes without an extended flight.
+- Add date-line/endpoint tests for map rotation and a browser regression requiring a surface-to-surface patch change to pass through the Moon Map. Validation includes 71 numerical/geometry tests, browser checks, 121 asset checksums, and an animated live-server check of ascent, rotation, descent, and a changed destination.
+
+This is camera navigation, not a simulated spacecraft landing trajectory. Scientific inputs and ranking methods are unchanged; source and asset provenance remain in [REFERENCES.md](REFERENCES.md). Stop the old server and rerun the Windows or macOS block in [README.md](README.md) to update to **v1.2.2**. Private repository access is unchanged.
+
 ## v1.2.1 — Deb · Restore mission tools and strengthen distant focus (2026-11-15)
 
 Release prepared by **Deb**, team **Astralis**. Project: **Lunar Landing Site Navigator**.

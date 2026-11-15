@@ -1,6 +1,6 @@
 # Working on Lunar Landing Site Navigator
 
-Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.2.1 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
+Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: **v1.2.2 — Deb**. Start with the [README](README.md), [handbook](ASTRALIS-HANDBOOK.md), and [references](REFERENCES.md).
 
 ## Access and setup
 
@@ -41,13 +41,13 @@ This starts a temporary local server and checks the real bundled data, landing s
 
 ## Publish a named version
 
-Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.2.1 release is credited to Deb.
+Every release update to `main` gets a new annotated `vMAJOR.MINOR.PATCH` tag. Choose a minor version for a feature release and a patch version for fixes. Update `VERSION`, `CITATION.cff`, the README, app footer/cache token, and `CHANGELOG.md`. Credit the actual contributor; the v1.2.2 release is credited to Deb.
 
 After review and tests, commit the intended files on `main`. For example, the *next fix release* could use:
 
 ```sh
-git tag -a v1.2.2 -m "Lunar Landing Site Navigator v1.2.2 — Deb"
-git push --atomic origin main v1.2.2
+git tag -a v1.2.3 -m "Lunar Landing Site Navigator v1.2.3 — Deb"
+git push --atomic origin main v1.2.3
 ```
 
 Create a GitHub Release from that tag using the corresponding changelog entry. Verify the tag and `main` point to the intended commit and that the README launch commands select it. Teammates stop the old server with Ctrl+C and rerun the same launch command to update. Feature branches do not need release tags.

@@ -65,6 +65,12 @@ def audit(page, url):
     page.locator('#landing-suggestions-list button').first.click()
     settled('surface')
     assert page.locator('#space-site').input_value().startswith('landing-patch-')
+    next_patch = page.locator('#landing-suggestions-list button').nth(1).get_attribute('data-site')
+    page.evaluate("window.siteTravelModes=[]; new MutationObserver(records => siteTravelModes.push(...records.map(record => record.oldValue))).observe(document.querySelector('#space'), {attributes:true, attributeFilter:['data-viewer-mode'], attributeOldValue:true})")
+    page.locator('#landing-suggestions-list button').nth(1).click()
+    page.wait_for_function("id => document.querySelector('#space-site').value === id && document.querySelector('#space').dataset.viewerMode === 'surface' && !document.querySelector('#viewer-stage').hasAttribute('aria-busy')", arg=next_patch, timeout=60_000)
+    modes = page.evaluate('siteTravelModes')
+    assert 'surface' in modes and 'map' in modes and modes.index('surface') < modes.index('map'), modes
     expect(toggle).to_be_visible()
     assert page.locator('#landing-suggestions-list').inner_text() == first_results
     expect(page.locator('#surface-paths')).to_be_visible()
@@ -82,7 +88,7 @@ def audit(page, url):
     page.click('[data-viewer="orbit"]')
     settled('orbit')
     assert page.locator('#landing-suggestions-list').inner_text() == first_results
-    print('PASS: patch opens Surface; guides follow the displayed annual date; Orbit preserves shortlist', flush=True)
+    print('PASS: patch opens Surface; changing patch travels through the map; annual guides and shortlist persist', flush=True)
 
     page.fill('#landing-max-slope', '0.1')
     page.locator('#landing-max-slope').dispatch_event('change')

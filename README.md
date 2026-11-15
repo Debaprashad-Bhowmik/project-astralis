@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.2.1 · Release prepared by Deb**
+**Team: Astralis · v1.2.2 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
@@ -11,7 +11,7 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.2.1 release notes](CHANGELOG.md) |
+| Review what changed | [v1.2.2 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
@@ -304,6 +304,8 @@ Turn on **Landing Suggestions** beside the **Orbit / Moon Map / Surface** tabs a
 
 Select a suggestion or its pin to open **Surface operations** at the patch’s coordinates, 2 m above the modeled ground. The mission timeline updates Sun and Earth positions and calculates visibility. With the terrain server running, inspection recalculates the skyline from the finer elevation window. The suggestion list uses the precomputed inventory to screen the full region. The patch stays available for inspection and comparison during the current session.
 
+If Surface is already open, selecting a different suggested patch first ascends from the current site using the existing camera animation, rotates the Moon Map toward the destination, then descends into its terrain. The old terrain remains in view until ascent finishes. A new patch choice during travel updates the destination; reduced-motion preferences preserve the same navigation without the extended animation.
+
 Compare the three leading patches at the top of Landing Suggestions. Select a scenario to sort the shortlist. Every patch keeps its inventory ID and shows its rank under all three scenarios across the full eligible inventory.
 
 - **Best communications** requires direct Earth visibility from landing to mission end and ranks the matching patches by total solar energy.
@@ -320,11 +322,11 @@ Clone the repo, create a branch from `main` for your task, and open a pull reque
 
 ### Publish a version
 
-Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.2.2. Each tag stays attached to its original release commit.
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.2.3. Each tag stays attached to its original release commit.
 
 ```sh
-git tag -a v1.2.2 -m "Lunar Landing Site Navigator v1.2.2 — Deb"
-git push --atomic origin main v1.2.2
+git tag -a v1.2.3 -m "Lunar Landing Site Navigator v1.2.3 — Deb"
+git push --atomic origin main v1.2.3
 ```
 
 The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)

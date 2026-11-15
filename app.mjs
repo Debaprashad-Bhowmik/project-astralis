@@ -3,7 +3,7 @@ import { createGlobe, globeOrientation } from './globe.mjs?v=map-system-1'
 import { calendarSpaceWindow, createSpaceView, readSpaceSamples, spaceStep } from './space-view.mjs?v=map-system-1'
 import { drawLocalSky, skyPathSegments, skyRange } from './sky-view.mjs'
 import { createSurfaceView, earthIllumination, loadSurfaceMesh, nearbyCraters, surfaceHorizon, surfacePaths } from './surface-view.mjs?v=1.2.1'
-import { surfaceFlightFrame } from './viewer-flight.mjs'
+import { siteFlightCenter, surfaceFlightFrame } from './viewer-flight.mjs?v=1.2.2'
 import { coverageMatches, createCoverageMap, solarPowerColor, solarPowerScaleMax, southPolePowerMax, subPoint, visibilityLayers, visibilityRequirements } from './coverage-map.mjs'
 import { artemisSouthLatitude, missionQuarters, overlapRamp, overlapRgb, overviewOverlapGrid, windowHours } from './mission-heat.mjs'
 import { detailHoursAt, overviewHoursAt } from './mission-heat-detail.mjs'
@@ -152,6 +152,7 @@ const refiningPatches = new Set()
 let updateSpace
 let viewerMode = 'orbit'
 let viewerDestination = 'orbit'
+let viewerTargetSite = null
 let viewerFlight = null
 let viewerCrossings
 let spaceYearMode = false
@@ -591,10 +592,8 @@ function focusLandingSuggestion(site) {
     })
     updateComparisonOptions()
   }
-  get('surface-height').value = '2'
-  surfaceView?.setHeight(2)
-  selectSite(site.id, false, true)
-  void openSurfaceView()
+  // Keep the current site and mesh until the existing ascent has completed.
+  void openSurfaceView(inspectedPatches.get(site.id))
   void refineLandingSuggestion(inspectedPatches.get(site.id))
 }
 
@@ -1865,25 +1864,53 @@ async function approachSurface(reverse=false) {
   return true
 }
 
-async function setViewerMode(mode) {
+async function rotateToLandingSite(site) {
+  useMap('globe')
+  clearMapColors()
+  const origin = globe.viewCenter()
+  const camera = globe.camera()
+  const scale = camera.radius / (Math.min(get('globe-canvas').clientWidth, get('globe-canvas').clientHeight) * .46)
+  get('viewer-flight-status').textContent = 'Rotating the Moon toward '+siteName(site)+'…'
+  try {
+    await animateFlight(1400, progress => {
+      const center = siteFlightCenter(progress, origin, site)
+      globe.flight({ ...camera, moving: true, orientation: globeOrientation(center.lat, center.lon) })
+    })
+  } finally {
+    globe.landCamera(site, scale)
+  }
+}
+
+async function setViewerMode(mode, targetSite = null) {
   viewerDestination=mode
+  viewerTargetSite=targetSite
   if(viewerFlight) return viewerFlight
   if(!active) return
-  if(mode===viewerMode) return
+  if(mode===viewerMode && (!targetSite || targetSite.id===active.site.id)) return
   stop()
   stopSpaceYear()
   const status=get('viewer-flight-status')
   status.hidden=false
   const journey=async()=>{
     try {
-      while(viewerMode!==viewerDestination) {
+      while(viewerMode!==viewerDestination || viewerTargetSite && viewerTargetSite.id!==active.site.id) {
+        const target = viewerTargetSite
         if(!globe || !updateSpace) {
+          if(target) selectSite(target.id, false)
+          viewerTargetSite=null
           displayViewerMode(viewerDestination)
           if(viewerMode==='surface') await showSurface()
           break
         }
         if(viewerMode==='orbit') await approachMoon()
         else if(viewerMode==='surface') await approachSurface(true)
+        else if(target && target.id!==active.site.id) {
+          selectSite(target.id, false)
+          get('surface-height').value='2'
+          surfaceView?.setHeight(2)
+          await rotateToLandingSite(target)
+          if(viewerTargetSite===target) viewerTargetSite=null
+        }
         else if(viewerDestination==='orbit') await approachMoon(true)
         else if(!await approachSurface()) {viewerDestination='map';return}
       }
@@ -1896,6 +1923,7 @@ async function setViewerMode(mode) {
       globe?.flight(null)
       displayViewerMode('map')
       viewerDestination='map'
+      viewerTargetSite=null
     } finally {
       viewerFlight=null
       get('viewer-stage').removeAttribute('aria-busy')
@@ -1906,10 +1934,10 @@ async function setViewerMode(mode) {
   return viewerFlight
 }
 
-function openSurfaceView() {
+function openSurfaceView(site = null) {
   get('space-heading').focus({ preventScroll: true })
   get('space').scrollIntoView({ block: 'start', behavior:'smooth' })
-  return setViewerMode('surface')
+  return setViewerMode('surface', site)
 }
 
 async function openSurfaceLink() {
