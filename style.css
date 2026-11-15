@@ -527,9 +527,8 @@ canvas{display:block;width:100%;height:190px}
 }
 
 /* All three camera modes occupy the same stage at every viewport size. */
-.space-panel{--viewer-control-space:550px;scroll-margin-top:16px;min-width:0}
-.space-panel:has(#space-year-controls:not([hidden])){--viewer-control-space:640px}
-.viewer-stage{--viewer-height:clamp(280px,min(43vw,calc(100dvh - var(--viewer-control-space))),625px);position:relative;height:var(--viewer-height);margin-top:12px;overflow:hidden;isolation:isolate;border:1px solid var(--line);border-radius:10px;background:#050507}
+.space-panel{scroll-margin-top:16px;min-width:0}
+.viewer-stage{position:relative;height:clamp(355px,43vw,625px);margin-top:12px;overflow:hidden;isolation:isolate;border:1px solid var(--line);border-radius:10px;background:#050507}
 .viewer-layer{position:absolute;inset:0;opacity:1;z-index:1}
 .viewer-layer[inert]{opacity:0;z-index:0;pointer-events:none}
 .viewer-stage :is(#space-canvas,.globe-stage,.surface-stage){position:absolute;inset:0;height:100%;width:100%;border:0;border-radius:0}
@@ -559,14 +558,14 @@ canvas{display:block;width:100%;height:190px}
 .viewer-orbit-controls .space-distance{width:min(100%,420px);margin-top:8px}
 #viewer-map-controls,#surface-view{margin-top:15px;padding-top:12px;border-top:1px solid var(--line)}
 #viewer-map .polar-map{position:absolute;inset:0;margin:auto;height:100%;max-width:100%;width:auto;min-height:0;aspect-ratio:1;border:0}
-#viewer-coverage{position:absolute;inset:0;margin:auto;width:min(100%,calc(2 * (var(--viewer-height) - 28px)));height:max-content}
+#viewer-coverage{position:absolute;inset:0;margin:auto;width:min(100%,calc(2 * (clamp(355px,43vw,625px) - 28px)));height:max-content}
 .viewer-stage .coverage-axis{margin-inline:10px}
 .globe-directions{position:absolute;inset:0;pointer-events:none}
 .globe-direction{position:absolute;left:calc(50% + var(--direction-x));translate:-50% -50%;border:1px solid currentColor;border-radius:4px;background:#090910ec;padding:2px 6px;font-size:.73rem;font-weight:650;white-space:nowrap}
 #globe-sun-marker{color:var(--sun)}
 #globe-earth-marker{color:var(--earth)}
 @media(max-width:700px){
-  .viewer-stage{--viewer-height:clamp(305px,75vw,440px)}
+  .viewer-stage{height:clamp(305px,75vw,440px)}
   .viewer-tabs{width:100%}
   .viewer-tabs .subtle{min-width:0;flex:1}
   .viewer-site .space-readout{gap:5px 10px}

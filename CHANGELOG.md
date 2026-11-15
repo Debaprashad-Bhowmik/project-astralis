@@ -1,5 +1,13 @@
 # Version history
 
+## v1.3.3 — Deb · Restore original viewer dimensions (2026-11-15)
+
+- Restore the exact pre-v1.3.2 viewer sizing on desktop and mobile. Switching to Whole year no longer reduces the viewing window.
+- Keep the requested compact controls: inline coordinates/terrain resolution, Mission window / Whole year at the right end of the tools row, and aligned checkbox sizing.
+- Verify the original viewer heights at 1920, 1440, 1280, and 390 px viewport widths, with no horizontal overflow and unchanged height when switching time modes.
+
+Release prepared by **Deb**, team **Astralis**. This corrects the window resizing introduced in v1.3.2; scientific calculations and rendering remain unchanged. See the [setup guide](README.md).
+
 ## v1.3.2 — Deb · Compact viewer controls (2026-11-15)
 
 - Move **Mission window / Whole year** to the right end of the mission-tools row. Keep annual year, month, and playback controls together below it when enabled.
