@@ -1,5 +1,14 @@
 # Version history
 
+## v1.3.4 — Deb · Map layers above the viewer (2026-11-15)
+
+- Move South Pole scope and all six layer checkboxes above the shared viewer, where they remain accessible in Orbit, Moon Map, and Surface. Remove the separate Map layers shortcut below the window.
+- Changing a checkbox uses the existing camera journey to reach the 3D Moon Map and applies the current layer selection. Polar/flat maps return to the 3D projection. Layer-triggered flights preserve checkbox choices, including rapid changes during a flight.
+- Keep the original viewer dimensions, compact timescale/site readouts, intersection semantics, crater-shadow calculations, landing suggestions, and three-panel comparison. Detailed legends remain below the map.
+- Extend browser regressions for visible top controls, Orbit/Surface navigation, polar-map switching, retained selections, shader visibility state, and unchanged viewer height. Verify real animation with rapid Sun/Earth choices and a layer change during descent, plus existing numerical tests and bundled-asset checks.
+
+Release prepared by **Deb**, team **Astralis**. Scientific inputs and ranking formulas are unchanged. See the [setup guide](README.md) and [references](REFERENCES.md).
+
 ## v1.3.3 — Deb · Restore original viewer dimensions (2026-11-15)
 
 - Restore the exact pre-v1.3.2 viewer sizing on desktop and mobile. Switching to Whole year no longer reduces the viewing window.

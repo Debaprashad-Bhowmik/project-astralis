@@ -1,6 +1,6 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.3.3 · Release prepared by Deb**
+**Team: Astralis · v1.3.4 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
 
@@ -11,7 +11,7 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.3.3 release notes](CHANGELOG.md) |
+| Review what changed | [v1.3.4 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
@@ -259,7 +259,7 @@ Focus the 3D scene and hold **W, A, S, D** to move, or use the buttons below it 
 Orbit interpolates JPL geometric positions and displays physical distances in the readout. All radii and separations share one physical scale, projected through a perspective camera. Earth–Moon and solar overviews show how much empty space separates the bodies; use the Focus selector or camera zoom to inspect Earth, Moon, or Sun. A farther body and its glare cannot paint through a nearer sphere. Earth uses an archival satellite mosaic with approximate sidereal rotation and dynamic lighting in Orbit and Surface. The Sun disk uses an archival SDO observation recolored for display. Clouds and solar activity do not simulate weather at the selected date. [NASA Blue Marble](https://svs.gsfc.nasa.gov/3615/) · [NASA CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/) · [NASA SDO archive](https://svs.gsfc.nasa.gov/4551/)
 
 
-Orbit and Moon Map use one lunar renderer: the camera closes in on the same sphere. Surface first loads the selected coordinate's terrain, centers that point, and keeps zooming down toward it. The map and overhead terrain view use matching screen scale during a soft-focus handoff. The same descent then lowers the camera and gradually turns it toward the horizon, finishing at the selected viewing height. Blur masks coarse detail only in the middle of the journey. This is an illustrative navigation path, not a simulated landing trajectory. Reduced-motion settings skip camera travel. Screen resolution adapts during flight and returns to full resolution on arrival. Analysis colors start off; open **Analyze landing conditions** to enable them. Date, site, Sun/Earth positions and mission totals stay together, with advanced controls in expandable sections.
+Orbit and Moon Map use one lunar renderer: the camera closes in on the same sphere. Surface first loads the selected coordinate's terrain, centers that point, and keeps zooming down toward it. The map and overhead terrain view use matching screen scale during a soft-focus handoff. The same descent then lowers the camera and gradually turns it toward the horizon, finishing at the selected viewing height. Blur masks coarse detail only in the middle of the journey. This is an illustrative navigation path, not a simulated landing trajectory. Reduced-motion settings skip camera travel. Screen resolution adapts during flight and returns to full resolution on arrival. Analysis colors start off. Use the layer checkboxes directly above the viewer to enable them; checking or unchecking a layer automatically transitions from Orbit or Surface to the 3D Moon Map and preserves the latest selections during the flight. Date, site, Sun/Earth positions and mission totals stay together, with advanced controls in expandable sections.
 
 **Rendering data and limits.** The Moon uses an 8,192-pixel global color map on capable devices, with 4,096-pixel regional tiles cut from NASA's 16,384-pixel original when zoomed in. Image resolution is separate from elevation resolution. The global visual shadows and normals use the bundled LOLA grid (about 1.9 km spacing north–south); polar rendering uses the finer nested LOLA grids. Selected first-person views can use finer stereo elevation. Earth is a lit, rotating globe with an archival cloud mosaic, ocean highlights and a thin atmospheric rim. These are rendering effects, not an atmospheric simulation. Orbit and the Moon Map surroundings use physical sphere radii and JPL separations; close-ups change the camera, not the body size. The Moon retains its cartographic projection for map markers and picking. The celestial backdrop uses a perspective camera fitted to the displayed lunar silhouette, so its scale and occlusion remain aligned with the map. Surface disks use the modeled apparent angular sizes.
 
@@ -300,7 +300,7 @@ The terrain server uses NASA’s 10 m LOLA product for South Pole patches and th
 
 ### South Pole landing suggestions
 
-The mission tools row stays beside the viewer tabs. **Mission window / Whole year** sits at the right end of that row on desktop; year, month, and speed appear when needed. Coordinates and terrain resolution sit inline beside the site selector. The viewer retains its original dimensions; only the controls are compacted. Smaller screens wrap controls instead of clipping them. **Map layers**, **Add coordinates**, and **Find lunar features** open the relevant map controls; **Compare sites** takes you to the three-panel comparison. The map analysis controls start expanded, with visibility and power overlays still opt-in.
+The mission tools row stays beside the viewer tabs. **Mission window / Whole year** sits at the right end of that row on desktop; year, month, and speed appear when needed. Coordinates and terrain resolution sit inline beside the site selector. The viewer retains its original dimensions; only the controls are compacted. Smaller screens wrap controls instead of clipping them. **Add coordinates** and **Find lunar features** open their map controls; **Compare sites** takes you to the three-panel comparison. **South Pole only** and all layer checkboxes remain above the viewer in every camera mode. Layer changes also switch a polar/flat map back to the 3D Moon. The old Map layers shortcut has been removed; **Layer details and legends** below the map explains the results. Visibility and power overlays remain opt-in, and multiple filters still form an intersection.
 
 Mission setup now shows the landing date, UTC time, operating window, and date-shift button. The old best-fit summary, priority presets, and Advanced settings are hidden. Turn on **Landing Suggestions** beside the **Orbit / Moon Map / Surface** tabs to reveal a full-width panel directly below the viewer; the ordinary site ranking follows it. Set the landing time and operating window in Mission setup. The switch is available in every viewer mode, including the polar and visibility maps. Enabling it takes you to the ranked shortlist. Changing views keeps that shortlist; changing the mission or maximum slope recalculates it. The editable slope control defaults to under 10° over 100 m based on NASA’s Artemis landing study. Each patch lists total solar energy in kWh/m², average power in W/m², and the hours and percentage of the mission with sunlight and with a direct view of Earth. Average power is total solar energy divided by the full mission duration. Terrain shadows and total eclipses contribute zero direct power. [NASA Artemis landing study](https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf)
 
@@ -324,11 +324,11 @@ Clone the repo, create a branch from `main` for your task, and open a pull reque
 
 ### Publish a version
 
-Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.3.4. Each tag stays attached to its original release commit.
+Give every published update to main a new annotated tag in vMAJOR.MINOR.PATCH format. Run the tests, update the version metadata and changelog, tag the release commit on main, and push both together. See [the release checklist](CONTRIBUTING.md#publish-a-named-version). For example, the next fix release could use v1.3.5. Each tag stays attached to its original release commit.
 
 ```sh
-git tag -a v1.3.4 -m "Lunar Landing Site Navigator v1.3.4 — Deb"
-git push --atomic origin main v1.3.4
+git tag -a v1.3.5 -m "Lunar Landing Site Navigator v1.3.5 — Deb"
+git push --atomic origin main v1.3.5
 ```
 
 The launch blocks use the newest tag reachable through main's first-parent history and print the version before opening the site. [All published versions](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)

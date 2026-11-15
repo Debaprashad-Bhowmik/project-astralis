@@ -161,6 +161,8 @@ let viewerMode = 'orbit'
 let viewerDestination = 'orbit'
 let viewerTargetSite = null
 let viewerFlight = null
+let layerNavigationRequest = 0
+let mapLayerNavigation = false
 let viewerCrossings
 let spaceYearMode = false
 let spaceYearWindow
@@ -735,6 +737,7 @@ function updateLandingScenario() {
 function syncLandingSuggestions() {
   const toggle = get('layer-landing-suggestions')
   toggle.disabled = !settings
+  for (const input of get('viewer-layer-controls').querySelectorAll('input')) input.disabled = !settings
   for (const button of document.querySelectorAll('[data-map-tool]')) button.disabled = !settings
   // Planning depends on the mission, not which camera or map projection is visible.
   // Changing views must not cancel the worker or discard the ranked patches.
@@ -1792,6 +1795,8 @@ function animateFlight(duration, frame) {
 }
 
 function clearMapColors() {
+  // A layer-triggered camera journey must retain the user's latest checkbox choices.
+  if (mapLayerNavigation) return
   for(const id of ['layer-overlap','layer-sun','layer-earth','layer-both','layer-power']) get(id).checked=false
   showCoverage()
 }
@@ -1966,6 +1971,28 @@ function openSurfaceView(site = null) {
   get('space-heading').focus({ preventScroll: true })
   get('space').scrollIntoView({ block: 'start', behavior:'smooth' })
   return setViewerMode('surface', site)
+}
+
+async function openMapForLayers() {
+  if (!active) return
+  const request = ++layerNavigationRequest
+  mapLayerNavigation = true
+  try {
+    await setViewerMode('map')
+    if (request !== layerNavigationRequest) return
+    // A later explicit camera choice can supersede this request.
+    if (viewerMode === 'map') {
+      if (!get('show-globe').disabled) useMap('globe')
+      get('viewer-analysis').open = true
+    }
+    showCoverageLegend()
+    showCoverage()
+    showComparisonTime()
+  } catch (reason) {
+    error('space-error', 'The map layers could not open. ' + reason.message)
+  } finally {
+    if (request === layerNavigationRequest) mapLayerNavigation = false
+  }
 }
 
 async function openSurfaceLink() {
@@ -2632,6 +2659,7 @@ get('coverage-filters').addEventListener('change', event => {
   showCoverageLegend()
   showCoverage()
   showComparisonTime()
+  void openMapForLayers()
 })
 get('mission-heat-period').addEventListener('change', showCoverage)
 get('map-color-metric').addEventListener('change', showCoverage)
@@ -2648,7 +2676,6 @@ for (const button of document.querySelectorAll('[data-map-tool]')) {
     await setViewerMode('map')
     const panel = get(button.dataset.mapTool)
     panel.open = true
-    if (button.dataset.mapTool === 'viewer-analysis' && !get('polar-view').hidden) useMap('globe')
     const target = panel.querySelector('input:not(:disabled), summary')
     target?.focus({ preventScroll: true })
     panel.scrollIntoView({ behavior: 'instant', block: 'start' })
@@ -2665,6 +2692,7 @@ get('mission-heat-south').addEventListener('change', event => {
   if (active) showRanking()
   if (southOnly && !get('globe-view').hidden) globe?.southPole()
   showCoverage()
+  void openMapForLayers()
 })
 get('elevation-chart').addEventListener('pointerdown', event => {
   if (!active) return

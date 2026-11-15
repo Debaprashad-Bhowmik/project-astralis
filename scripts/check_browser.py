@@ -45,6 +45,20 @@ def audit(page, url):
         settled('map')
         assert page.locator('#' + panel).get_attribute('open') is not None
 
+    expect(page.locator('#coverage-filters')).to_be_visible()
+    assert page.locator('[data-map-tool="viewer-analysis"]').count() == 0
+    layers = page.locator('#coverage-filters').bounding_box()
+    assert layers['y'] + layers['height'] <= page.locator('#viewer-stage').bounding_box()['y']
+    original_height = page.locator('#viewer-stage').bounding_box()['height']
+    page.check('#layer-sun')
+    settled('map')
+    expect(page.locator('#layer-sun')).to_be_checked()
+    expect(page.locator('#show-globe')).to_have_attribute('aria-pressed', 'true')
+    assert page.locator('#viewer-stage').bounding_box()['height'] == original_height
+    visibility = page.locator('#globe-canvas').evaluate("canvas => {const gl=canvas.getContext('webgl'),program=gl.getParameter(gl.CURRENT_PROGRAM);return Array.from(gl.getUniform(program,gl.getUniformLocation(program,'visibility')))}")
+    assert visibility == [1, 0], visibility
+    page.uncheck('#layer-sun')
+
     toggle = page.locator('#layer-landing-suggestions')
     expect(toggle).to_be_visible()  # Regression: hidden on arrival in Orbit.
     toggle.check()
@@ -60,17 +74,31 @@ def audit(page, url):
         expect(page.locator(f'#landing-{mode}-winner')).not_to_be_empty(timeout=30_000)
     expect(page.locator('#landing-scenario-rule')).to_contain_text('continuous Earth-view')
     page.wait_for_function("expected => document.querySelector('#landing-suggestions-list').innerText === expected", arg=first_results)
-    tool('viewer-analysis')
+    page.click('[data-viewer="map"]')
+    settled('map')
     for projection in ['show-map', 'show-coverage', 'show-globe']:
         page.click('#' + projection)
         expect(toggle).to_be_visible()
         expect(page.locator('#landing-suggestions')).to_be_visible()
         assert page.locator('#landing-suggestions-list').inner_text() == first_results, projection
+    page.click('#show-map')
+    expect(page.locator('#coverage-filters')).to_be_visible()
+    page.check('#layer-earth')
+    settled('map')
+    expect(page.locator('#show-globe')).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#layer-earth')).to_be_checked()
+    page.uncheck('#layer-earth')
     print('PASS: suggestions available from Orbit; all three scenarios and map projections preserve results', flush=True)
 
     page.locator('#landing-suggestions-list button').first.click()
     settled('surface')
     assert page.locator('#space-site').input_value().startswith('landing-patch-')
+    page.check('#layer-power')
+    settled('map')
+    expect(page.locator('#layer-power')).to_be_checked()
+    expect(page.locator('#power-details')).to_be_visible()
+    page.click('[data-viewer="surface"]')
+    settled('surface')
     next_patch = page.locator('#landing-suggestions-list button').nth(1).get_attribute('data-site')
     page.evaluate("window.siteTravelModes=[]; new MutationObserver(records => siteTravelModes.push(...records.map(record => record.oldValue))).observe(document.querySelector('#space'), {attributes:true, attributeFilter:['data-viewer-mode'], attributeOldValue:true})")
     page.locator('#landing-suggestions-list button').nth(1).click()
@@ -114,8 +142,9 @@ def audit(page, url):
     expect(page.locator('#landing-suggestions')).to_be_hidden()
     print('PASS: slope and mission edits recalculate the shortlist; explicit toggle hides it', flush=True)
 
-    tool('viewer-analysis')
     page.check('#mission-heat-south')
+    settled('map')
+    expect(page.locator('#show-globe')).to_have_attribute('aria-pressed', 'true')
     page.check('#layer-sun')
     page.check('#layer-earth')
     expect(page.locator('#coverage-intersection-note')).to_be_visible()
@@ -132,7 +161,7 @@ def audit(page, url):
     for layer in ['sun', 'earth', 'power', 'overlap']:
         page.uncheck('#layer-' + layer)
     page.uncheck('#mission-heat-south')
-    print('PASS: intersection filters, South Pole scope, power/overlap metrics and crater shadows', flush=True)
+    print('PASS: above-viewer layers navigate from Orbit/Surface, preserve selections, intersection filters, South Pole scope and crater shadows', flush=True)
 
     page.select_option('#site-group', 'clps')
     expect(page.locator('#future-clps-note')).to_be_visible()

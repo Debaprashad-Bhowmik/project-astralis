@@ -118,6 +118,18 @@
           <div class="panel-heading space-heading">
             <h2 id="space-heading" tabindex="-1">Lunar mission viewer</h2>
           </div>
+          <div class="viewer-layer-controls" id="viewer-layer-controls" role="group" aria-label="Moon map layers">
+            <label class="map-scope"><input id="mission-heat-south" type="checkbox" disabled> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
+            <fieldset class="map-filters" id="coverage-filters">
+              <legend class="sr-only">Map layers</legend>
+              <label><input id="layer-overlap" type="checkbox" disabled> Mission overlap</label>
+              <label><input id="layer-sun" type="checkbox" disabled> Sunlight now</label>
+              <label><input id="layer-earth" type="checkbox" disabled> Earth in view now</label>
+              <label><input id="layer-both" type="checkbox" disabled> Both in view now</label>
+              <label><input id="layer-power" type="checkbox" disabled> Solar power</label>
+              <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" disabled checked> Crater shadows</label>
+            </fieldset>
+          </div>
           <div class="viewer-stage" id="viewer-stage">
             <canvas id="orbit-labels" aria-hidden="true"></canvas>
             <div class="viewer-layer" id="viewer-orbit" aria-label="Orbital view">
@@ -171,7 +183,6 @@
           </div>
           <nav class="mission-tools" aria-label="Mission planning tools">
             <label id="landing-suggestions-toggle"><input id="layer-landing-suggestions" type="checkbox" aria-controls="landing-suggestions" disabled> Landing Suggestions</label>
-            <button type="button" class="subtle" data-map-tool="viewer-analysis" disabled>Map layers</button>
             <button type="button" class="subtle" data-map-tool="custom-coordinates" disabled>Add coordinates</button>
             <button type="button" class="subtle" data-map-tool="named-features" disabled>Find lunar features</button>
             <a class="subtle" href="#compare-heading">Compare sites</a>
@@ -254,18 +265,8 @@
               <div class="map-view" role="group" aria-label="Map view"><button type="button" class="subtle" id="show-globe" aria-pressed="true">3D Moon</button><button type="button" class="subtle" id="show-map" aria-pressed="false">Polar map</button><button type="button" class="subtle" id="show-coverage" aria-pressed="false">Visibility map</button></div>
             </div>
             <details class="viewer-options" id="viewer-analysis" open>
-              <summary>Analyze landing conditions <span>Visibility, power and crater shadows</span></summary>
-            <label class="map-scope"><input id="mission-heat-south" type="checkbox"> South Pole only <span class="muted" id="map-scope" hidden>84°S–90°S</span></label>
+              <summary>Layer details and legends <span>Visibility, power and crater shadows</span></summary>
             <div class="coverage-toolbar" id="coverage-toolbar">
-              <fieldset class="map-filters" id="coverage-filters">
-                <legend>Map layers</legend>
-                <label><input id="layer-overlap" type="checkbox"> Mission overlap</label>
-                <label><input id="layer-sun" type="checkbox"> Sunlight now</label>
-                <label><input id="layer-earth" type="checkbox"> Earth in view now</label>
-                <label><input id="layer-both" type="checkbox"> Both in view now</label>
-                <label><input id="layer-power" type="checkbox"> Solar power</label>
-                <label title="Use measured terrain to calculate shadows and line of sight"><input id="layer-shadows" type="checkbox" checked> Crater shadows</label>
-              </fieldset>
               <label id="mission-heat-period-label" hidden>Heat map period
                 <select id="mission-heat-period"></select>
               </label>
@@ -634,6 +635,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by team Astralis · v1.3.3 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by team Astralis · v1.3.4 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>
