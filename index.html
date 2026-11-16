@@ -9,10 +9,10 @@
   <meta name="author" content="Astralis">
   <link rel="icon" href="./assets/the-astralis-logo.png?v=team-wordmark-2">
   <title>Lunar Landing Site Navigator · Team Astralis</title>
-  <link rel="stylesheet" href="./style.css?v=1.5.0">
-  <link rel="stylesheet" href="./mission-visuals.css?v=1.5.0">
+  <link rel="stylesheet" href="./style.css?v=1.5.1">
+  <link rel="stylesheet" href="./mission-visuals.css?v=1.5.1">
   <link rel="stylesheet" href="./explorer-embed.css">
-  <script type="module" src="./app.mjs?v=1.5.0"></script>
+  <script type="module" src="./app.mjs?v=1.5.1"></script>
 </head>
 <body>
   <a class="skip" href="#mission">Skip to mission setup</a>
@@ -32,7 +32,7 @@
         <a class="hero-action" href="#mission">Plan a landing <span aria-hidden="true">↓</span></a>
         <a class="hero-action hero-explore" href="#explore">Explore examples <span aria-hidden="true">↓</span></a>
       </div>
-      <span class="hero-credit">Illustration</span>
+      <span class="hero-credit">AI-generated illustration</span>
     </div>
 
     <div class="workspace" id="workspace">
@@ -165,6 +165,7 @@
                   <canvas id="surface-sky" aria-hidden="true"></canvas>
                   <canvas id="surface-canvas" tabindex="0" role="img" aria-label="First-person view of measured lunar terrain at the selected site" aria-describedby="surface-walk-help surface-caption surface-angles surface-light sky-sun-position sky-earth-position"></canvas>
                   <canvas id="surface-labels" aria-hidden="true"></canvas>
+                  <span class="surface-ai-credit">AI-generated visual texture</span>
                   <span id="surface-heading" aria-label="Camera bearing"></span>
                   <div class="surface-guides" id="surface-guides" aria-label="Off-screen objects">
                     <button type="button" class="subtle" id="surface-guide-sun" hidden></button>
@@ -417,6 +418,7 @@
                 <p class="muted" id="surface-caption"></p>
                 <p class="muted" id="surface-angles"></p>
                 <p class="muted" id="surface-light"></p>
+                <p class="muted surface-credit">AI-generated dust texture · procedural illustrative rocks; measured elevations are separate.</p>
                 <p class="muted surface-credit"><a id="surface-terrain-source" href="https://svs.gsfc.nasa.gov/4720/">Surface imagery · NASA LROC / LOLA</a></p>
                 <p class="muted surface-credit"><a href="https://svs.gsfc.nasa.gov/3615/">Earth imagery · NASA Blue Marble</a> <span>· satellite mosaic with estimated rotation and lighting for the selected UTC time</span></p>
                 </details>
@@ -642,6 +644,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><span>Built by team Astralis · v1.5.0 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
+  <footer class="footer"><span>Built by team Astralis · v1.5.1 · Deb</span><span>2026 NASA Space Apps Challenge · Lunar Landing Site Navigator</span></footer>
 </body>
 </html>

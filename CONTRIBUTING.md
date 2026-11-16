@@ -4,7 +4,7 @@ Team: **Astralis**. Project: **Lunar Landing Site Navigator**. Current release: 
 
 ## Access and setup
 
-This repository is private. Accept the collaborator invitation and sign in with that GitHub account. The README's Windows and macOS commands are for running the latest release in a separate `project-astralis-run` folder. Develop in your own checkout on a branch from current `main`, such as `codex/terrain-caption` or `feature/site-comparison`. Open a pull request for review.
+This repository is public for the Space Apps submission. Read-only cloning needs no account. Write access still requires an invited collaborator account. The README's Windows and macOS commands are for running the latest release in a separate `project-astralis-run` folder. Develop in your own checkout on a branch from current `main`, such as `codex/terrain-caption` or `feature/site-comparison`. Open a pull request for review.
 
 Use `python scripts/serve_astralis.py --open` after installing `numpy` and `rasterio` to run a development checkout. No API keys are required. Keep terrain downloads and personal attachments outside tracked source. Do not commit `.venv`, secrets, screenshots of private accounts, or full upstream GeoTIFF archives.
 
@@ -14,7 +14,7 @@ Use `python scripts/serve_astralis.py --open` after installing `numpy` and `rast
 - Preserve scientific terrain and ephemeris inputs when changing rendering. Generated rocks, dust, camera effects, and artistic shading must never silently enter visibility, slope, or power calculations.
 - For a new dataset, record its original provider, exact product/file, local derivative, units, coordinate frame, resolution, transformation, and limitations in [REFERENCES.md](REFERENCES.md). Keep third-party credits with the asset.
 - Add meaningful regression checks when changing calculations. Inspect visual changes at a named site, custom coordinates, and a suggested patch; include reduced-motion and a small screen when changing navigation.
-- Do not move a published version tag or force-push shared history. Preserve private access unless Deb explicitly requests a change.
+- Do not move a published version tag or force-push shared history. Preserve the visibility setting chosen by Deb; do not change repository access without an explicit request.
 
 ## Checks before publishing
 

@@ -1,5 +1,14 @@
 # Version history
 
+## v1.5.1 — Deb · Public Space Apps submission (2026-11-15)
+
+- Publish the verified 30-second Team Astralis demo, captions, media provenance, and complete submission source register.
+- Add public project/demo links and account-free source-access guidance.
+- Explicitly label the AI-generated hero illustration and surface dust texture.
+- Preserve v1.5.0 scientific data, ranking, and viewer behavior.
+
+Release prepared for Deb and Team Astralis with Codex assistance.
+
 ## v1.5.0 — Deb · South Pole Explorer viewers (2026-11-15)
 
 - Add three persistent comparison maps to every Trade-off Explorer detail tab, using the original Moon renderer. Restrict both catalog candidates and map rendering to 84°S–90°S, with no whole-Moon option.

@@ -1,8 +1,18 @@
 # Lunar Landing Site Navigator
 
-**Team: Astralis · v1.5.0 · Release prepared by Deb**
+**Team: Astralis · v1.5.1 · Release prepared by Deb**
 
 Astralis is the team behind **Lunar Landing Site Navigator**, our project for the 2026 NASA Space Apps Challenge. The challenge asks teams to make it easier to compare lunar landing sites and dates using the Sun and Earth's positions relative to the horizon. [Challenge brief](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/)
+
+## Public project and demo
+
+- [Open the hosted navigator](https://debaprashad-bhowmik.github.io/project-astralis/).
+- [Watch the 30-second Team Astralis demo](https://debaprashad-bhowmik.github.io/project-astralis/docs/demo/).
+- [Complete submission sources](docs/submission-sources.md) and [demo provenance](docs/demo/credits.txt).
+
+Our novel contribution is the mission-specific search for South Pole candidate patches beyond preset sites. The Christmas 2026, 168-hour example identifies Patch 1 at 84.0215°S, 10.0372°W as the best balanced sampled candidate under the model: 4.06 kWh/m² modeled energy, 156.6 continuous Earth-view hours, and a 0.14° slope.
+
+The hosted app uses bundled terrain. Run the Python server below to add optional on-demand finer elevation windows. Source resolution and model assumptions remain visible in the application and source register.
 
 ## Start here
 
@@ -11,13 +21,13 @@ Astralis is the team behind **Lunar Landing Site Navigator**, our project for th
 | Run the latest release | [Windows](#run-the-navigator-on-windows) or [macOS](#run-the-navigator-on-macos) copy/paste setup below |
 | Understand the complete project | [Team handbook](ASTRALIS-HANDBOOK.md) |
 | Find every source and data credit | [References and exact products](REFERENCES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) |
-| Review what changed | [v1.5.0 release notes](CHANGELOG.md) |
+| Review what changed | [v1.5.1 release notes](CHANGELOG.md) |
 | Prepare for judging | [Rubric](JUDGING-RUBRIC.md) · [Submission checklist](docs/SUBMISSION-CHECKLIST.md) |
 | Contribute or publish an update | [Contribution and release guide](CONTRIBUTING.md) |
 
 Choose a site and mission window, compare solar energy and Earth visibility, then inspect terrain in one Orbit / Moon Map / Surface viewer. South Pole suggestions add a slope screen and three mission scenarios. Calculations use JPL ephemerides and measured lunar terrain. Generated rocks and fine dust improve the view without entering the planning calculations.
 
-The repository is maintained privately for the team. Collaborators need an accepted invitation. The local app requires no API key; finer on-demand terrain needs internet access. A GitHub release is source code, not a hosted deployment or a completed competition submission.
+The repository is public for the Space Apps submission. Reading and cloning need no invitation; write access remains limited to collaborators. The local app requires no API key; finer on-demand terrain needs internet access. A GitHub release is source code, not a hosted deployment or a completed competition submission.
 
 [Windows setup](#run-the-navigator-on-windows) · [macOS setup](#run-the-navigator-on-macos) · [Version history](https://github.com/Debaprashad-Bhowmik/project-astralis/tags)
 
@@ -25,7 +35,7 @@ Both commands start the newest version tagged on main. They keep a separate proj
 
 ## Run the navigator on Windows
 
-Accept your invitation to the private repository. Open **Windows PowerShell** in the folder where you want the project, use the copy button on the code block below, paste the whole block, and press Enter. If Git opens a sign-in window, use the GitHub account that accepted the invite. [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
+The source is public. Open **Windows PowerShell** in the folder where you want the project, use the copy button on the code block below, paste the whole block, and press Enter. A public HTTPS clone requires no GitHub account. Collaborators use their own accounts when pushing changes. [GitHub sign-in for Git](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git?platform=windows)
 
 The block uses WinGet to install Git and x64 Python 3.13 if needed. It then downloads the project and bundled lunar data, installs the terrain packages, and opens the navigator in your default browser. The terminal prints the localhost link. Keep the window open while using the site and press **Ctrl+C** to stop it. [Microsoft WinGet guide](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
 
@@ -142,7 +152,7 @@ If WinGet is missing or your computer blocks it, install or update App Installer
 
 ## Run the navigator on macOS
 
-Accept your invitation to the private repository. Open **Terminal**, go to the folder where you want the project, and paste the whole block below. The block uses Homebrew when a tool is missing. During the first clone, sign in through the browser with the GitHub account that accepted the invite. [Homebrew](https://brew.sh/) · [GitHub CLI sign-in](https://cli.github.com/manual/gh_auth_login)
+The source is public. Open **Terminal**, go to the folder where you want the project, and paste the whole block below. The block uses Homebrew when a tool is missing. The optional GitHub CLI setup may request sign-in. For account-free access, download the source ZIP or use a public HTTPS Git clone and the manual run instructions. [Homebrew](https://brew.sh/) · [GitHub CLI sign-in](https://cli.github.com/manual/gh_auth_login)
 
 <details>
 <summary>Show the macOS copy/paste command</summary>
@@ -238,7 +248,7 @@ For a Mac without Homebrew, follow the installation links for any missing tools 
 
 **Visual landing suggestions.** In the main viewer, enable **Landing Suggestions**. Three compact recommendations show total solar energy on a shared scale, the longest uninterrupted Earth-view window, actual Sun/Earth timelines, and terrain slope. **Exact values & ranks** reveals average power, all visibility totals, gaps, roughness, coordinates, and cross-scenario ranks. **More patches and visual trade-offs** opens the remaining shortlist and an energy-versus-continuous-Earth plot. Every patch still opens Surface through the existing camera journey. The three Moon-map comparison panels use the same visual summaries and retain their independent site/date selections.
 
-**[Trade-off Explorer](http://localhost:4173/explore.html).** The separate catalog explorer from [vnk11's contribution](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57) offers progressively deeper views: mission presets, visibility requirements, date heatmaps, a trade-off plot, CSV export, and links to JPL Horizons. It compares catalog sites for missions from 6 hours to 60 days. Its adaptive score emphasizes sunlight duration and Earth visibility; it is a different exploration tool from the main planner's energy/continuous-communications patch ranking. Every detail tab includes three comparison maps restricted to **84°S–90°S**, matching the main planner's South Pole search region. Shared checkboxes intersect mission overlap, sunlight, Earth view, solar power and crater-shadow layers on those same Moon renderers. The time scrubber sets one instant for all three; mission overlap covers the full selected duration, with a shared hours scale. Select a site name or map pin to follow the existing camera descent into its first-person Surface view, then return to the comparison. There is no whole-Moon scope switch in the Explorer. The URL retains the catalog Explorer's choices.
+**[Trade-off Explorer](https://debaprashad-bhowmik.github.io/project-astralis/explore.html).** The separate catalog explorer from [vnk11's contribution](https://github.com/Debaprashad-Bhowmik/project-astralis/commit/e81fb404b49344da7c515e7e563dfeeb1cd07a57) offers progressively deeper views: mission presets, visibility requirements, date heatmaps, a trade-off plot, CSV export, and links to JPL Horizons. It compares catalog sites for missions from 6 hours to 60 days. Its adaptive score emphasizes sunlight duration and Earth visibility; it is a different exploration tool from the main planner's energy/continuous-communications patch ranking. Every detail tab includes three comparison maps restricted to **84°S–90°S**, matching the main planner's South Pole search region. Shared checkboxes intersect mission overlap, sunlight, Earth view, solar power and crater-shadow layers on those same Moon renderers. The time scrubber sets one instant for all three; mission overlap covers the full selected duration, with a shared hours scale. Select a site name or map pin to follow the existing camera descent into its first-person Surface view, then return to the comparison. There is no whole-Moon scope switch in the Explorer. The URL retains the catalog Explorer's choices.
 
 Choose a landing date, mission length, and priority to rank 39 landing and study locations. In Site ranking, choose **Site type → Future CLPS targets** to compare planned mission regions. Rotate the Moon to see sites on both hemispheres, search the 9,087 IAU-approved feature names, and click anywhere on the globe to evaluate the terrain horizon, daylight, and Earth visibility. Compare independently dated scenarios or scrub the Sun–Earth–Moon view in 3D.
 
