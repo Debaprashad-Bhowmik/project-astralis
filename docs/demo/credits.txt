@@ -1,0 +1,54 @@
+LUNAR LANDING SITE NAVIGATOR — TEAM ASTRALIS — 30-SECOND DEMO, REVISION 2
+
+Purpose
+An annotated, narrated demonstration of the user's existing Lunar Landing Site Navigator application. It presents the orbital-to-surface journey, walking, mission-specific candidate patch selection, and three recommendation scenarios. It is a condensed edited demonstration, not a recording of a single uninterrupted user session.
+
+Identity and novelty
+Astralis is the team; Lunar Landing Site Navigator is the project name (README.md and PRODUCT.md). The narration begins “We are Team Astralis!” and calls the team’s contribution a “NOVEL patch finder, beyond NASA’s preset landing sites.” Novel refers to the mission-specific candidate search implemented by this team, not a claim that the coordinates have never been studied.
+
+Scientific wording verified
+1. Solar elevation and sunlight duration are different quantities. For the application's horizontal panel model, unblocked direct-beam power scales with max(0, sin(solar elevation)), with a Sun-distance correction. Terrain shadow and total eclipse produce zero direct power. The code integrates this power across the mission; average power is integrated energy divided by the full mission duration. It does not rank by the arithmetic mean of elevation angles.
+   Code: planner.mjs, flatPanelFactor, siteSolarPower, solarExposure; landing-suggestions.mjs, landingPower.
+   Primary reference for beam projection: https://pvpmc.sandia.gov/modeling-guide/1-weather-design-inputs/plane-of-array-poa-irradiance/calculating-poa-irradiance/poa-beam/
+2. The NASA Space Apps Artemis reference presentation specifies surface slope for landing over 100 m of less than 10 DEGREES. This is not 10 percent grade. The film uses degrees.
+   Primary source: NASA Artemis Human Landing System Overview, page 21 (zero-based PDF page 20).
+   https://ntrs.nasa.gov/api/citations/20250009323/downloads/ArtemisOverview2025IntSPAPPSChallenge.pdf
+3. Earth-view percentage is displayed. The landing patch ranking specifically uses the longest continuous Earth-view interval. The communications scenario requires an uninterrupted interval covering the whole mission. The balance score combines normalized mission energy and longest continuous Earth-view share geometrically.
+   Code: landing-suggestions.mjs, rankLandingSuggestions.
+4. The candidate inventory includes 6,685 sampled patches in 84°S–90°S. These are candidate locations beyond the fixed named-site list. The demo does not assert that these coordinates have never been studied by NASA or that the app certifies safe landings. Slope is one screening factor; full mission design and hazard assessment require more analysis.
+   Terrain data and slope baseline: https://pgda.gsfc.nasa.gov/products/90
+5. The official challenge specifically centers on the lunar South Pole and its extreme lighting and communication constraints. It asks teams to compare dates/sites using Sun/Earth horizon geometry for power and direct Earth communication.
+   https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/
+   The indexed official challenge brief was available during research; direct page fetch returned 502.
+
+Actual recorded example
+Landing: 2026-12-25 00:00 UTC. Duration: 168 hours, through 2027-01-01 00:00 UTC.
+Best communications: Patch 569; continuous Earth view 168 h (100%); mission energy 3.42 kWh/m².
+Best solar power: Patch 961; mission energy 5.37 kWh/m²; continuous Earth view 105.6 h.
+Best balance: Patch 1, 84.0215°S, 10.0372°W; energy 4.06 kWh/m²; average power approximately 24.2 W/m²; continuous Earth view 156.6 h (93% displayed); slope 0.14°.
+Numbers are the rounded results visible in the user's recording, cross-checked against the app's documented calculation semantics.
+
+Media provenance
+Original recording: supplied by Deb, 2026-11-15 21-53-07.mp4
+Opening shot: source 00:00.0–00:25.2, 2.85× playback, cropped to the actual viewer. The opening demonstrates the generic viewer at Surveyor 1; it is not labeled as actual footage of the selected South Pole patch.
+Mission controls: source frame at 00:55.
+Candidate card: source frame at 01:00.
+Comparison maps: source frame at 01:45.
+Final camera journey and walking: source 01:18.8–01:30.0, 16/7× (approximately 2.29×) playback for 4.9 seconds, ending before the subsequent recorded scroll.
+All screen pixels retain their original colors. Additional labels enlarge and explain actual results.
+
+Audio and AI disclosure
+Narrator: ElevenLabs Roger (CwhRBWXzGAHq8TQ4Fs17), eleven_v3, Creative stability 0, similarity 0.65, generation speed 1.0, seed 1618033. Expressive audio tags direct curiosity, confidence, explanation, excitement, and a soft laugh. The screenshot’s Roger selection and bracket-tag approach are used. Narration is timed from API character alignment, silent pauses are shortened using voice-edit-v2.json, and speech is placed 0.2 s into the film without speeding up the words. The unedited generated take is assets/narration-v2-original.mp3.
+Effects: ElevenLabs eleven_text_to_sound_v2; original prompt-generated silk whoosh, tactile selection click, and soft landing/confirmation bloom.
+Music: original locally synthesized composition, created by compose_score.py; D-major ambient progression, felt-like harmonic keys, round mallets, evolving stereo pads, and soft low pulses. No commercial song or stock music sample was used. ElevenLabs Music API rejected generation because the account required a paid plan; no output from that endpoint is included.
+Mix: stereo 48 kHz; speech-centered balance; music envelope ducks under timed narration; two-pass loudness mastering targets -16 LUFS and -1.5 dBTP.
+Visual production: HyperFrames HTML/CSS/GSAP motion graphics and FFmpeg editing/encoding, assisted by Codex. A persistent visible AI-assisted/synthetic-audio label and descriptive metadata are included.
+Fonts: the project's DM Sans and Space Grotesk files, with their existing project font notices.
+App data: NASA/JPL ephemerides, NASA LOLA terrain, and lunar imagery already credited in the repository REFERENCES.md and THIRD_PARTY_NOTICES.md. Decorative rocks and fine surface appearance are generated app assets and do not enter the scientific calculations.
+
+ElevenLabs references
+https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps
+https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices
+https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert
+
+No API key is embedded in the project source, media, or exported deliverables.
